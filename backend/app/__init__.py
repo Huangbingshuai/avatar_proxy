@@ -1,0 +1,1 @@
+"""Avatar Proxy backend package."""

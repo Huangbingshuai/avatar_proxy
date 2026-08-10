@@ -1,77 +1,112 @@
-# Avatar Proxy
+# Avatar Proxy（前后端分离版）
 
-火山方舟私域虚拟人像素材资产库的服务端代理与管理控制台。调用方使用本系统生成的 API Key，火山引擎 AK/SK 只保留在服务端环境变量中。
+火山方舟私域虚拟人像素材资产库的 API 网关与管理控制台。
 
-## 配置
+```text
+浏览器 ──HTTP──> Next/Vinext 前端
+                    │
+                    └──HTTP──> Python FastAPI 后端 ──签名请求──> Volcengine Ark
+                                      │
+                                      └── SQLite（项目、API Key、调用日志）
+```
 
-本地开发复制 `.dev.vars.example` 为 `.dev.vars`，部署时配置同名运行时变量：
+## 目录
+
+- `app/`：前端控制台，只包含界面和后端 HTTP 客户端。
+- `backend/`：Python FastAPI 后端，包含鉴权、SQLite、火山签名及接口代理。
+- `.env.example`：前端后端地址配置。
+- `backend/.env.example`：后端密钥、数据库和 CORS 配置。
+
+## 1. 启动 Python 后端
+
+```bash
+cd backend
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -e ".[test]"
+copy .env.example .env
+uvicorn app.main:app --reload --port 8000
+```
+
+在 `backend/.env` 中配置：
 
 ```text
 VOLCENGINE_ACCESS_KEY=火山引擎AK
 VOLCENGINE_SECRET_KEY=火山引擎SK
-CONSOLE_ADMIN_TOKEN=至少32位的随机管理令牌
+CONSOLE_ADMIN_TOKEN=至少32位随机字符串
+DATABASE_PATH=./data/avatar_proxy.db
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 ```
 
-然后运行：
+后端健康检查：`GET http://localhost:8000/health`
+
+Swagger 文档：`http://localhost:8000/docs`
+
+也可以使用 Docker：
+
+```bash
+docker compose up --build backend
+```
+
+## 2. 启动前端
+
+复制 `.env.example` 为 `.env.local`：
+
+```text
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+然后：
 
 ```bash
 npm install
 npm run dev
 ```
 
-打开控制台后用 `CONSOLE_ADMIN_TOKEN` 解锁，先创建项目，再生成 API Key。完整 Key 只显示一次，数据库只保存其 SHA-256 哈希。
+打开控制台后使用后端的 `CONSOLE_ADMIN_TOKEN` 解锁。
 
-## 鉴权
+## 业务接口
 
-所有业务接口统一使用：
+所有接口使用：
 
 ```text
 Authorization: Bearer vap_live_xxx
 Content-Type: application/json
 ```
 
-每个 API Key 固定绑定一个火山方舟 `ProjectName`。服务端会覆盖客户端传入的项目字段，确保跨项目资源不能混用。
-
-## 接口
-
-| 方法 | 路径 | 说明 |
+| 方法 | 路径 | 上游 Action |
 | --- | --- | --- |
-| POST / GET | `/api/v1/asset-groups` | 创建 / 查询素材组 |
-| GET / PATCH / DELETE | `/api/v1/asset-groups/{id}` | 获取 / 更新 / 删除素材组 |
-| POST / GET | `/api/v1/assets` | 上传 / 查询素材 |
-| GET / PATCH / DELETE | `/api/v1/assets/{id}` | 获取 / 更新 / 删除素材 |
+| POST / GET | `/api/v1/asset-groups` | CreateAssetGroup / ListAssetGroups |
+| GET / PATCH / DELETE | `/api/v1/asset-groups/{id}` | Get / Update / DeleteAssetGroup |
+| POST / GET | `/api/v1/assets` | CreateAsset / ListAssets |
+| GET / PATCH / DELETE | `/api/v1/assets/{id}` | Get / Update / DeleteAsset |
 
-创建素材组：
+后端固定使用官网参数：
 
-```bash
-curl -X POST http://localhost:3001/api/v1/asset-groups \
-  -H "Authorization: Bearer vap_live_xxx" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"campaign-hero","description":"活动角色"}'
-```
-
-上传图片素材：
-
-```bash
-curl -X POST http://localhost:3001/api/v1/assets \
-  -H "Authorization: Bearer vap_live_xxx" \
-  -H "Content-Type: application/json" \
-  -d '{"group_id":"group-xxx","url":"https://example.com/avatar.png","asset_type":"Image","name":"角色正面照"}'
-```
-
-素材状态变为 `Active` 后，可使用 `asset://<asset_id>` 参与 Seedance 视频生成。
+- Service：`ark`
+- Region：`cn-beijing`
+- Version：`2024-01-01`
+- GroupType：`AIGC`
+- `ProjectName`：从调用方 API Key 自动注入，客户端不能覆盖。
 
 ## 安全设计
 
-- 上游 AK/SK 不进入数据库、不返回客户端，只从运行时 Secret 读取。
-- API Key 只存哈希，完整密钥仅在创建响应中出现一次。
-- 项目由 API Key 强制注入，客户端无法覆盖。
-- 请求日志只保存操作、项目、状态和耗时，不保存业务请求体。
-- 管理接口必须携带独立的 `X-Admin-Token`。
+- 火山 AK/SK 只存在 Python 后端环境变量中。
+- API Key 仅保存 SHA-256 哈希，完整值只在创建时返回一次。
+- 项目由 API Key 强制绑定，防止跨项目访问。
+- 请求日志不保存业务请求体。
+- 控制台管理接口使用独立的 `X-Admin-Token`。
+- CORS 仅允许 `CORS_ORIGINS` 中配置的前端域名。
 
-## 验证
+## 测试
 
 ```bash
-npm run build
 npm test
+npm run lint
+
+cd backend
+pytest
 ```
+
+官方参考：[私域虚拟人像素材资产库使用指南](https://docs.volcengine.com/docs/82379/2333565?lang=zh)。

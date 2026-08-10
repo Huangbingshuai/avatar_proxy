@@ -1,3 +1,2 @@
-VOLCENGINE_ACCESS_KEY=your_access_key
-VOLCENGINE_SECRET_KEY=your_secret_key
-CONSOLE_ADMIN_TOKEN=replace_with_a_long_random_token
+# 前端不再保存任何服务端密钥。
+# 后端配置见 backend/.env.example。

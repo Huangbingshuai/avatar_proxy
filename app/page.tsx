@@ -7,6 +7,8 @@ type ApiKey = { id: string; name: string; keyPrefix: string; projectName: string
 type Overview = { stats: { projects: number; activeKeys: number; requests24h: number; errors24h: number }; recent: Array<{ action: string; projectName: string; statusCode: number; durationMs: number; createdAt: string }> };
 type Tab = "overview" | "projects" | "keys" | "docs";
 
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: "overview", label: "概览" },
   { id: "projects", label: "项目" },
@@ -44,7 +46,7 @@ export default function Home() {
   const [showKeyForm, setShowKeyForm] = useState(false);
 
   const api = useCallback(async (path: string, init?: RequestInit, token = adminToken) => {
-    const response = await fetch(path, {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers: { "content-type": "application/json", "x-admin-token": token, ...init?.headers },
     });
@@ -115,7 +117,7 @@ export default function Home() {
         {error && !locked && <div className="errorBanner">{error}</div>}
 
         {tab === "overview" && <div className="content">
-          <section className="hero"><div><span className="heroTag">PRIVATE ASSET GATEWAY</span><h2>一把 Key，安全调用<br />虚拟人像资产库</h2><p>项目级隔离、密钥生命周期管理与完整的 Ark Assets API 封装。</p></div><div className="terminal"><div className="terminalTop"><span /><span /><span /><em>创建素材组</em></div><code><b>curl</b> -X POST /api/v1/asset-groups \<br />&nbsp; -H <i>&quot;Authorization: Bearer vap_live_••••&quot;</i> \<br />&nbsp; -d <i>&apos;{`{"name":"campaign-hero"}`}&apos;</i></code></div></section>
+          <section className="hero"><div><span className="heroTag">PRIVATE ASSET GATEWAY</span><h2>一把 Key，安全调用<br />虚拟人像资产库</h2><p>前后端分离、项目级隔离与 Python FastAPI 网关。</p></div><div className="terminal"><div className="terminalTop"><span /><span /><span /><em>创建素材组</em></div><code><b>curl</b> -X POST {API_BASE_URL}/api/v1/asset-groups \<br />&nbsp; -H <i>&quot;Authorization: Bearer vap_live_••••&quot;</i> \<br />&nbsp; -d <i>&apos;{`{"name":"campaign-hero"}`}&apos;</i></code></div></section>
           <div className="statGrid">
             <Stat label="项目" value={overview?.stats.projects ?? 0} note="独立 ProjectName" />
             <Stat label="有效 API Keys" value={overview?.stats.activeKeys ?? 0} note="仅保存哈希" />
@@ -135,7 +137,7 @@ export default function Home() {
           <section className="panel keyPanel"><div className="table"><div className="tr keyTr th"><span>名称</span><span>Key</span><span>项目</span><span>最近使用</span><span>状态</span><span /></div>{apiKeys.map((key) => <div className="tr keyTr" key={key.id}><span><b>{key.name}</b><small>{new Date(key.createdAt + "Z").toLocaleDateString("zh-CN")} 创建</small></span><span className="mono">{key.keyPrefix}</span><span>{key.projectName}</span><span>{key.lastUsedAt ? new Date(key.lastUsedAt + "Z").toLocaleString("zh-CN") : "从未"}</span><span><i className={`state ${key.status}`}>{key.status === "active" ? "有效" : "已撤销"}</i></span><span>{key.status === "active" && <button className="dangerLink" onClick={() => void revokeKey(key.id)}>撤销</button>}</span></div>)}{!apiKeys.length && <div className="emptyRow">还没有 API Key</div>}</div></section>
         </div>}
 
-        {tab === "docs" && <div className="content"><div className="pageIntro"><div><h2>接口文档</h2><p>统一 Bearer 鉴权；项目由 API Key 自动注入，客户端不能覆盖。</p></div><span className="version">v1 · JSON</span></div>
+        {tab === "docs" && <div className="content"><div className="pageIntro"><div><h2>接口文档</h2><p>统一 Bearer 鉴权；项目由 API Key 自动注入，客户端不能覆盖。</p></div><a className="version" href={`${API_BASE_URL}/docs`} target="_blank" rel="noreferrer">Swagger ↗</a></div>
           <section className="docsLayout"><div className="endpointList">{endpoints.map(([method, path, title]) => <div className="endpoint" key={`${method}${path}`}><i className={method.toLowerCase()}>{method}</i><code>{path}</code><span>{title}</span></div>)}</div><aside className="quickDoc"><h3>快速开始</h3><p>请求头</p><pre>Authorization: Bearer vap_live_xxx<br />Content-Type: application/json</pre><p>上传图片素材</p><pre>{`POST /api/v1/assets\n\n{\n  "group_id": "group-xxx",\n  "url": "https://.../avatar.png",\n  "asset_type": "Image",\n  "name": "角色正面照"\n}`}</pre><div className="note">素材状态为 <b>Active</b> 后，用 <code>asset://&lt;asset_id&gt;</code> 参与 Seedance 视频生成。</div></aside></section>
         </div>}
       </section>

@@ -39,3 +39,12 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+# Python backend
+/backend/.venv/
+/backend/.pytest-tmp/
+/backend/.pytest_cache/
+/backend/**/__pycache__/
+/backend/data/
+*.py[cod]
+/.idea/
