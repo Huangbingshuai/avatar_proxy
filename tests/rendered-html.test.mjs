@@ -19,5 +19,6 @@ test("server-renders the Avatar Proxy console", async () => {
   assert.match(html, /Avatar Proxy/);
   assert.match(html, /解锁管理控制台/);
   assert.match(html, /\/api\/v1\/asset-groups/);
+  assert.doesNotMatch(html, /your-domain\.com|typeof location/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });

@@ -115,7 +115,7 @@ export default function Home() {
         {error && !locked && <div className="errorBanner">{error}</div>}
 
         {tab === "overview" && <div className="content">
-          <section className="hero"><div><span className="heroTag">PRIVATE ASSET GATEWAY</span><h2>一把 Key，安全调用<br />虚拟人像资产库</h2><p>项目级隔离、密钥生命周期管理与完整的 Ark Assets API 封装。</p></div><div className="terminal"><div className="terminalTop"><span /><span /><span /><em>创建素材组</em></div><code><b>curl</b> -X POST {typeof location !== "undefined" ? location.origin : "https://your-domain.com"}/api/v1/asset-groups \<br />&nbsp; -H <i>&quot;Authorization: Bearer vap_live_••••&quot;</i> \<br />&nbsp; -d <i>&apos;{`{"name":"campaign-hero"}`}&apos;</i></code></div></section>
+          <section className="hero"><div><span className="heroTag">PRIVATE ASSET GATEWAY</span><h2>一把 Key，安全调用<br />虚拟人像资产库</h2><p>项目级隔离、密钥生命周期管理与完整的 Ark Assets API 封装。</p></div><div className="terminal"><div className="terminalTop"><span /><span /><span /><em>创建素材组</em></div><code><b>curl</b> -X POST /api/v1/asset-groups \<br />&nbsp; -H <i>&quot;Authorization: Bearer vap_live_••••&quot;</i> \<br />&nbsp; -d <i>&apos;{`{"name":"campaign-hero"}`}&apos;</i></code></div></section>
           <div className="statGrid">
             <Stat label="项目" value={overview?.stats.projects ?? 0} note="独立 ProjectName" />
             <Stat label="有效 API Keys" value={overview?.stats.activeKeys ?? 0} note="仅保存哈希" />
