@@ -1,7 +1,13 @@
+import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Iterator
+
+
+DEFAULT_PROJECT_NAME = "avatar-proxy"
+LEGACY_DEFAULT_PROJECT_NAME = "default"
 
 
 SCHEMA = """
@@ -31,8 +37,33 @@ CREATE TABLE IF NOT EXISTS request_logs (
     duration_ms INTEGER NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS video_usage (
+    api_key_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(api_key_id, task_id)
+);
+CREATE TABLE IF NOT EXISTS video_tasks (
+    api_key_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    record_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    created_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(api_key_id, task_id)
+);
 CREATE INDEX IF NOT EXISTS idx_api_keys_project_status ON api_keys(project_name, status);
 CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON request_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_video_usage_api_key_created_at ON video_usage(api_key_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_video_tasks_api_key_created_at ON video_tasks(api_key_id, created_at DESC);
 """
 
 
@@ -44,6 +75,25 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            connection.execute(
+                "INSERT INTO projects (name, display_name, description) VALUES (?, ?, ?) "
+                "ON CONFLICT(name) DO NOTHING",
+                (DEFAULT_PROJECT_NAME, "Avatar Proxy 默认项目", "未显式绑定项目的 API Key 使用此项目"),
+            )
+            connection.execute(
+                "UPDATE api_keys SET project_name = ? WHERE project_name = ?",
+                (DEFAULT_PROJECT_NAME, LEGACY_DEFAULT_PROJECT_NAME),
+            )
+            for table in ("request_logs", "video_usage", "video_tasks"):
+                connection.execute(
+                    f"UPDATE {table} SET project_name = ? WHERE project_name = ?",
+                    (DEFAULT_PROJECT_NAME, LEGACY_DEFAULT_PROJECT_NAME),
+                )
+            connection.execute(
+                "DELETE FROM projects WHERE name = ?",
+                (LEGACY_DEFAULT_PROJECT_NAME,),
+            )
+            connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -83,6 +133,29 @@ class Database:
             )
         return {"name": name, "displayName": display_name, "description": description}
 
+    def delete_project(self, name: str) -> int | None:
+        with self.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE name = ?", (name,)).fetchone() is None:
+                return None
+            cursor = connection.execute(
+                "UPDATE api_keys SET project_name = ? WHERE project_name = ?",
+                (DEFAULT_PROJECT_NAME, name),
+            )
+            for table in ("request_logs", "video_usage", "video_tasks"):
+                connection.execute(
+                    f"UPDATE {table} SET project_name = ? WHERE project_name = ?",
+                    (DEFAULT_PROJECT_NAME, name),
+                )
+            connection.execute("DELETE FROM projects WHERE name = ?", (name,))
+        return cursor.rowcount
+
+    def ensure_project(self, name: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO projects (name, display_name) VALUES (?, ?) ON CONFLICT(name) DO NOTHING",
+                (name, name),
+            )
+
     def project_exists(self, name: str) -> bool:
         with self.connect() as connection:
             return connection.execute("SELECT 1 FROM projects WHERE name = ?", (name,)).fetchone() is not None
@@ -103,10 +176,50 @@ class Database:
                 (key_id, name, prefix, key_hash, project_name),
             )
 
-    def revoke_api_key(self, key_id: str) -> bool:
+    def disable_api_key(self, key_id: str) -> bool:
         with self.connect() as connection:
             cursor = connection.execute(
-                "UPDATE api_keys SET status = 'revoked' WHERE id = ? AND status = 'active'", (key_id,)
+                "UPDATE api_keys SET status = 'disabled' WHERE id = ? AND status = 'active'", (key_id,)
+            )
+        return cursor.rowcount > 0
+
+    def enable_api_key(self, key_id: str) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT status FROM api_keys WHERE id = ?",
+                (key_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["status"] != "disabled":
+                return "active"
+            connection.execute(
+                "UPDATE api_keys SET status = 'active' WHERE id = ?",
+                (key_id,),
+            )
+        return "enabled"
+
+    def delete_api_key(self, key_id: str) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT status FROM api_keys WHERE id = ?",
+                (key_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["status"] != "disabled":
+                return "active"
+            connection.execute("DELETE FROM request_logs WHERE api_key_id = ?", (key_id,))
+            connection.execute("DELETE FROM video_usage WHERE api_key_id = ?", (key_id,))
+            connection.execute("DELETE FROM video_tasks WHERE api_key_id = ?", (key_id,))
+            connection.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
+        return "deleted"
+
+    def bind_api_key_project(self, key_id: str, project_name: str) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE api_keys SET project_name = ? WHERE id = ?",
+                (project_name, key_id),
             )
         return cursor.rowcount > 0
 
@@ -128,6 +241,162 @@ class Database:
                 "INSERT INTO request_logs (api_key_id, project_name, action, status_code, duration_ms) VALUES (?, ?, ?, ?, ?)",
                 (key_id, project_name, action, status_code, duration_ms),
             )
+
+    def upsert_video_usage(
+        self,
+        key_id: str,
+        project_name: str,
+        task_id: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        total_tokens: int,
+        created_at: str | None,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO video_usage (
+                    api_key_id, project_name, task_id, model,
+                    input_tokens, output_tokens, total_tokens, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+                ON CONFLICT(api_key_id, task_id) DO UPDATE SET
+                    model = CASE WHEN excluded.model != '' THEN excluded.model ELSE video_usage.model END,
+                    input_tokens = MAX(video_usage.input_tokens, excluded.input_tokens),
+                    output_tokens = MAX(video_usage.output_tokens, excluded.output_tokens),
+                    total_tokens = MAX(video_usage.total_tokens, excluded.total_tokens),
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    key_id, project_name, task_id, model,
+                    input_tokens, output_tokens, total_tokens, created_at,
+                ),
+            )
+
+    def video_usage(self, key_id: str, days: int) -> dict[str, Any]:
+        with self.connect() as connection:
+            summary = connection.execute(
+                """
+                SELECT
+                    COALESCE(SUM(input_tokens), 0) AS inputTokens,
+                    COALESCE(SUM(output_tokens), 0) AS outputTokens,
+                    COALESCE(SUM(total_tokens), 0) AS totalTokens,
+                    COUNT(*) AS requestCount
+                FROM video_usage
+                WHERE api_key_id = ? AND date(created_at) >= date('now', ?)
+                """,
+                (key_id, f"-{days - 1} days"),
+            ).fetchone()
+            rows = connection.execute(
+                """
+                SELECT date(created_at) AS date,
+                    COALESCE(SUM(input_tokens), 0) AS inputTokens,
+                    COALESCE(SUM(output_tokens), 0) AS outputTokens,
+                    COALESCE(SUM(total_tokens), 0) AS totalTokens,
+                    COUNT(*) AS requestCount
+                FROM video_usage
+                WHERE api_key_id = ? AND date(created_at) >= date('now', ?)
+                GROUP BY date(created_at)
+                ORDER BY date(created_at)
+                """,
+                (key_id, f"-{days - 1} days"),
+            ).fetchall()
+            start = connection.execute(
+                "SELECT date('now', ?) AS date", (f"-{days - 1} days",)
+            ).fetchone()["date"]
+
+        by_date = {row["date"]: dict(row) for row in rows}
+        cursor = date.fromisoformat(start)
+        daily = []
+        for offset in range(days):
+            day = (cursor + timedelta(days=offset)).isoformat()
+            daily.append(by_date.get(day, {
+                "date": day, "inputTokens": 0, "outputTokens": 0,
+                "totalTokens": 0, "requestCount": 0,
+            }))
+        return {"summary": dict(summary), "daily": daily}
+
+    def save_video_task(
+        self,
+        key_id: str,
+        project_name: str,
+        task_id: str,
+        record: dict[str, Any],
+    ) -> dict[str, Any]:
+        with self.connect() as connection:
+            existing = connection.execute(
+                "SELECT record_json FROM video_tasks WHERE api_key_id = ? AND task_id = ?",
+                (key_id, task_id),
+            ).fetchone()
+            current: dict[str, Any] = {}
+            if existing:
+                try:
+                    decoded = json.loads(existing["record_json"])
+                    if isinstance(decoded, dict):
+                        current = decoded
+                except (TypeError, ValueError):
+                    current = {}
+            merged = {**current, **{key: value for key, value in record.items() if value is not None}}
+            merged["id"] = task_id
+            created_at = int(merged.get("createdAt") or current.get("createdAt") or 0)
+            status = str(merged.get("status") or "queued")
+            connection.execute(
+                """
+                INSERT INTO video_tasks (
+                    api_key_id, project_name, task_id, record_json, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(api_key_id, task_id) DO UPDATE SET
+                    project_name = excluded.project_name,
+                    record_json = excluded.record_json,
+                    status = excluded.status,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    key_id, project_name, task_id,
+                    json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
+                    status, created_at,
+                ),
+            )
+        return merged
+
+    def list_video_tasks(self, key_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT record_json FROM video_tasks
+                WHERE api_key_id = ? AND hidden = 0
+                ORDER BY created_at DESC, updated_at DESC
+                LIMIT ?
+                """,
+                (key_id, limit),
+            ).fetchall()
+        tasks: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                record = json.loads(row["record_json"])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(record, dict) and record.get("id"):
+                tasks.append(record)
+        return tasks
+
+    def hide_video_task(self, key_id: str, task_id: str) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE video_tasks SET hidden = 1, updated_at = CURRENT_TIMESTAMP "
+                "WHERE api_key_id = ? AND task_id = ? AND hidden = 0",
+                (key_id, task_id),
+            )
+        return cursor.rowcount > 0
+
+    def hide_all_video_tasks(self, key_id: str) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE video_tasks SET hidden = 1, updated_at = CURRENT_TIMESTAMP "
+                "WHERE api_key_id = ? AND hidden = 0",
+                (key_id,),
+            )
+        return cursor.rowcount
 
     def overview(self) -> dict[str, Any]:
         with self.connect() as connection:

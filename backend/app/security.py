@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .database import Database
+from .database import DEFAULT_PROJECT_NAME, Database
 from .errors import ApiError
 
 
@@ -39,7 +39,7 @@ def require_admin(
 ) -> None:
     configured = request.app.state.settings.console_admin_token
     if not configured:
-        raise ApiError("服务端尚未配置 CONSOLE_ADMIN_TOKEN", 503, "admin_not_configured")
+        raise ApiError("API 服务器尚未配置 CONSOLE_ADMIN_TOKEN", 503, "admin_not_configured")
     if not x_admin_token or not hmac.compare_digest(x_admin_token, configured):
         raise ApiError("管理令牌无效", 401, "invalid_admin_token")
 
@@ -53,9 +53,10 @@ def require_api_key(
     database: Database = request.app.state.database
     row = database.find_api_key(hash_api_key(credentials.credentials))
     if not row:
-        raise ApiError("API Key 无效或已撤销", 401, "invalid_api_key")
+        raise ApiError("API Key 无效或已禁用", 401, "invalid_api_key")
     database.touch_api_key(row["id"])
-    return ApiPrincipal(id=row["id"], project_name=row["projectName"])
+    project_name = (row.get("projectName") or DEFAULT_PROJECT_NAME).strip()
+    return ApiPrincipal(id=row["id"], project_name=project_name or DEFAULT_PROJECT_NAME)
 
 
 AdminDependency = Annotated[None, Depends(require_admin)]

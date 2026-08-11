@@ -32,6 +32,7 @@ yarn-error.log*
 .env*
 !.env.example
 !backend/.env.example
+!user-portal/.env.example
 .dev.vars
 
 # vercel
@@ -41,12 +42,16 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+/.playwright-mcp/
 
 # Python backend
 /backend/.venv/
 /backend/.pytest-tmp/
+/backend/.pytest-tmp*/
 /backend/.pytest_cache/
 /backend/**/__pycache__/
 /backend/data/
+/user-portal/node_modules/
+/user-portal/dist/
 *.py[cod]
 /.idea/

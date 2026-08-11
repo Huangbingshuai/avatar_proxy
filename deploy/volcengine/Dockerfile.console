@@ -1,0 +1,24 @@
+FROM docker.m.daocloud.io/library/node:22-bookworm-slim
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY app ./app
+COPY build ./build
+COPY public ./public
+COPY worker ./worker
+COPY .openai ./.openai
+COPY eslint.config.mjs next-env.d.ts next.config.ts postcss.config.mjs tsconfig.json vite.config.ts ./
+
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NODE_ENV=production \
+    NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL} \
+    PORT=3000 \
+    HOST=0.0.0.0
+
+RUN npm run build
+
+EXPOSE 3000
+CMD ["npm", "run", "start"]

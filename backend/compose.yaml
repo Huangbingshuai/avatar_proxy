@@ -1,0 +1,13 @@
+services:
+  api-server:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - avatar-proxy-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  avatar-proxy-data:

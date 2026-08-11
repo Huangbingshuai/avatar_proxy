@@ -10,16 +10,15 @@ async function render(path = "/") {
   }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("server-renders the Avatar Proxy console", async () => {
+test("server-renders the internal Avatar Proxy console", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>Avatar Proxy · 虚拟人像资产网关<\/title>/i);
-  assert.match(html, /Avatar Proxy/);
-  assert.match(html, /解锁管理控制台/);
-  assert.match(html, /\/api\/v1\/asset-groups/);
-  assert.match(html, /http:\/\/localhost:8000/);
-  assert.doesNotMatch(html, /your-domain\.com|typeof location/);
-  assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
+  assert.match(html, /<title>Avatar Proxy · 内部控制台<\/title>/i);
+  assert.match(html, /解锁内部控制台/);
+  assert.match(html, /CONSOLE_ADMIN_TOKEN/);
+  assert.match(html, /控制台与公网 API/);
+  assert.match(html, /http:\/\/(?:localhost|127\.0\.0\.1):8000/);
+  assert.doesNotMatch(html, /SEEDANCE_ARK_API_KEY|VOLCENGINE_SECRET_KEY|codex-preview/i);
 });

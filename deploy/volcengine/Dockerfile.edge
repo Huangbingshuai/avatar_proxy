@@ -1,0 +1,19 @@
+FROM docker.m.daocloud.io/library/node:22-bookworm-slim AS portal-build
+
+WORKDIR /portal
+COPY user-portal/package.json user-portal/package-lock.json ./
+RUN npm ci
+COPY user-portal/ ./
+
+ARG VITE_API_BASE_URL
+ARG VITE_VIDEO_MODELS
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL} \
+    VITE_VIDEO_MODELS=${VITE_VIDEO_MODELS}
+
+RUN npm run build -- --base=/video/
+
+FROM docker.m.daocloud.io/library/nginx:1.27-alpine
+COPY --from=portal-build /portal/dist /usr/share/nginx/html/video
+COPY deploy/volcengine/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 8080

@@ -1,13 +1,13 @@
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, File, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from ..schemas import AssetCreate, AssetGroupCreate, AssetGroupUpdate, AssetUpdate
 from ..security import PrincipalDependency
 
 
-router = APIRouter(prefix="/api/v1", tags=["虚拟人像素材资产"])
+router = APIRouter(prefix="/api", tags=["素材库"])
 
 
 async def upstream(request: Request, action: str, body: dict[str, Any], principal: PrincipalDependency) -> Response:
@@ -16,7 +16,7 @@ async def upstream(request: Request, action: str, body: dict[str, Any], principa
     return await request.app.state.volcengine.call(action, body, principal)
 
 
-@router.post("/asset-groups")
+@router.post("/asset-group/create")
 async def create_asset_group(payload: AssetGroupCreate, request: Request, principal: PrincipalDependency) -> Response:
     return await upstream(
         request,
@@ -26,84 +26,119 @@ async def create_asset_group(payload: AssetGroupCreate, request: Request, princi
     )
 
 
-@router.get("/asset-groups")
+@router.get("/asset-group/list")
 async def list_asset_groups(
     request: Request,
     principal: PrincipalDependency,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_number: int = Query(default=1, ge=1, alias="pageNumber"),
+    page_size: int = Query(default=20, ge=1, le=100, alias="pageSize"),
     name: str | None = None,
-    group_id: list[str] = Query(default=[]),
+    group_ids: list[str] = Query(default=[], alias="groupIds"),
 ) -> Response:
+    filters: dict[str, Any] = {"GroupType": "AIGC"}
+    if name:
+        filters["Name"] = name
+    if group_ids:
+        filters["GroupIds"] = group_ids
     return await upstream(request, "ListAssetGroups", {
-        "PageNumber": page,
+        "PageNumber": page_number,
         "PageSize": page_size,
-        "Filter": {"Name": name, "GroupType": "AIGC", "GroupIds": group_id},
+        "Filter": filters,
     }, principal)
 
 
-@router.get("/asset-groups/{group_id}")
-async def get_asset_group(group_id: str, request: Request, principal: PrincipalDependency) -> Response:
+@router.get("/asset-group/get")
+async def get_asset_group(
+    request: Request,
+    principal: PrincipalDependency,
+    group_id: str = Query(min_length=1, alias="groupId"),
+) -> Response:
     return await upstream(request, "GetAssetGroup", {"Id": group_id}, principal)
 
 
-@router.patch("/asset-groups/{group_id}")
+@router.put("/asset-group/update")
 async def update_asset_group(
-    group_id: str, payload: AssetGroupUpdate, request: Request, principal: PrincipalDependency
+    payload: AssetGroupUpdate,
+    request: Request,
+    principal: PrincipalDependency,
 ) -> Response:
-    body = {"Id": group_id, "Name": payload.name, "Description": payload.description}
-    return await upstream(request, "UpdateAssetGroup", {key: value for key, value in body.items() if value is not None}, principal)
+    body = {"Id": payload.group_id, "Name": payload.name, "Description": payload.description}
+    return await upstream(request, "UpdateAssetGroup", {k: v for k, v in body.items() if v is not None}, principal)
 
 
-@router.delete("/asset-groups/{group_id}")
-async def delete_asset_group(group_id: str, request: Request, principal: PrincipalDependency) -> Response:
+@router.delete("/asset-group/delete")
+async def delete_asset_group(
+    request: Request,
+    principal: PrincipalDependency,
+    group_id: str = Query(min_length=1, alias="groupId"),
+) -> Response:
     return await upstream(request, "DeleteAssetGroup", {"Id": group_id}, principal)
 
 
-@router.post("/assets")
+@router.post("/asset/create")
 async def create_asset(payload: AssetCreate, request: Request, principal: PrincipalDependency) -> Response:
     body = {
         "GroupId": payload.group_id,
         "URL": payload.url,
-        "AssetType": payload.asset_type,
+        "AssetType": "Image",
         "Name": payload.name,
     }
-    return await upstream(request, "CreateAsset", {key: value for key, value in body.items() if value is not None}, principal)
+    return await upstream(request, "CreateAsset", {k: v for k, v in body.items() if v is not None}, principal)
 
 
-@router.get("/assets")
+@router.get("/asset/list")
 async def list_assets(
     request: Request,
     principal: PrincipalDependency,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    group_id: str = Query(min_length=1, alias="groupId"),
+    page_number: int = Query(default=1, ge=1, alias="pageNumber"),
+    page_size: int = Query(default=20, ge=1, le=100, alias="pageSize"),
     name: str | None = None,
-    group_id: list[str] = Query(default=[]),
-    status: list[str] = Query(default=[]),
-    sort_by: str = "CreateTime",
-    sort_order: str = "Desc",
+    statuses: list[str] = Query(default=[]),
+    sort_by: str = Query(default="CreateTime", alias="sortBy"),
+    sort_order: str = Query(default="Desc", alias="sortOrder"),
 ) -> Response:
+    filters: dict[str, Any] = {"GroupIds": [group_id], "GroupType": "AIGC"}
+    if statuses:
+        filters["Statuses"] = statuses
+    if name:
+        filters["Name"] = name
     return await upstream(request, "ListAssets", {
-        "PageNumber": page,
+        "PageNumber": page_number,
         "PageSize": page_size,
         "SortBy": sort_by,
         "SortOrder": sort_order,
-        "Filter": {"GroupIds": group_id, "GroupType": "AIGC", "Statuses": status, "Name": name},
+        "Filter": filters,
     }, principal)
 
 
-@router.get("/assets/{asset_id}")
-async def get_asset(asset_id: str, request: Request, principal: PrincipalDependency) -> Response:
+@router.get("/asset/get")
+async def get_asset(
+    request: Request,
+    principal: PrincipalDependency,
+    asset_id: str = Query(min_length=1, alias="assetId"),
+) -> Response:
     return await upstream(request, "GetAsset", {"Id": asset_id}, principal)
 
 
-@router.patch("/assets/{asset_id}")
-async def update_asset(
-    asset_id: str, payload: AssetUpdate, request: Request, principal: PrincipalDependency
+@router.put("/asset/update")
+async def update_asset(payload: AssetUpdate, request: Request, principal: PrincipalDependency) -> Response:
+    return await upstream(request, "UpdateAsset", {"Id": payload.asset_id, "Name": payload.name}, principal)
+
+
+@router.delete("/asset/delete")
+async def delete_asset(
+    request: Request,
+    principal: PrincipalDependency,
+    asset_id: str = Query(min_length=1, alias="assetId"),
 ) -> Response:
-    return await upstream(request, "UpdateAsset", {"Id": asset_id, "Name": payload.name}, principal)
-
-
-@router.delete("/assets/{asset_id}")
-async def delete_asset(asset_id: str, request: Request, principal: PrincipalDependency) -> Response:
     return await upstream(request, "DeleteAsset", {"Id": asset_id}, principal)
+
+
+@router.post("/asset/upload-file")
+async def upload_asset_file(
+    request: Request,
+    principal: PrincipalDependency,
+    file: UploadFile = File(...),
+) -> dict[str, str | int]:
+    return await request.app.state.storage.upload_image(file, principal)

@@ -1,0 +1,45 @@
+services:
+  api:
+    build:
+      context: ../../backend
+      args:
+        PYTHON_BASE_IMAGE: docker.m.daocloud.io/library/python:3.12-slim
+        PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
+    env_file:
+      - /opt/avatar-proxy/shared/backend.env
+    volumes:
+      - /opt/avatar-proxy/data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  console:
+    build:
+      context: ../..
+      dockerfile: deploy/volcengine/Dockerfile.console
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_BASE_URL}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  edge:
+    build:
+      context: ../..
+      dockerfile: deploy/volcengine/Dockerfile.edge
+      args:
+        VITE_API_BASE_URL: ${PUBLIC_BASE_URL}
+        VITE_VIDEO_MODELS: ${VITE_VIDEO_MODELS:-doubao-seedance-2-0-260128|Doubao-Seedance-2.0}
+    ports:
+      - "8088:8080"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      console:
+        condition: service_started

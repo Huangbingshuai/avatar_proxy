@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -19,6 +20,7 @@ REGION = "cn-beijing"
 SERVICE = "ark"
 VERSION = "2024-01-01"
 HOST = "ark.cn-beijing.volcengineapi.com"
+logger = logging.getLogger(__name__)
 
 
 def _sha256(value: bytes) -> str:
@@ -39,6 +41,20 @@ class VolcengineClient:
         self.settings = settings
         self.database = database
         self.transport = transport
+        self._client: httpx.AsyncClient | None = None
+
+    def _http_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=self.settings.upstream_timeout_seconds,
+                transport=self.transport,
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     def _signed_request(self, action: str, payload: dict[str, Any], project_name: str) -> tuple[str, bytes, dict[str, str]]:
         access_key = self.settings.volcengine_access_key
@@ -81,12 +97,23 @@ class VolcengineClient:
         started = time.monotonic()
         url, body, headers = self._signed_request(action, payload, principal.project_name)
         try:
-            async with httpx.AsyncClient(
-                timeout=self.settings.upstream_timeout_seconds,
-                transport=self.transport,
-            ) as client:
-                upstream = await client.post(url, content=body, headers=headers)
+            upstream = await self._http_client().post(url, content=body, headers=headers)
         except httpx.RequestError as error:
+            duration_ms = round((time.monotonic() - started) * 1000)
+            self.database.log_request(
+                principal.id,
+                principal.project_name,
+                action,
+                502,
+                duration_ms,
+            )
+            logger.warning(
+                "Volcengine request failed: action=%s project=%s error=%s duration_ms=%s",
+                action,
+                principal.project_name,
+                type(error).__name__,
+                duration_ms,
+            )
             raise ApiError("无法连接火山引擎服务", 502, "upstream_unreachable") from error
 
         self.database.log_request(

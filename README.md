@@ -1,112 +1,145 @@
-# Avatar Proxy（前后端分离版）
+# Avatar Proxy
 
-火山方舟私域虚拟人像素材资产库的 API 网关与管理控制台。
+项目由三个独立部署单元组成：
 
 ```text
-浏览器 ──HTTP──> Next/Vinext 前端
-                    │
-                    └──HTTP──> Python FastAPI 后端 ──签名请求──> Volcengine Ark
-                                      │
-                                      └── SQLite（项目、API Key、调用日志）
+内部管理员浏览器
+  └─ 内部控制台（当前根目录的 Vinext/React 站点）
+       └─ X-Admin-Token ──> 独立 FastAPI API 服务器
+
+API 用户浏览器
+  └─ 用户视频门户（user-portal/）
+       └─ Authorization: Bearer vap_live_xxx ──> 独立 FastAPI API 服务器
+
+API 用户自己的程序
+  └─ Authorization: Bearer vap_live_xxx ──────> 独立 FastAPI API 服务器
+       ├─ AK/SK ──> 火山虚拟人像素材库
+       ├─ AK/SK ──> TOS 文件中转
+       └─ Ark API Key ──> Seedance 视频任务
 ```
+
+控制台不保存火山凭证，也不参与用户请求转发。用户只获得我方签发的 `vap_live_...`。
 
 ## 目录
 
-- `app/`：前端控制台，只包含界面和后端 HTTP 客户端。
-- `backend/`：Python FastAPI 后端，包含鉴权、SQLite、火山签名及接口代理。
-- `.env.example`：前端后端地址配置。
-- `backend/.env.example`：后端密钥、数据库和 CORS 配置。
+- `app/`：内部管理控制台，管理项目、API Key，并提供视频接口调试页。
+- `user-portal/`：面向用户独立部署的视频生成门户。
+- `backend/`：可独立构建和部署的 Python FastAPI 公网服务。
+- `backend/DEPLOYMENT.md`：API 服务器生产部署说明。
+- `backend/tests/`：鉴权、项目隔离、素材、TOS 和 Seedance 代理测试。
 
-## 1. 启动 Python 后端
+## 本地启动 API 服务器
 
-```bash
+```powershell
 cd backend
+Copy-Item .env.example .env
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-pip install -e ".[test]"
-copy .env.example .env
-uvicorn app.main:app --reload --port 8000
+.\.venv\Scripts\python.exe -m pip install -e ".[test]"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ```
 
-在 `backend/.env` 中配置：
+必须在 `backend/.env` 中配置：
 
-```text
-VOLCENGINE_ACCESS_KEY=火山引擎AK
-VOLCENGINE_SECRET_KEY=火山引擎SK
-CONSOLE_ADMIN_TOKEN=至少32位随机字符串
-DATABASE_PATH=./data/avatar_proxy.db
-CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+```dotenv
+VOLCENGINE_ACCESS_KEY=xxx
+VOLCENGINE_SECRET_KEY=xxx
+SEEDANCE_ARK_API_KEY=xxx
+CONSOLE_ADMIN_TOKEN=xxx
+CORS_ORIGINS=http://localhost:3000
+ENABLE_API_DOCS=false
 ```
 
-后端健康检查：`GET http://localhost:8000/health`
+`VOLCENGINE_ACCESS_KEY/SECRET_KEY` 用于素材库请求签名；`SEEDANCE_ARK_API_KEY` 用于视频生成，二者不能互相替代。
 
-Swagger 文档：`http://localhost:8000/docs`
+## 本地启动内部控制台
 
-也可以使用 Docker：
+根目录创建 `.env.local`：
 
-```bash
-docker compose up --build backend
-```
-
-## 2. 启动前端
-
-复制 `.env.example` 为 `.env.local`：
-
-```text
+```dotenv
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
-然后：
+然后运行：
 
-```bash
+```powershell
 npm install
 npm run dev
 ```
 
-打开控制台后使用后端的 `CONSOLE_ADMIN_TOKEN` 解锁。
+打开控制台后输入 `CONSOLE_ADMIN_TOKEN`。在“视频调试”页粘贴一枚已生成的业务 API Key，即可创建、轮询和取消 Seedance 任务，不需要进入 Swagger。
 
-## 业务接口
+## 本地启动用户门户
 
-所有接口使用：
+```powershell
+cd user-portal
+Copy-Item .env.example .env.local
+npm install
+npm run dev
+```
 
-```text
+默认访问 `http://localhost:3002`。用户门户只使用 `vap_live_...`，不接受管理令牌，也不包含项目和 API Key 管理功能。
+
+## 用户视频接口
+
+所有用户接口统一使用：
+
+```http
 Authorization: Bearer vap_live_xxx
 Content-Type: application/json
 ```
 
-| 方法 | 路径 | 上游 Action |
-| --- | --- | --- |
-| POST / GET | `/api/v1/asset-groups` | CreateAssetGroup / ListAssetGroups |
-| GET / PATCH / DELETE | `/api/v1/asset-groups/{id}` | Get / Update / DeleteAssetGroup |
-| POST / GET | `/api/v1/assets` | CreateAsset / ListAssets |
-| GET / PATCH / DELETE | `/api/v1/assets/{id}` | Get / Update / DeleteAsset |
+创建任务：
 
-后端固定使用官网参数：
+```http
+POST /api/video/generate
+```
 
-- Service：`ark`
-- Region：`cn-beijing`
-- Version：`2024-01-01`
-- GroupType：`AIGC`
-- `ProjectName`：从调用方 API Key 自动注入，客户端不能覆盖。
+```json
+{
+  "model": "doubao-seedance-2-0-260128",
+  "content": [
+    {"type": "text", "text": "一只橘猫坐在窗边看雨"}
+  ],
+  "ratio": "16:9",
+  "duration": 5,
+  "generateAudio": true,
+  "returnLastFrame": false
+}
+```
 
-## 安全设计
+查询与取消：
 
-- 火山 AK/SK 只存在 Python 后端环境变量中。
-- API Key 仅保存 SHA-256 哈希，完整值只在创建时返回一次。
-- 项目由 API Key 强制绑定，防止跨项目访问。
-- 请求日志不保存业务请求体。
-- 控制台管理接口使用独立的 `X-Admin-Token`。
-- CORS 仅允许 `CORS_ORIGINS` 中配置的前端域名。
+```http
+GET  /api/video/task/{taskId}
+POST /api/video/task/{taskId}/cancel
+```
+
+参考人像素材可以使用公网图片 URL，或使用 `asset://<完整素材ID>`。例如素材 ID 为 `asset-20260811093724-drv67` 时，写成：
+
+```json
+{"type": "image_url", "image_url": {"url": "asset://asset-20260811093724-drv67"}}
+```
+
+不要写成 `asset://asset-asset-...`。
+
+## 其他业务接口
+
+- 素材组：`/api/asset-group/create|list|get|update|delete`
+- 人像素材：`/api/asset/create|list|get|update|delete`
+- 文件中转：`POST /api/asset/upload-file`
+- 内部项目：`/api/internal/project/create|list`
+- 内部 API Key：`/api/internal/apikey/create|list|disable|bind-project`
+
+项目绑定会由服务端注入到火山素材库请求的 `ProjectName`；用户不能在请求体中覆盖。
 
 ## 测试
 
-```bash
+```powershell
 npm test
 npm run lint
 
 cd backend
-pytest
+.\.venv\Scripts\python.exe -m pytest --basetemp .pytest-tmp
 ```
 
-官方参考：[私域虚拟人像素材资产库使用指南](https://docs.volcengine.com/docs/82379/2333565?lang=zh)。
+官方参考：[虚拟人像素材资产库](https://docs.volcengine.com/docs/82379/2333565?lang=zh)
