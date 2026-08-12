@@ -32,7 +32,7 @@ def create_project(payload: ProjectCreate, request: Request, _: AdminDependency)
 
 @router.delete("/project/delete")
 def delete_project(payload: ProjectDelete, request: Request, _: AdminDependency) -> dict:
-    if payload.name == DEFAULT_PROJECT_NAME:
+    if payload.name.casefold() == DEFAULT_PROJECT_NAME.casefold():
         raise ApiError("默认项目 avatar-proxy 不能删除", 400, "default_project_protected")
     moved_key_count = database(request).delete_project(payload.name)
     if moved_key_count is None:
@@ -53,17 +53,17 @@ def list_api_keys(request: Request, _: AdminDependency) -> dict:
 @router.post("/apikey/create", status_code=status.HTTP_201_CREATED)
 def create_api_key(payload: ApiKeyCreate, request: Request, _: AdminDependency) -> dict:
     db = database(request)
-    db.ensure_project(payload.project_name)
+    project_name = db.ensure_project(payload.project_name)
     secret = generate_api_key()
     key_id = generate_key_id()
     prefix = f"{secret[:16]}…"
-    db.create_api_key(key_id, payload.name.strip(), prefix, hash_api_key(secret), payload.project_name)
+    db.create_api_key(key_id, payload.name.strip(), prefix, hash_api_key(secret), project_name)
     return {
         "apiKey": {
             "id": key_id,
             "name": payload.name.strip(),
             "keyPrefix": prefix,
-            "projectName": payload.project_name,
+            "projectName": project_name,
             "status": "active",
         },
         "secret": secret,
@@ -100,10 +100,10 @@ def delete_api_key(payload: ApiKeyDelete, request: Request, _: AdminDependency) 
 @router.post("/apikey/bind-project")
 def bind_api_key_project(payload: ApiKeyBindProject, request: Request, _: AdminDependency) -> dict:
     db = database(request)
-    db.ensure_project(payload.project_name)
-    if not db.bind_api_key_project(payload.key_id, payload.project_name):
+    project_name = db.ensure_project(payload.project_name)
+    if not db.bind_api_key_project(payload.key_id, project_name):
         raise ApiError("API Key 不存在", 404, "api_key_not_found")
-    return {"bound": True, "keyId": payload.key_id, "projectName": payload.project_name}
+    return {"bound": True, "keyId": payload.key_id, "projectName": project_name}
 
 
 @router.get("/overview")

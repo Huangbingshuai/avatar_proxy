@@ -1,8 +1,10 @@
 import json
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import pytest
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
@@ -131,7 +133,7 @@ def test_delete_project_moves_keys_to_avatar_proxy_and_protects_default(tmp_path
             "DELETE",
             "/api/internal/project/delete",
             headers=ADMIN_HEADERS,
-            json={"name": "avatar-proxy"},
+            json={"name": "AVATAR-PROXY"},
         )
 
     assert deleted.status_code == 200
@@ -173,6 +175,123 @@ def test_internal_bind_project_and_disable_key(tmp_path: Path) -> None:
             headers={"Authorization": f"Bearer {secret}"},
         )
         assert after_disable.status_code == 401
+
+
+def test_project_name_rules_match_volcengine_and_are_case_insensitive(tmp_path: Path) -> None:
+    project_name = "XinChuang8.0"
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client, project_name)
+        duplicate = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": "xinchuang8.0", "displayName": "重复项目"},
+        )
+        assert duplicate.status_code == 409
+
+        key_id, secret = create_key(client, "XINCHUANG8.0")
+        keys = client.get("/api/internal/apikey/list", headers=ADMIN_HEADERS).json()["apiKeys"]
+        assert next(key for key in keys if key["id"] == key_id)["projectName"] == project_name
+
+        app.state.volcengine = FakeVolcengine()
+        asset_groups = client.get(
+            "/api/asset-group/list",
+            headers={"Authorization": f"Bearer {secret}"},
+        )
+        assert asset_groups.status_code == 200
+        assert asset_groups.json()["projectName"] == project_name
+
+        rebound = client.post(
+            "/api/internal/apikey/bind-project",
+            headers=ADMIN_HEADERS,
+            json={"keyId": key_id, "projectName": "xinchuang8.0"},
+        )
+        assert rebound.status_code == 200
+        assert rebound.json()["projectName"] == project_name
+
+        deleted = client.request(
+            "DELETE",
+            "/api/internal/project/delete",
+            headers=ADMIN_HEADERS,
+            json={"name": "xinchuang8.0"},
+        )
+        assert deleted.status_code == 200
+
+
+@pytest.mark.parametrize("name", ["a", "A.Z-_9", "a" * 64])
+def test_volcengine_project_name_valid_boundaries_are_accepted(tmp_path: Path, name: str) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": name, "displayName": "", "description": "d" * 128},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["project"]["name"] == name
+    assert response.json()["project"]["displayName"] == name
+
+
+@pytest.mark.parametrize("name", ["", "a" * 65, "中文项目", "has space", "has/slash", "name@company"])
+def test_non_volcengine_project_names_are_rejected(tmp_path: Path, name: str) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": name, "displayName": "测试"},
+        )
+
+    assert response.status_code == 422
+
+
+def test_volcengine_project_metadata_length_limits(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        display_name_too_long = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": "display-limit", "displayName": "显" * 65},
+        )
+        description_too_long = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": "description-limit", "description": "d" * 129},
+        )
+
+    assert display_name_too_long.status_code == 422
+    assert description_too_long.status_code == 422
+
+
+def test_existing_database_gains_case_insensitive_project_names(tmp_path: Path) -> None:
+    database_path = tmp_path / "existing.db"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("""
+            CREATE TABLE projects (
+                name TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        connection.execute(
+            "INSERT INTO projects (name, display_name) VALUES (?, ?)",
+            ("Legacy.Project", "旧项目"),
+        )
+
+    app = create_app(settings(database_path))
+    with TestClient(app) as client:
+        duplicate = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": "legacy.project", "displayName": "重复项目"},
+        )
+        key_id, _ = create_key(client, "LEGACY.PROJECT")
+        keys = client.get("/api/internal/apikey/list", headers=ADMIN_HEADERS).json()["apiKeys"]
+
+    assert duplicate.status_code == 409
+    assert next(key for key in keys if key["id"] == key_id)["projectName"] == "Legacy.Project"
 
 
 def test_api_key_can_only_be_deleted_after_it_is_disabled(tmp_path: Path) -> None:

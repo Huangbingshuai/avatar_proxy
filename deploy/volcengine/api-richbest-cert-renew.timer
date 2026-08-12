@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly TLS certificate renewal check for api.richbest.cn
+
+[Timer]
+OnCalendar=Sun *-*-* 03:17:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

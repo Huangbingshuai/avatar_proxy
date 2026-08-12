@@ -284,9 +284,9 @@ export default function ConsolePage() {
       </form></div>}
 
       {showProjectForm && <Modal title="新建项目" onClose={() => setShowProjectForm(false)}><form onSubmit={createProject} className="stackForm">
-        <label>显示名称<input required value={projectForm.displayName} onChange={(event) => setProjectForm({ ...projectForm, displayName: event.target.value })} placeholder="短剧生产" /></label>
-        <label>火山 ProjectName<input required value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} placeholder="drama_prod" /></label>
-        <label>描述<textarea value={projectForm.description} onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })} placeholder="用于生产环境的人像素材与视频任务" /></label>
+        <label>显示名称<input maxLength={64} value={projectForm.displayName} onChange={(event) => setProjectForm({ ...projectForm, displayName: event.target.value })} placeholder="短剧生产（选填，最多 64 个字符）" /></label>
+        <label>火山 ProjectName<input required minLength={1} maxLength={64} pattern="[A-Za-z0-9._-]+" title="1～64 个字符，仅允许英文字母、数字、英文句点、下划线和连字符" value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} placeholder="例如 xinchuang8.0" /></label>
+        <label>描述<textarea maxLength={128} value={projectForm.description} onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })} placeholder="选填，最多 128 个字符" /></label>
         <button className="primary wide">创建项目</button>
       </form></Modal>}
 

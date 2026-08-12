@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS video_tasks (
     PRIMARY KEY(api_key_id, task_id)
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_project_status ON api_keys(project_name, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_name_nocase ON projects(name COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON request_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_video_usage_api_key_created_at ON video_usage(api_key_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_video_tasks_api_key_created_at ON video_tasks(api_key_id, created_at DESC);
@@ -133,32 +134,55 @@ class Database:
             )
         return {"name": name, "displayName": display_name, "description": description}
 
+    def resolve_project_name(self, name: str) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT name FROM projects WHERE name = ? COLLATE NOCASE",
+                (name,),
+            ).fetchone()
+        return row["name"] if row else None
+
     def delete_project(self, name: str) -> int | None:
         with self.connect() as connection:
-            if connection.execute("SELECT 1 FROM projects WHERE name = ?", (name,)).fetchone() is None:
+            row = connection.execute(
+                "SELECT name FROM projects WHERE name = ? COLLATE NOCASE",
+                (name,),
+            ).fetchone()
+            if row is None:
                 return None
+            canonical_name = row["name"]
             cursor = connection.execute(
                 "UPDATE api_keys SET project_name = ? WHERE project_name = ?",
-                (DEFAULT_PROJECT_NAME, name),
+                (DEFAULT_PROJECT_NAME, canonical_name),
             )
             for table in ("request_logs", "video_usage", "video_tasks"):
                 connection.execute(
                     f"UPDATE {table} SET project_name = ? WHERE project_name = ?",
-                    (DEFAULT_PROJECT_NAME, name),
+                    (DEFAULT_PROJECT_NAME, canonical_name),
                 )
-            connection.execute("DELETE FROM projects WHERE name = ?", (name,))
+            connection.execute("DELETE FROM projects WHERE name = ?", (canonical_name,))
         return cursor.rowcount
 
-    def ensure_project(self, name: str) -> None:
+    def ensure_project(self, name: str) -> str:
         with self.connect() as connection:
             connection.execute(
-                "INSERT INTO projects (name, display_name) VALUES (?, ?) ON CONFLICT(name) DO NOTHING",
+                "INSERT INTO projects (name, display_name) VALUES (?, ?) ON CONFLICT DO NOTHING",
                 (name, name),
             )
+            row = connection.execute(
+                "SELECT name FROM projects WHERE name = ? COLLATE NOCASE",
+                (name,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("项目创建后无法读取")
+        return row["name"]
 
     def project_exists(self, name: str) -> bool:
         with self.connect() as connection:
-            return connection.execute("SELECT 1 FROM projects WHERE name = ?", (name,)).fetchone() is not None
+            return connection.execute(
+                "SELECT 1 FROM projects WHERE name = ? COLLATE NOCASE",
+                (name,),
+            ).fetchone() is not None
 
     def list_api_keys(self) -> list[dict[str, Any]]:
         with self.connect() as connection:

@@ -26,6 +26,7 @@ API 用户自己的程序
 - `user-portal/`：面向用户独立部署的视频生成门户。
 - `backend/`：可独立构建和部署的 Python FastAPI 公网服务。
 - `backend/DEPLOYMENT.md`：API 服务器生产部署说明。
+- `backend/CLIENT_API.md`：面向客户程序与批量任务的业务 API 接入文档。
 - `backend/tests/`：鉴权、项目隔离、素材、TOS 和 Seedance 代理测试。
 
 ## 本地启动 API 服务器

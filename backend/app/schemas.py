@@ -1,6 +1,9 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+PROJECT_NAME_PATTERN = r"^[A-Za-z0-9._-]+$"
 
 
 def to_camel(value: str) -> str:
@@ -13,18 +16,26 @@ class ApiModel(BaseModel):
 
 
 class ProjectCreate(ApiModel):
-    name: str = Field(min_length=2, max_length=63, pattern=r"^[a-z][a-z0-9_-]+$")
-    display_name: str | None = Field(default=None, max_length=100)
-    description: str = Field(default="", max_length=500)
+    name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+    description: str = Field(default="", max_length=128)
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def validate_display_name(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        return stripped or None
 
 
 class ProjectDelete(ApiModel):
-    name: str = Field(min_length=2, max_length=63, pattern=r"^[a-z][a-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
 
 
 class ApiKeyCreate(ApiModel):
     name: str = Field(min_length=1, max_length=100)
-    project_name: str = Field(default="avatar-proxy", min_length=2, max_length=63, pattern=r"^[a-z][a-z0-9_-]+$")
+    project_name: str = Field(default="avatar-proxy", min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
 
 
 class ApiKeyDisable(ApiModel):
@@ -41,7 +52,7 @@ class ApiKeyDelete(ApiModel):
 
 class ApiKeyBindProject(ApiModel):
     key_id: str = Field(min_length=1)
-    project_name: str = Field(min_length=2, max_length=63, pattern=r"^[a-z][a-z0-9_-]+$")
+    project_name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
 
 
 class AssetGroupCreate(ApiModel):
