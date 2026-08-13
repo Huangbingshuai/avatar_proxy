@@ -104,8 +104,8 @@ curl "$BASE_URL/api/auth/me" \
 
 1. 调用 `/api/auth/me` 验证业务 API Key；
 2. 调用 `/api/asset-group/create` 创建素材组并保存素材组 ID；
-3. 调用 `/api/asset/upload-file` 上传本地图片并取得 `url`；
-4. 调用 `/api/asset/create`，使用素材组 ID 和上传结果中的 `url` 登记素材；
+3. 调用 `/api/asset/upload-file` 上传本地图片并取得 `url` 与 `uploadId`；
+4. 调用 `/api/asset/create`，使用素材组 ID、`url` 和 `uploadId` 登记素材；
 5. 调用 `/api/asset/get` 或 `/api/asset/list` 查询素材处理状态；
 6. 保存返回的素材 ID，后续查询、修改和删除都需要使用该 ID。
 
@@ -132,6 +132,7 @@ curl -X POST "$BASE_URL/api/asset/upload-file" \
 ```json
 {
   "url": "https://cdn.example.com/avatar-assets/customer_project/xxx-portrait.png",
+  "uploadId": "upload_0123456789abcdef",
   "objectKey": "avatar-assets/customer_project/xxx-portrait.png",
   "contentType": "image/png",
   "size": 284931,
@@ -140,7 +141,7 @@ curl -X POST "$BASE_URL/api/asset/upload-file" \
 }
 ```
 
-后续登记素材时使用响应中的 `url`。
+后续登记素材时建议同时使用响应中的 `url` 和 `uploadId`。未注册成功的上传文件保留 48 小时，之后由服务端自动清理。
 
 ## 7. 素材组接口
 
@@ -224,6 +225,7 @@ curl -X POST "$BASE_URL/api/asset/create" \
   -d '{
     "groupId": "group-xxxxxxxx",
     "url": "https://cdn.example.com/avatar-assets/customer_project/xxx-portrait.png",
+    "uploadId": "upload_0123456789abcdef",
     "name": "角色正面照"
   }'
 ```
@@ -234,7 +236,10 @@ curl -X POST "$BASE_URL/api/asset/create" \
 |---|---:|---|
 | `groupId` | 是 | 目标素材组 ID |
 | `url` | 是 | HTTP(S) 图片 URL，可直接使用上传接口返回的 `url` |
+| `uploadId` | 否 | 本系统上传接口返回的关联 ID；新客户端建议传递 |
 | `name` | 否 | 素材名称，最多 128 个字符 |
+
+`uploadId` 只能由上传它的同一项目、同一枚 API Key 使用，并且 `url` 必须与上传响应完全一致；否则返回 `409 upload_url_mismatch`。旧客户端可以继续只传 `url`。客户直接提供的公网 URL 不计入本系统 TOS 存储量。
 
 当前接口固定将素材类型登记为图片，客户不需要传 `assetType` 或 `projectName`。
 
@@ -360,6 +365,25 @@ with ThreadPoolExecutor(max_workers=3) as executor:
 }
 ```
 
+写入 QPM、并发或素材额度达到硬上限时返回 `429`：
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "额度已用尽",
+    "metric": "dailyUploadBytes",
+    "scope": "api_key",
+    "limit": 1073741824,
+    "used": 1073741824,
+    "resetAt": "2026-08-14T00:00:00+08:00",
+    "requestId": "req_xxxxxxxxxxxxxxxx"
+  }
+}
+```
+
+自然分钟或自然日可恢复的限制同时返回 `Retry-After`；素材总数、TOS 总存储等无固定恢复时间的限制可能返回 `resetAt: null`。查询 QPM 达到 70%、90%、100% 只记录服务端告警，不阻断查询。
+
 | HTTP 状态 | 含义 | 建议 |
 |---:|---|---|
 | `400` | 请求内容不合法 | 修改请求，不要自动重试 |
@@ -368,7 +392,7 @@ with ThreadPoolExecutor(max_workers=3) as executor:
 | `413` | 上传图片超过限制 | 压缩图片后重试 |
 | `415` | 图片格式不支持 | 改用 JPEG、PNG 或 WebP |
 | `422` | 参数校验失败 | 根据响应中的 `detail` 修改参数 |
-| `429` | 请求频率过高 | 指数退避后有限重试 |
+| `429` | 本系统或上游的频率、并发或额度限制 | 有 `Retry-After` 时按其退避；无恢复时间时停止重试并联系技术支持 |
 | `502` | 上游素材或存储服务请求失败 | 指数退避后有限重试 |
 | `503` | 对应服务未配置或暂不可用 | 联系技术支持，不要持续重试 |
 

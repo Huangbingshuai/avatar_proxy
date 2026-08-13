@@ -74,6 +74,7 @@ code, pre, .mono { font-family: var(--font-geist-mono), Consolas, monospace; }
 .wide { width: 100%; }
 
 .statGrid { margin: 22px 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.riskStats { margin-top: -8px; }
 .stat { padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
 .stat > div { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
 .stat svg { color: #78a38f; }
@@ -126,6 +127,52 @@ code, pre, .mono { font-family: var(--font-geist-mono), Consolas, monospace; }
 .enableKeyButton:hover { border-color: #8ebda2; background: #e4f5eb; }
 .deleteKeyButton { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; border: 1px solid #efcbc4; border-radius: 8px; color: #ad4033; background: #fff6f3; font-size: 10px; cursor: pointer; }
 .deleteKeyButton:hover { border-color: #e7a99d; background: #ffebe6; }
+
+.quotaConsole { display: grid; gap: 20px; }
+.quotaConsole .pageIntro { margin-bottom: 0; }
+.quotaMode { padding: 8px 12px; border-radius: 999px; font-size: 10px; font-weight: 850; letter-spacing: .4px; }
+.quotaMode.open { color: #6f6554; background: #eeeae1; }
+.quotaMode.guarded { color: #28634d; background: #def1e7; box-shadow: 0 0 0 4px rgba(72,145,108,.08); }
+.quotaSelector { padding: 18px 20px; display: grid; grid-template-columns: minmax(260px, 1fr) auto; align-items: end; gap: 24px; border: 1px solid #dfe5de; border-radius: 15px; background: linear-gradient(90deg, #f9fbf8, #fffaf4); }
+.quotaSelector label { max-width: 520px; }
+.quotaSelector > div { min-width: 130px; text-align: right; }
+.quotaSelector > div b, .quotaSelector > div span { display: block; }
+.quotaSelector > div b { font-family: Georgia, serif; color: var(--coral-dark); font-size: 28px; }
+.quotaSelector > div span { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.quotaMeters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.quotaMeter { padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--card); }
+.quotaMeter > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.quotaMeter span { color: var(--muted); font-size: 10px; font-weight: 750; }
+.quotaMeter b { font-family: Georgia, serif; font-size: 18px; }
+.quotaMeter small { color: #90958e; font-size: 9px; }
+.meterTrack { height: 5px; margin: 12px 0 8px; overflow: hidden; border-radius: 99px; background: #ecece6; }
+.meterTrack i { height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg, #4d8b70, var(--coral)); transition: width .25s ease; }
+.quotaEditGrid { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 16px; }
+.quotaForm { overflow: hidden; }
+.quotaForm > button { margin: 0 20px 20px; }
+.compactToggle { display: flex; align-items: center; gap: 7px; }
+.compactToggle input { width: 17px; height: 17px; accent-color: var(--green); }
+.compactToggle span { font-size: 11px; }
+.quotaFieldGrid { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.quotaFieldGrid input { padding: 9px 10px; }
+.keyQuotaSelect { padding: 18px 20px 0; }
+.quotaMessage { padding: 11px 14px; border: 1px solid #cde0d5; border-radius: 10px; color: #315d49; background: #f0f8f4; font-size: 12px; }
+.quotaEvents { overflow: hidden; }
+.quotaEvent { min-height: 64px; padding: 12px 18px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border-top: 1px solid #efeee9; }
+.quotaEvent.acknowledged { opacity: .58; }
+.eventMark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; color: #a96722; background: #fff2d9; }
+.quotaEvent b, .quotaEvent small { display: block; }
+.quotaEvent b { font-size: 12px; }
+.quotaEvent small { margin-top: 4px; color: var(--muted); font-size: 10px; }
+.quotaEvent > i { color: #6f766f; font-size: 10px; font-style: normal; }
+.quotaEvent button { min-height: 32px; padding: 0 10px; font-size: 10px; }
+.quotaBottomGrid { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 16px; }
+.quotaLedger { overflow: hidden; }
+.ledgerRow { min-height: 62px; padding: 12px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; border-top: 1px solid #efeee9; }
+.ledgerRow b, .ledgerRow small { display: block; }
+.ledgerRow b { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.ledgerRow small { margin-top: 5px; color: var(--muted); font-size: 9px; }
+.ledgerRow > span { padding: 5px 8px; border-radius: 999px; color: #7b5741; background: #fff1e7; font-size: 9px; white-space: nowrap; }
 
 .playgroundLayout { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(360px, .92fr); align-items: start; gap: 18px; }
 .generatorForm { padding: 22px; display: grid; gap: 18px; }
@@ -206,6 +253,9 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .statGrid { grid-template-columns: repeat(2, 1fr); }
   .cardGrid { grid-template-columns: repeat(2, 1fr); }
   .playgroundLayout { grid-template-columns: 1fr; }
+  .quotaMeters { grid-template-columns: repeat(2, 1fr); }
+  .quotaEditGrid { grid-template-columns: 1fr; }
+  .quotaBottomGrid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
@@ -224,4 +274,7 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .statGrid, .cardGrid { grid-template-columns: 1fr; }
   .pageIntro { align-items: flex-start; }
   .formGrid { grid-template-columns: 1fr; }
+  .quotaMeters, .quotaFieldGrid { grid-template-columns: 1fr; }
+  .quotaSelector { grid-template-columns: 1fr; }
+  .quotaSelector > div { text-align: left; }
 }

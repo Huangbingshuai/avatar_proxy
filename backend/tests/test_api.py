@@ -1,5 +1,7 @@
 import json
 import sqlite3
+import asyncio
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.storage import tos
 
 
 ADMIN_HEADERS = {"x-admin-token": "test-admin", "content-type": "application/json"}
@@ -142,6 +145,31 @@ def test_delete_project_moves_keys_to_avatar_proxy_and_protects_default(tmp_path
     assert next(key for key in keys if key["id"] == key_id)["projectName"] == "avatar-proxy"
     assert protected.status_code == 400
     assert protected.json()["error"]["code"] == "default_project_protected"
+
+
+def test_delete_project_preserves_asset_ledger_in_default_project(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        key_id, _ = create_key(client)
+        app.state.database.create_asset_record(
+            "asset-record", "drama_prod", key_id, "tos", "https://cdn.example.com/asset.png",
+            bucket="test-bucket", object_key="avatar-assets/drama_prod/asset.png", size_bytes=12,
+            status="active", group_id="group-1",
+        )
+        app.state.database.update_asset_record("asset-record", "active", asset_id="asset-preserved")
+        deleted = client.request(
+            "DELETE", "/api/internal/project/delete", headers=ADMIN_HEADERS, json={"name": "drama_prod"},
+        )
+        usage = client.get(
+            "/api/internal/quota/usage", headers=ADMIN_HEADERS, params={"projectName": "avatar-proxy"},
+        ).json()["usage"]
+        record = app.state.database.find_asset_by_asset_id("avatar-proxy", "asset-preserved")
+
+    assert deleted.status_code == 200
+    assert record is not None
+    assert usage["totalAssets"] == 1
+    assert usage["totalStorageBytes"] == 12
 
 
 def test_internal_bind_project_and_disable_key(tmp_path: Path) -> None:
@@ -738,3 +766,366 @@ def test_upload_file_rejects_placeholder_bucket(tmp_path: Path) -> None:
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "tos_not_configured"
+
+
+def test_project_write_qpm_is_hard_limited_and_defaults_to_unlimited(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        app.state.volcengine = FakeVolcengine()
+        auth = {"Authorization": f"Bearer {secret}"}
+
+        unlimited = client.post("/api/asset-group/create", headers=auth, json={"name": "first"})
+        quota = client.put(
+            "/api/internal/project/quota",
+            headers=ADMIN_HEADERS,
+            json={"projectName": "drama_prod", "enabled": True, "writeQpm": 1},
+        )
+        first = client.post("/api/asset-group/create", headers=auth, json={"name": "second"})
+        limited = client.post("/api/asset-group/create", headers=auth, json={"name": "third"})
+
+    assert unlimited.status_code == 200
+    assert quota.status_code == 200
+    assert first.status_code == 200
+    assert limited.status_code == 429
+    assert limited.json()["error"]["metric"] == "writeQpm"
+    assert int(limited.headers["retry-after"]) >= 1
+
+
+def test_read_qpm_only_creates_deduplicated_alerts(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        app.state.volcengine = FakeVolcengine()
+        client.put(
+            "/api/internal/project/quota",
+            headers=ADMIN_HEADERS,
+            json={"projectName": "drama_prod", "enabled": True, "readQpm": 1},
+        )
+        auth = {"Authorization": f"Bearer {secret}"}
+        responses = [client.get("/api/asset-group/list", headers=auth) for _ in range(3)]
+        events = client.get("/api/internal/quota/events", headers=ADMIN_HEADERS).json()["events"]
+
+    assert all(response.status_code == 200 for response in responses)
+    read_events = [event for event in events if event["metric"] == "read_qpm"]
+    assert {event["threshold"] for event in read_events} == {70, 90, 100}
+    assert len(read_events) == 3
+
+
+def test_api_key_subquota_cannot_exceed_project_quota(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        key_id, _ = create_key(client)
+        client.put(
+            "/api/internal/project/quota",
+            headers=ADMIN_HEADERS,
+            json={"projectName": "drama_prod", "enabled": True, "writeQpm": 10},
+        )
+        response = client.put(
+            "/api/internal/apikey/quota",
+            headers=ADMIN_HEADERS,
+            json={"keyId": key_id, "writeQpm": 11},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "key_quota_exceeds_project"
+
+
+def test_upload_id_is_scoped_to_the_creating_api_key(tmp_path: Path, monkeypatch) -> None:
+    class FakeTosClient:
+        def __init__(self, *args):
+            pass
+
+        def put_object(self, *args, **kwargs):
+            return SimpleNamespace(etag="etag", request_id="request")
+
+    monkeypatch.setattr("app.storage.tos.TosClientV2", FakeTosClient)
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, first_secret = create_key(client)
+        _, second_secret = create_key(client)
+        upload = client.post(
+            "/api/asset/upload-file",
+            headers={"Authorization": f"Bearer {first_secret}"},
+            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+        ).json()
+        response = client.post(
+            "/api/asset/create",
+            headers={"Authorization": f"Bearer {second_secret}"},
+            json={"groupId": "group-1", "url": upload["url"], "uploadId": upload["uploadId"]},
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "upload_not_found"
+
+
+def test_upload_id_rejects_a_different_url(tmp_path: Path, monkeypatch) -> None:
+    class FakeTosClient:
+        def __init__(self, *args):
+            pass
+
+        def put_object(self, *args, **kwargs):
+            return SimpleNamespace(etag="etag", request_id="request")
+
+    monkeypatch.setattr("app.storage.tos.TosClientV2", FakeTosClient)
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        auth = {"Authorization": f"Bearer {secret}"}
+        upload = client.post(
+            "/api/asset/upload-file",
+            headers=auth,
+            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+        ).json()
+        response = client.post(
+            "/api/asset/create",
+            headers=auth,
+            json={
+                "groupId": "group-1",
+                "url": "https://example.com/a-different-object.png",
+                "uploadId": upload["uploadId"],
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "upload_url_mismatch"
+
+
+def test_deleting_registered_tos_asset_deletes_object_and_releases_storage(tmp_path: Path, monkeypatch) -> None:
+    deleted = []
+
+    class FakeTosClient:
+        def __init__(self, *args):
+            pass
+
+        def put_object(self, *args, **kwargs):
+            return SimpleNamespace(etag="etag", request_id="request")
+
+        def delete_object(self, bucket, key):
+            deleted.append((bucket, key))
+            return SimpleNamespace(status_code=204)
+
+    class AssetVolcengine:
+        async def call(self, action, payload, principal):
+            if action == "CreateAsset":
+                return JSONResponse({"Result": {"AssetId": "asset-created"}})
+            return JSONResponse({"ok": True})
+
+    monkeypatch.setattr("app.storage.tos.TosClientV2", FakeTosClient)
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        app.state.volcengine = AssetVolcengine()
+        auth = {"Authorization": f"Bearer {secret}"}
+        upload = client.post(
+            "/api/asset/upload-file",
+            headers=auth,
+            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+        ).json()
+        created = client.post(
+            "/api/asset/create",
+            headers=auth,
+            json={"groupId": "group-1", "url": upload["url"], "uploadId": upload["uploadId"]},
+        )
+        before = client.get(
+            "/api/internal/quota/usage", headers=ADMIN_HEADERS, params={"projectName": "drama_prod"}
+        ).json()
+        removed = client.delete("/api/asset/delete", headers=auth, params={"assetId": "asset-created"})
+        after = client.get(
+            "/api/internal/quota/usage", headers=ADMIN_HEADERS, params={"projectName": "drama_prod"}
+        ).json()
+
+    assert created.status_code == 200
+    assert removed.status_code == 200
+    assert before["usage"]["totalStorageBytes"] == 12
+    assert after["usage"]["totalStorageBytes"] == 0
+    assert len(deleted) == 1
+
+
+def test_pending_upload_older_than_48_hours_is_cleaned(tmp_path: Path, monkeypatch) -> None:
+    deleted = []
+
+    class FakeTosClient:
+        def __init__(self, *args):
+            pass
+
+        def delete_object(self, bucket, key):
+            deleted.append((bucket, key))
+            return SimpleNamespace(status_code=204)
+
+    monkeypatch.setattr("app.storage.tos.TosClientV2", FakeTosClient)
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app):
+        app.state.database.create_asset_record(
+            "upload-old", "avatar-proxy", "key-old", "tos", "https://cdn.example.com/old.png",
+            bucket="test-bucket", object_key="avatar-assets/avatar-proxy/old.png", size_bytes=10,
+        )
+        with app.state.database.connect() as connection:
+            connection.execute(
+                "UPDATE asset_records SET created_at=? WHERE record_id='upload-old'",
+                ((datetime.utcnow() - timedelta(hours=49)).strftime("%Y-%m-%d %H:%M:%S"),),
+            )
+        cleaned = asyncio.run(app.state.storage.cleanup_once())
+        record = app.state.database.get_asset_record("upload-old")
+
+    assert cleaned == 1
+    assert record["status"] == "deleted"
+    assert deleted == [("test-bucket", "avatar-assets/avatar-proxy/old.png")]
+
+
+def test_existing_database_upgrades_without_losing_projects_or_keys(tmp_path: Path) -> None:
+    database_path = tmp_path / "test.db"
+    first_app = create_app(settings(database_path))
+    with TestClient(first_app) as client:
+        create_project(client)
+        key_id, secret = create_key(client)
+
+    risk_tables = (
+        "quota_events", "admin_audit_logs", "asset_records", "quota_reservations",
+        "quota_usage_windows", "api_key_quotas", "project_quotas",
+    )
+    with first_app.state.database.connect() as connection:
+        for table in risk_tables:
+            connection.execute(f"DROP TABLE {table}")
+
+    upgraded_app = create_app(settings(database_path))
+    with TestClient(upgraded_app) as client:
+        projects = client.get("/api/internal/project/list", headers=ADMIN_HEADERS).json()["projects"]
+        keys = client.get("/api/internal/apikey/list", headers=ADMIN_HEADERS).json()["apiKeys"]
+        login = client.get("/api/auth/me", headers={"Authorization": f"Bearer {secret}"})
+        quota = client.get(
+            "/api/internal/project/quota", headers=ADMIN_HEADERS, params={"projectName": "drama_prod"}
+        )
+
+    assert any(project["name"] == "drama_prod" for project in projects)
+    assert any(key["id"] == key_id for key in keys)
+    assert login.status_code == 200
+    assert quota.json()["quota"]["enabled"] is False
+
+
+def test_api_key_subquota_takes_effect_immediately(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        key_id, secret = create_key(client)
+        app.state.volcengine = FakeVolcengine()
+        client.put(
+            "/api/internal/project/quota",
+            headers=ADMIN_HEADERS,
+            json={"projectName": "drama_prod", "enabled": True, "writeQpm": 10},
+        )
+        configured = client.put(
+            "/api/internal/apikey/quota",
+            headers=ADMIN_HEADERS,
+            json={"keyId": key_id, "writeQpm": 1},
+        )
+        auth = {"Authorization": f"Bearer {secret}"}
+        first = client.post("/api/asset-group/create", headers=auth, json={"name": "first"})
+        second = client.post("/api/asset-group/create", headers=auth, json={"name": "second"})
+        audits = client.get("/api/internal/quota/audits", headers=ADMIN_HEADERS).json()["audits"]
+
+    assert configured.status_code == 200
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["error"]["scope"] == "api_key"
+    assert {audit["action"] for audit in audits} == {"quota.project.update", "quota.apikey.update"}
+
+
+def test_failed_external_registration_rolls_back_and_does_not_use_tos_storage(tmp_path: Path) -> None:
+    class FailOnceVolcengine:
+        def __init__(self):
+            self.calls = 0
+
+        async def call(self, action, payload, principal):
+            if action != "CreateAsset":
+                return JSONResponse({"ok": True})
+            self.calls += 1
+            if self.calls == 1:
+                return JSONResponse({"error": "upstream failed"}, status_code=502)
+            return JSONResponse({"Result": {"AssetId": f"asset-{self.calls}"}})
+
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        app.state.volcengine = FailOnceVolcengine()
+        client.put(
+            "/api/internal/project/quota",
+            headers=ADMIN_HEADERS,
+            json={"projectName": "drama_prod", "enabled": True, "dailyAssetCreates": 1, "totalAssets": 1},
+        )
+        auth = {"Authorization": f"Bearer {secret}"}
+        failed = client.post(
+            "/api/asset/create", headers=auth,
+            json={"groupId": "group-1", "url": "https://example.com/failed.png"},
+        )
+        succeeded = client.post(
+            "/api/asset/create", headers=auth,
+            json={"groupId": "group-1", "url": "https://example.com/active.png"},
+        )
+        limited = client.post(
+            "/api/asset/create", headers=auth,
+            json={"groupId": "group-1", "url": "https://example.com/limited.png"},
+        )
+        usage = client.get(
+            "/api/internal/quota/usage", headers=ADMIN_HEADERS, params={"projectName": "drama_prod"},
+        ).json()["usage"]
+
+    assert failed.status_code == 502
+    assert succeeded.status_code == 200
+    assert limited.status_code == 429
+    assert usage["dailyAssetCreates"] == 1
+    assert usage["totalAssets"] == 1
+    assert usage["totalStorageBytes"] == 0
+
+
+def test_tos_delete_failure_keeps_storage_until_background_retry(tmp_path: Path, monkeypatch) -> None:
+    calls = 0
+
+    class FailOnceTosClient:
+        def __init__(self, *args):
+            pass
+
+        def delete_object(self, bucket, key):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise tos.exceptions.TosClientError("temporary delete failure")
+            return SimpleNamespace(status_code=204)
+
+    monkeypatch.setattr("app.storage.tos.TosClientV2", FailOnceTosClient)
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        key_id, secret = create_key(client)
+        app.state.volcengine = FakeVolcengine()
+        app.state.database.create_asset_record(
+            "upload-retry", "drama_prod", key_id, "tos", "https://cdn.example.com/retry.png",
+            bucket="test-bucket", object_key="avatar-assets/drama_prod/retry.png", size_bytes=12,
+            status="active", group_id="group-1",
+        )
+        app.state.database.update_asset_record("upload-retry", "active", asset_id="asset-retry")
+        auth = {"Authorization": f"Bearer {secret}"}
+        removed = client.delete("/api/asset/delete", headers=auth, params={"assetId": "asset-retry"})
+        pending = client.get(
+            "/api/internal/quota/usage", headers=ADMIN_HEADERS, params={"projectName": "drama_prod"},
+        ).json()
+        cleaned = asyncio.run(app.state.storage.cleanup_once())
+        complete = client.get(
+            "/api/internal/quota/usage", headers=ADMIN_HEADERS, params={"projectName": "drama_prod"},
+        ).json()
+        cleaned_again = asyncio.run(app.state.storage.cleanup_once())
+
+    assert removed.status_code == 200
+    assert pending["usage"]["totalStorageBytes"] == 12
+    assert pending["cleanupObjects"][0]["status"] == "cleanup_pending"
+    assert cleaned == 1
+    assert complete["usage"]["totalStorageBytes"] == 0
+    assert cleaned_again == 0
+    assert calls == 2

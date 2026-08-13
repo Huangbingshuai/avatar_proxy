@@ -49,6 +49,7 @@ yarn-error.log*
 /backend/.pytest-tmp/
 /backend/.pytest-tmp*/
 /backend/.pytest_cache/
+/backend/.coverage*
 /backend/**/__pycache__/
 /backend/data/
 /user-portal/node_modules/
