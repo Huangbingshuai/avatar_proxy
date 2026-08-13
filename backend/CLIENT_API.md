@@ -214,7 +214,7 @@ X-Upstream-Service: volcengine-ark
 }
 ```
 
-`uploadId` 只能由上传它的同一枚 API Key 使用。旧客户端可以继续只传 `url`；建议新客户端保留并回传 `uploadId`，以便服务端可靠关联素材与 TOS 对象，在删除素材时同步释放存储。
+`uploadId` 只能由上传它的同一枚 API Key 使用，并且同时提交的 `url` 必须与上传接口返回的 URL 完全一致；不一致时返回 `409 upload_url_mismatch`。旧客户端可以继续只传 `url`；建议新客户端保留并回传 `uploadId`，以便服务端可靠关联素材与 TOS 对象，在删除素材时同步释放存储。
 
 ### 5.2 查询素材列表
 

@@ -121,6 +121,8 @@ async def create_asset(payload: AssetCreate, request: Request, principal: Princi
     )
     if payload.upload_id and record is None:
         raise ApiError("uploadId 不存在或不属于当前 API Key", 404, "upload_not_found")
+    if payload.upload_id and record and payload.url != record["source_url"]:
+        raise ApiError("uploadId 与 URL 不匹配", 409, "upload_url_mismatch")
     record_id = record["record_id"] if record else f"assetrec_{uuid.uuid4().hex}"
     reservation_id = request.app.state.quota.reserve(principal.project_name, principal.id, {
         "daily_asset_creates": 1,

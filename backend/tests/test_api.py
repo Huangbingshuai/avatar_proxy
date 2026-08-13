@@ -744,6 +744,39 @@ def test_upload_id_is_scoped_to_the_creating_api_key(tmp_path: Path, monkeypatch
     assert response.json()["error"]["code"] == "upload_not_found"
 
 
+def test_upload_id_rejects_a_different_url(tmp_path: Path, monkeypatch) -> None:
+    class FakeTosClient:
+        def __init__(self, *args):
+            pass
+
+        def put_object(self, *args, **kwargs):
+            return SimpleNamespace(etag="etag", request_id="request")
+
+    monkeypatch.setattr("app.storage.tos.TosClientV2", FakeTosClient)
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        auth = {"Authorization": f"Bearer {secret}"}
+        upload = client.post(
+            "/api/asset/upload-file",
+            headers=auth,
+            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+        ).json()
+        response = client.post(
+            "/api/asset/create",
+            headers=auth,
+            json={
+                "groupId": "group-1",
+                "url": "https://example.com/a-different-object.png",
+                "uploadId": upload["uploadId"],
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "upload_url_mismatch"
+
+
 def test_deleting_registered_tos_asset_deletes_object_and_releases_storage(tmp_path: Path, monkeypatch) -> None:
     deleted = []
 
