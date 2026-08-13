@@ -1001,10 +1001,12 @@ def test_tos_delete_failure_keeps_storage_until_background_retry(tmp_path: Path,
         complete = client.get(
             "/api/internal/quota/usage", headers=ADMIN_HEADERS, params={"projectName": "drama_prod"},
         ).json()
+        cleaned_again = asyncio.run(app.state.storage.cleanup_once())
 
     assert removed.status_code == 200
     assert pending["usage"]["totalStorageBytes"] == 12
     assert pending["cleanupObjects"][0]["status"] == "cleanup_pending"
     assert cleaned == 1
     assert complete["usage"]["totalStorageBytes"] == 0
+    assert cleaned_again == 0
     assert calls == 2

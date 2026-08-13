@@ -20,5 +20,8 @@ test("server-renders the internal Avatar Proxy console", async () => {
   assert.match(html, /CONSOLE_ADMIN_TOKEN/);
   assert.match(html, /控制台与公网 API/);
   assert.match(html, /http:\/\/(?:localhost|127\.0\.0\.1):8000/);
-  assert.doesNotMatch(html, /SEEDANCE_ARK_API_KEY|VOLCENGINE_SECRET_KEY|codex-preview/i);
+  assert.doesNotMatch(
+    html,
+    /SEEDANCE_(?:ARK_)?API_KEY|VOLCENGINE_(?:ACCESS|SECRET)_KEY|TOS_(?:ACCESS|SECRET)_KEY|test-admin|test-ak|test-sk|test-ark-key|C:\\Users\\/i,
+  );
 });

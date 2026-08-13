@@ -15,13 +15,24 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+  "hypothesis>=6.165.5",
   "pytest==8.4.1",
   "pytest-asyncio==1.1.0",
+  "pytest-cov>=7.1.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --basetemp=.pytest-tmp"
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
 
 [build-system]
 requires = ["hatchling"]
