@@ -64,6 +64,100 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_project_status ON api_keys(project_name,
 CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON request_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_video_usage_api_key_created_at ON video_usage(api_key_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_video_tasks_api_key_created_at ON video_tasks(api_key_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS project_quotas (
+    project_name TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    read_qpm INTEGER,
+    write_qpm INTEGER,
+    max_concurrency INTEGER,
+    daily_asset_creates INTEGER,
+    daily_upload_files INTEGER,
+    daily_upload_bytes INTEGER,
+    total_assets INTEGER,
+    total_storage_bytes INTEGER,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS api_key_quotas (
+    api_key_id TEXT PRIMARY KEY,
+    read_qpm INTEGER,
+    write_qpm INTEGER,
+    max_concurrency INTEGER,
+    daily_asset_creates INTEGER,
+    daily_upload_files INTEGER,
+    daily_upload_bytes INTEGER,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS quota_usage_windows (
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    window_start TEXT NOT NULL,
+    value INTEGER NOT NULL DEFAULT 0,
+    reserved INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(scope_type, scope_id, metric, window_start)
+);
+CREATE TABLE IF NOT EXISTS quota_reservations (
+    reservation_id TEXT NOT NULL,
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    window_start TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(reservation_id, scope_type, scope_id, metric)
+);
+CREATE TABLE IF NOT EXISTS asset_records (
+    record_id TEXT PRIMARY KEY,
+    project_name TEXT NOT NULL,
+    api_key_id TEXT NOT NULL,
+    group_id TEXT,
+    asset_id TEXT,
+    source_type TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    bucket TEXT,
+    object_key TEXT,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    cleanup_attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TEXT
+);
+CREATE TABLE IF NOT EXISTS quota_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_name TEXT NOT NULL,
+    api_key_id TEXT,
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    threshold INTEGER NOT NULL,
+    limit_value INTEGER NOT NULL,
+    used_value INTEGER NOT NULL,
+    window_start TEXT NOT NULL,
+    acknowledged INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    acknowledged_at TEXT,
+    UNIQUE(scope_type, scope_id, metric, threshold, window_start)
+);
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor TEXT NOT NULL,
+    source_ip TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_quota_events_open ON quota_events(acknowledged, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_asset_records_project_status ON asset_records(project_name, status);
+CREATE INDEX IF NOT EXISTS idx_asset_records_asset_id ON asset_records(project_name, asset_id);
+CREATE INDEX IF NOT EXISTS idx_asset_records_cleanup ON asset_records(status, updated_at);
 """
 
 
@@ -94,6 +188,22 @@ class Database:
                 (LEGACY_DEFAULT_PROJECT_NAME,),
             )
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
+            # A process can stop after reserving quota but before committing or rolling it
+            # back. No requests are in flight during startup, so all persisted reservations
+            # are orphaned and can be released safely.
+            reservations = connection.execute(
+                "SELECT scope_type, scope_id, metric, window_start, amount FROM quota_reservations"
+            ).fetchall()
+            for reservation in reservations:
+                connection.execute(
+                    "UPDATE quota_usage_windows SET reserved=MAX(0,reserved-?) "
+                    "WHERE scope_type=? AND scope_id=? AND metric=? AND window_start=?",
+                    (
+                        reservation["amount"], reservation["scope_type"], reservation["scope_id"],
+                        reservation["metric"], reservation["window_start"],
+                    ),
+                )
+            connection.execute("DELETE FROM quota_reservations")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -141,11 +251,19 @@ class Database:
                 "UPDATE api_keys SET project_name = ? WHERE project_name = ?",
                 (DEFAULT_PROJECT_NAME, name),
             )
-            for table in ("request_logs", "video_usage", "video_tasks"):
+            for table in ("request_logs", "video_usage", "video_tasks", "asset_records"):
                 connection.execute(
                     f"UPDATE {table} SET project_name = ? WHERE project_name = ?",
                     (DEFAULT_PROJECT_NAME, name),
                 )
+            connection.execute(
+                "DELETE FROM quota_reservations WHERE scope_type='project' AND scope_id=?",
+                (name,),
+            )
+            connection.execute(
+                "DELETE FROM quota_usage_windows WHERE scope_type='project' AND scope_id=?",
+                (name,),
+            )
             connection.execute("DELETE FROM projects WHERE name = ?", (name,))
         return cursor.rowcount
 
@@ -398,6 +516,115 @@ class Database:
             )
         return cursor.rowcount
 
+    def create_asset_record(
+        self,
+        record_id: str,
+        project_name: str,
+        key_id: str,
+        source_type: str,
+        source_url: str,
+        *,
+        bucket: str | None = None,
+        object_key: str | None = None,
+        size_bytes: int = 0,
+        status: str = "uploaded_pending",
+        group_id: str | None = None,
+    ) -> dict[str, Any]:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO asset_records "
+                "(record_id, project_name, api_key_id, group_id, source_type, source_url, bucket, object_key, size_bytes, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (record_id, project_name, key_id, group_id, source_type, source_url, bucket, object_key, size_bytes, status),
+            )
+        return self.get_asset_record(record_id) or {}
+
+    def get_asset_record(self, record_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM asset_records WHERE record_id = ?", (record_id,)
+            ).fetchone()
+        return self._dict(row)
+
+    def find_upload_record(
+        self, project_name: str, key_id: str, *, upload_id: str | None = None, source_url: str | None = None,
+    ) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            if upload_id:
+                row = connection.execute(
+                    "SELECT * FROM asset_records WHERE record_id=? AND project_name=? AND api_key_id=? "
+                    "AND source_type='tos' AND status IN ('uploaded_pending','registration_failed')",
+                    (upload_id, project_name, key_id),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT * FROM asset_records WHERE project_name=? AND api_key_id=? AND source_url=? "
+                    "AND source_type='tos' AND status IN ('uploaded_pending','registration_failed') "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (project_name, key_id, source_url),
+                ).fetchone()
+        return self._dict(row)
+
+    def update_asset_record(
+        self,
+        record_id: str,
+        status: str,
+        *,
+        group_id: str | None = None,
+        asset_id: str | None = None,
+        last_error: str | None = None,
+        deleted: bool = False,
+        increment_cleanup: bool = False,
+    ) -> None:
+        assignments = ["status=?", "updated_at=CURRENT_TIMESTAMP", "last_error=?"]
+        values: list[Any] = [status, last_error]
+        if group_id is not None:
+            assignments.append("group_id=?")
+            values.append(group_id)
+        if asset_id is not None:
+            assignments.append("asset_id=?")
+            values.append(asset_id)
+        if deleted:
+            assignments.append("deleted_at=CURRENT_TIMESTAMP")
+        if increment_cleanup:
+            assignments.append("cleanup_attempts=cleanup_attempts+1")
+        values.append(record_id)
+        with self.connect() as connection:
+            connection.execute(
+                f"UPDATE asset_records SET {', '.join(assignments)} WHERE record_id=?", values
+            )
+
+    def find_asset_by_asset_id(self, project_name: str, asset_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM asset_records WHERE project_name=? AND asset_id=? AND status!='deleted' LIMIT 1",
+                (project_name, asset_id),
+            ).fetchone()
+        return self._dict(row)
+
+    def cleanup_candidates(self, hours: int = 48, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM asset_records WHERE source_type='tos' AND ("
+                "status='cleanup_pending' OR (status IN ('uploaded_pending','registration_failed') "
+                "AND created_at <= datetime('now', ?))) ORDER BY updated_at LIMIT ?",
+                (f"-{hours} hours", limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def pending_cleanup_objects(self, project_name: str, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT record_id AS recordId, object_key AS objectKey, size_bytes AS sizeBytes, "
+                "status, cleanup_attempts AS cleanupAttempts, last_error AS lastError, "
+                "created_at AS createdAt, updated_at AS updatedAt "
+                "FROM asset_records WHERE project_name=? AND source_type='tos' "
+                "AND status IN ('uploaded_pending','registration_failed','cleanup_pending') "
+                "ORDER BY updated_at LIMIT ?",
+                (project_name, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def overview(self) -> dict[str, Any]:
         with self.connect() as connection:
             stats = connection.execute("""
@@ -405,7 +632,13 @@ class Database:
                     (SELECT COUNT(*) FROM projects) AS projects,
                     (SELECT COUNT(*) FROM api_keys WHERE status = 'active') AS activeKeys,
                     (SELECT COUNT(*) FROM request_logs WHERE created_at >= datetime('now', '-24 hours')) AS requests24h,
-                    (SELECT COUNT(*) FROM request_logs WHERE status_code >= 400 AND created_at >= datetime('now', '-24 hours')) AS errors24h
+                    (SELECT COUNT(*) FROM request_logs WHERE status_code >= 400 AND created_at >= datetime('now', '-24 hours')) AS errors24h,
+                    (SELECT COUNT(*) FROM asset_records WHERE status IN ('registering','active') AND date(created_at, '+8 hours')=date('now', '+8 hours')) AS assetsToday,
+                    (SELECT COUNT(*) FROM asset_records WHERE source_type='tos' AND date(created_at, '+8 hours')=date('now', '+8 hours')) AS uploadsToday,
+                    (SELECT COALESCE(SUM(size_bytes),0) FROM asset_records WHERE source_type='tos' AND date(created_at, '+8 hours')=date('now', '+8 hours')) AS uploadBytesToday,
+                    (SELECT COUNT(DISTINCT project_name) FROM project_quotas WHERE enabled=1) AS limitedProjects,
+                    (SELECT COUNT(*) FROM quota_events WHERE acknowledged=0) AS openQuotaEvents,
+                    (SELECT COUNT(*) FROM asset_records WHERE status='cleanup_pending') AS cleanupPending
             """).fetchone()
             recent = connection.execute("""
                 SELECT action, project_name AS projectName, status_code AS statusCode,

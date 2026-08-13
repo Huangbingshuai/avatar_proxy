@@ -3,7 +3,7 @@ import hmac
 import secrets
 import uuid
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, AsyncIterator
 
 from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -44,19 +44,25 @@ def require_admin(
         raise ApiError("管理令牌无效", 401, "invalid_admin_token")
 
 
-def require_api_key(
+async def require_api_key(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
-) -> ApiPrincipal:
+) -> AsyncIterator[ApiPrincipal]:
     if not credentials or credentials.scheme.lower() != "bearer":
         raise ApiError("请使用 Authorization: Bearer <API_KEY>", 401, "missing_api_key")
     database: Database = request.app.state.database
     row = database.find_api_key(hash_api_key(credentials.credentials))
     if not row:
         raise ApiError("API Key 无效或已禁用", 401, "invalid_api_key")
-    database.touch_api_key(row["id"])
     project_name = (row.get("projectName") or DEFAULT_PROJECT_NAME).strip()
-    return ApiPrincipal(id=row["id"], project_name=project_name or DEFAULT_PROJECT_NAME)
+    principal = ApiPrincipal(id=row["id"], project_name=project_name or DEFAULT_PROJECT_NAME)
+    async with request.app.state.quota.request_slot(
+        principal.project_name,
+        principal.id,
+        write=request.app.state.quota.is_write_request(request),
+    ):
+        database.touch_api_key(row["id"])
+        yield principal
 
 
 AdminDependency = Annotated[None, Depends(require_admin)]

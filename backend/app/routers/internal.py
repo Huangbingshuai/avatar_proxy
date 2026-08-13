@@ -1,10 +1,21 @@
 import sqlite3
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Query, Request, status
 
 from ..database import DEFAULT_PROJECT_NAME, Database
 from ..errors import ApiError
-from ..schemas import ApiKeyBindProject, ApiKeyCreate, ApiKeyDelete, ApiKeyDisable, ApiKeyEnable, ProjectCreate, ProjectDelete
+from ..schemas import (
+    ApiKeyBindProject,
+    ApiKeyCreate,
+    ApiKeyDelete,
+    ApiKeyDisable,
+    ApiKeyEnable,
+    ApiKeyQuotaUpdate,
+    ProjectCreate,
+    ProjectDelete,
+    ProjectQuotaUpdate,
+    QuotaEventAck,
+)
 from ..security import AdminDependency, generate_api_key, generate_key_id, hash_api_key
 
 
@@ -109,3 +120,67 @@ def bind_api_key_project(payload: ApiKeyBindProject, request: Request, _: AdminD
 @router.get("/overview")
 def overview(request: Request, _: AdminDependency) -> dict:
     return database(request).overview()
+
+
+@router.get("/project/quota")
+def get_project_quota(
+    request: Request,
+    _: AdminDependency,
+    project_name: str = Query(alias="projectName", min_length=2),
+) -> dict:
+    return {"quota": request.app.state.quota.project_quota(project_name)}
+
+
+@router.put("/project/quota")
+def update_project_quota(payload: ProjectQuotaUpdate, request: Request, _: AdminDependency) -> dict:
+    source_ip = request.client.host if request.client else None
+    return {"quota": request.app.state.quota.set_project_quota(payload.model_dump(), source_ip)}
+
+
+@router.get("/apikey/quota")
+def get_api_key_quota(
+    request: Request,
+    _: AdminDependency,
+    key_id: str = Query(alias="keyId", min_length=1),
+) -> dict:
+    return {"quota": request.app.state.quota.key_quota(key_id)}
+
+
+@router.put("/apikey/quota")
+def update_api_key_quota(payload: ApiKeyQuotaUpdate, request: Request, _: AdminDependency) -> dict:
+    source_ip = request.client.host if request.client else None
+    return {"quota": request.app.state.quota.set_key_quota(payload.model_dump(), source_ip)}
+
+
+@router.get("/quota/usage")
+def get_quota_usage(
+    request: Request,
+    _: AdminDependency,
+    project_name: str = Query(alias="projectName", min_length=2),
+) -> dict:
+    return request.app.state.quota.usage(project_name)
+
+
+@router.get("/quota/events")
+def list_quota_events(
+    request: Request,
+    _: AdminDependency,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict:
+    return {"events": request.app.state.quota.events(limit)}
+
+
+@router.get("/quota/audits")
+def list_quota_audits(
+    request: Request,
+    _: AdminDependency,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict:
+    return {"audits": request.app.state.quota.audits(limit)}
+
+
+@router.post("/quota/event/ack")
+def acknowledge_quota_event(payload: QuotaEventAck, request: Request, _: AdminDependency) -> dict:
+    if not request.app.state.quota.acknowledge(payload.event_id):
+        raise ApiError("额度事件不存在或已确认", 404, "quota_event_not_found")
+    return {"acknowledged": True, "eventId": payload.event_id}

@@ -44,6 +44,33 @@ class ApiKeyBindProject(ApiModel):
     project_name: str = Field(min_length=2, max_length=63, pattern=r"^[a-z][a-z0-9_-]+$")
 
 
+class ProjectQuotaUpdate(ApiModel):
+    project_name: str = Field(min_length=2, max_length=63, pattern=r"^[a-z][a-z0-9_-]+$")
+    enabled: bool = False
+    read_qpm: int | None = Field(default=None, ge=1)
+    write_qpm: int | None = Field(default=None, ge=1)
+    max_concurrency: int | None = Field(default=None, ge=1)
+    daily_asset_creates: int | None = Field(default=None, ge=1)
+    daily_upload_files: int | None = Field(default=None, ge=1)
+    daily_upload_bytes: int | None = Field(default=None, ge=1)
+    total_assets: int | None = Field(default=None, ge=1)
+    total_storage_bytes: int | None = Field(default=None, ge=1)
+
+
+class ApiKeyQuotaUpdate(ApiModel):
+    key_id: str = Field(min_length=1)
+    read_qpm: int | None = Field(default=None, ge=1)
+    write_qpm: int | None = Field(default=None, ge=1)
+    max_concurrency: int | None = Field(default=None, ge=1)
+    daily_asset_creates: int | None = Field(default=None, ge=1)
+    daily_upload_files: int | None = Field(default=None, ge=1)
+    daily_upload_bytes: int | None = Field(default=None, ge=1)
+
+
+class QuotaEventAck(ApiModel):
+    event_id: int = Field(ge=1)
+
+
 class AssetGroupCreate(ApiModel):
     name: str = Field(min_length=1, max_length=128)
     description: str = Field(default="", max_length=1000)
@@ -65,6 +92,7 @@ class AssetCreate(ApiModel):
     group_id: str = Field(min_length=1)
     url: str = Field(min_length=1, max_length=2048, pattern=r"^https?://")
     name: str | None = Field(default=None, max_length=128)
+    upload_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class AssetUpdate(ApiModel):

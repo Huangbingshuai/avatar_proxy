@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  AlertTriangle,
   Ban,
   BookOpen,
   Clipboard,
@@ -16,6 +17,7 @@ import {
   RotateCcw,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Video,
@@ -42,7 +44,7 @@ type ApiKey = {
 };
 
 type Overview = {
-  stats: { projects: number; activeKeys: number; requests24h: number; errors24h: number };
+  stats: { projects: number; activeKeys: number; requests24h: number; errors24h: number; assetsToday: number; uploadsToday: number; uploadBytesToday: number; limitedProjects: number; openQuotaEvents: number; cleanupPending: number };
   recent: Array<{ action: string; projectName: string; statusCode: number; durationMs: number; createdAt: string }>;
 };
 
@@ -58,7 +60,60 @@ type VideoTask = {
   video_url?: string;
 };
 
-type Tab = "overview" | "projects" | "keys" | "playground" | "integration";
+type QuotaValues = {
+  enabled?: boolean;
+  readQpm?: number | null;
+  writeQpm?: number | null;
+  maxConcurrency?: number | null;
+  dailyAssetCreates?: number | null;
+  dailyUploadFiles?: number | null;
+  dailyUploadBytes?: number | null;
+  totalAssets?: number | null;
+  totalStorageBytes?: number | null;
+};
+
+type QuotaEvent = {
+  id: number;
+  projectName: string;
+  apiKeyId?: string;
+  scopeType: string;
+  metric: string;
+  threshold: number;
+  limitValue: number;
+  usedValue: number;
+  acknowledged: boolean;
+  createdAt: string;
+};
+
+type QuotaAudit = {
+  id: number;
+  sourceIp?: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  createdAt: string;
+};
+
+type CleanupObject = {
+  recordId: string;
+  objectKey: string;
+  sizeBytes: number;
+  status: string;
+  cleanupAttempts: number;
+  lastError?: string;
+  createdAt: string;
+};
+
+type QuotaUsage = {
+  projectName: string;
+  quota: QuotaValues;
+  usage: Record<string, number>;
+  cleanupObjects: CleanupObject[];
+};
+
+type AdminApi = (path: string, init?: RequestInit, token?: string) => Promise<Record<string, unknown>>;
+
+type Tab = "overview" | "projects" | "keys" | "quotas" | "playground" | "integration";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const DEFAULT_MODEL = "doubao-seedance-2-0-260128";
@@ -69,6 +124,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "概览", icon: Gauge },
   { id: "projects", label: "项目", icon: FolderKanban },
   { id: "keys", label: "API Keys", icon: KeyRound },
+  { id: "quotas", label: "额度与用量", icon: SlidersHorizontal },
   { id: "playground", label: "视频调试", icon: Video },
   { id: "integration", label: "接入说明", icon: BookOpen },
 ];
@@ -106,6 +162,8 @@ export default function ConsolePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [quotaEvents, setQuotaEvents] = useState<QuotaEvent[]>([]);
+  const [quotaAudits, setQuotaAudits] = useState<QuotaAudit[]>([]);
   const [secret, setSecret] = useState("");
   const [projectForm, setProjectForm] = useState({ name: "", displayName: "", description: "" });
   const [keyForm, setKeyForm] = useState({ name: "", projectName: DEFAULT_PROJECT_NAME });
@@ -128,14 +186,18 @@ export default function ConsolePage() {
     setLoading(true);
     setError("");
     try {
-      const [projectData, keyData, overviewData] = await Promise.all([
+      const [projectData, keyData, overviewData, eventData, auditData] = await Promise.all([
         adminApi("/api/internal/project/list", undefined, token),
         adminApi("/api/internal/apikey/list", undefined, token),
         adminApi("/api/internal/overview", undefined, token),
+        adminApi("/api/internal/quota/events?limit=100", undefined, token),
+        adminApi("/api/internal/quota/audits?limit=100", undefined, token),
       ]);
       setProjects(projectData.projects as Project[]);
       setApiKeys(keyData.apiKeys as ApiKey[]);
       setOverview(overviewData as unknown as Overview);
+      setQuotaEvents(eventData.events as QuotaEvent[]);
+      setQuotaAudits(auditData.audits as QuotaAudit[]);
       setLocked(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "控制台加载失败");
@@ -271,6 +333,7 @@ export default function ConsolePage() {
         {tab === "overview" && <OverviewPanel overview={overview} onOpenPlayground={() => setTab("playground")} />}
         {tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => setShowProjectForm(true)} onDelete={setProjectToDelete} />}
         {tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => setShowKeyForm(true)} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
+        {tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
         {tab === "playground" && <VideoPlayground />}
         {tab === "integration" && <IntegrationPanel />}
       </section>
@@ -335,6 +398,12 @@ function OverviewPanel({ overview, onOpenPlayground }: { overview: Overview | nu
       <Stat label="24h 请求" value={overview?.stats.requests24h ?? 0} note="公网业务接口" />
       <Stat label="24h 异常" value={overview?.stats.errors24h ?? 0} note="上游与鉴权错误" warn={Boolean(overview?.stats.errors24h)} />
     </div>
+    <div className="statGrid riskStats">
+      <Stat label="今日创建素材" value={overview?.stats.assetsToday ?? 0} note="北京时间自然日" />
+      <Stat label="今日上传" value={overview?.stats.uploadsToday ?? 0} note={bytesLabel(overview?.stats.uploadBytesToday ?? 0)} />
+      <Stat label="启用额度项目" value={overview?.stats.limitedProjects ?? 0} note="其余项目默认不限额" />
+      <Stat label="未确认额度事件" value={overview?.stats.openQuotaEvents ?? 0} note={`${overview?.stats.cleanupPending ?? 0} 个对象待清理`} warn={Boolean(overview?.stats.openQuotaEvents || overview?.stats.cleanupPending)} />
+    </div>
     <section className="panel"><div className="panelHead"><div><h3>最近请求</h3><p>记录项目、操作与状态，不保存业务请求体。</p></div></div>
       <div className="dataTable recentTable"><div className="tableRow tableHead"><span>操作</span><span>项目</span><span>状态</span><span>耗时</span><span>时间</span></div>{overview?.recent.length ? overview.recent.map((row, index) => <div className="tableRow" key={`${row.createdAt}-${index}`}><span className="mono">{row.action}</span><span>{row.projectName}</span><span><i className={`httpStatus ${row.statusCode < 400 ? "ok" : "bad"}`}>{row.statusCode}</i></span><span>{row.durationMs} ms</span><span>{formatTime(row.createdAt)}</span></div>) : <div className="emptyRow">暂无调用记录</div>}</div>
     </section>
@@ -350,6 +419,144 @@ function ProjectsPanel({ projects, onCreate, onDelete }: { projects: Project[]; 
 function KeysPanel({ apiKeys, projects, onCreate, onDisable, onEnable, onDelete, onBind }: { apiKeys: ApiKey[]; projects: Project[]; onCreate: () => void; onDisable: (id: string) => Promise<void>; onEnable: (key: ApiKey) => Promise<void>; onDelete: (key: ApiKey) => Promise<void>; onBind: (id: string, project: string) => Promise<void> }) {
   return <div className="content"><div className="pageIntro"><div><h2>用户 API Keys</h2><p>把生成的 `vap_live_...` 交给用户；完整 Key 只显示一次。</p></div><button className="primary" onClick={onCreate} disabled={!projects.length}><Plus size={17} />生成 API Key</button></div>
     <section className="panel"><div className="dataTable keyTable"><div className="tableRow tableHead"><span>名称</span><span>Key</span><span>绑定项目</span><span>最近使用</span><span>状态</span><span /></div>{apiKeys.map((key) => <div className="tableRow" key={key.id}><span><b>{key.name}</b><small>{formatTime(key.createdAt)} 创建</small></span><span className="mono">{key.keyPrefix}</span><span><select className="inlineSelect" value={key.projectName} disabled={key.status !== "active"} onChange={(event) => void onBind(key.id, event.target.value)}>{projects.map((project) => <option key={project.name} value={project.name}>{project.name}</option>)}</select></span><span>{formatTime(key.lastUsedAt)}</span><span><i className={`state ${key.status}`}>{key.status === "active" ? "有效" : "已禁用"}</i></span><span className="keyActions">{key.status === "active" ? <button type="button" className="dangerLink" onClick={() => void onDisable(key.id)}>禁用</button> : <><button type="button" className="enableKeyButton" onClick={() => void onEnable(key)}><RotateCcw size={14} />启用</button><button type="button" className="deleteKeyButton" onClick={() => void onDelete(key)}><Trash2 size={14} />删除</button></>}</span></div>)}{!apiKeys.length && <div className="emptyRow">暂无 API Key</div>}</div></section>
+  </div>;
+}
+
+type QuotaMetricKey = Exclude<keyof QuotaValues, "enabled">;
+
+const quotaFields: Array<{ key: QuotaMetricKey; label: string; note: string; bytes?: boolean; projectOnly?: boolean }> = [
+  { key: "readQpm", label: "查询 QPM", note: "查询超量只告警" },
+  { key: "writeQpm", label: "写入 QPM", note: "超限返回 429" },
+  { key: "maxConcurrency", label: "最大写并发", note: "单实例并发闸门" },
+  { key: "dailyAssetCreates", label: "每日素材数", note: "创建成功后计数" },
+  { key: "dailyUploadFiles", label: "每日上传文件", note: "TOS 上传成功后计数" },
+  { key: "dailyUploadBytes", label: "每日上传量（GiB）", note: "公网 URL 不计入", bytes: true },
+  { key: "totalAssets", label: "素材总数", note: "仅平台管理素材", projectOnly: true },
+  { key: "totalStorageBytes", label: "TOS 总存储（GiB）", note: "仅本系统上传对象", bytes: true, projectOnly: true },
+];
+
+function bytesLabel(value: number) {
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GiB`;
+  if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MiB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KiB`;
+  return `${value} B`;
+}
+
+function quotaInputValue(value: number | null | undefined, bytes?: boolean) {
+  if (value == null) return "";
+  return String(bytes ? value / 1024 ** 3 : value);
+}
+
+function quotaPayload(form: Record<string, string>, projectOnly: boolean) {
+  const result: Record<string, number | null> = {};
+  for (const field of quotaFields) {
+    if (!projectOnly && field.projectOnly) continue;
+    const value = form[field.key]?.trim();
+    result[field.key] = value ? Math.round(Number(value) * (field.bytes ? 1024 ** 3 : 1)) : null;
+  }
+  return result;
+}
+
+function QuotaPanel({ projects, apiKeys, events, audits, adminApi, onChanged }: { projects: Project[]; apiKeys: ApiKey[]; events: QuotaEvent[]; audits: QuotaAudit[]; adminApi: AdminApi; onChanged: () => Promise<void> }) {
+  const [projectName, setProjectName] = useState("");
+  const [keyId, setKeyId] = useState("");
+  const [usage, setUsage] = useState<QuotaUsage | null>(null);
+  const [projectForm, setProjectForm] = useState<Record<string, string>>({});
+  const [projectEnabled, setProjectEnabled] = useState(false);
+  const [keyForm, setKeyForm] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const selectedProjectName = projects.some((project) => project.name === projectName) ? projectName : (projects[0]?.name ?? "");
+  const projectKeys = useMemo(() => apiKeys.filter((key) => key.projectName === selectedProjectName), [apiKeys, selectedProjectName]);
+  const selectedKeyId = projectKeys.some((key) => key.id === keyId) ? keyId : (projectKeys[0]?.id ?? "");
+
+  useEffect(() => {
+    if (!selectedProjectName) return;
+    let cancelled = false;
+    void adminApi(`/api/internal/quota/usage?projectName=${encodeURIComponent(selectedProjectName)}`).then((data) => {
+      if (cancelled) return;
+      const next = data as unknown as QuotaUsage;
+      setUsage(next);
+      setProjectEnabled(Boolean(next.quota.enabled));
+      setProjectForm(Object.fromEntries(quotaFields.map((field) => [field.key, quotaInputValue(next.quota[field.key], field.bytes)])));
+    }).catch((caught) => setMessage(caught instanceof Error ? caught.message : "额度加载失败"));
+    return () => { cancelled = true; };
+  }, [adminApi, selectedProjectName]);
+
+  useEffect(() => {
+    if (!selectedKeyId) return;
+    let cancelled = false;
+    void adminApi(`/api/internal/apikey/quota?keyId=${encodeURIComponent(selectedKeyId)}`).then((data) => {
+      if (cancelled) return;
+      const next = data.quota as QuotaValues;
+      setKeyForm(Object.fromEntries(quotaFields.filter((field) => !field.projectOnly).map((field) => [field.key, quotaInputValue(next[field.key], field.bytes)])));
+    }).catch((caught) => setMessage(caught instanceof Error ? caught.message : "Key 子额度加载失败"));
+    return () => { cancelled = true; };
+  }, [adminApi, selectedKeyId]);
+
+  async function saveProject(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      await adminApi("/api/internal/project/quota", { method: "PUT", body: JSON.stringify({ projectName: selectedProjectName, enabled: projectEnabled, ...quotaPayload(projectForm, true) }) });
+      setMessage("项目额度已保存并立即生效");
+      await onChanged();
+      const data = await adminApi(`/api/internal/quota/usage?projectName=${encodeURIComponent(selectedProjectName)}`);
+      setUsage(data as unknown as QuotaUsage);
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "项目额度保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveKey(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedKeyId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await adminApi("/api/internal/apikey/quota", { method: "PUT", body: JSON.stringify({ keyId: selectedKeyId, ...quotaPayload(keyForm, false) }) });
+      setMessage("API Key 子额度已保存；留空字段继续继承项目");
+      await onChanged();
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "Key 子额度保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function acknowledge(eventId: number) {
+    await adminApi("/api/internal/quota/event/ack", { method: "POST", body: JSON.stringify({ eventId }) });
+    await onChanged();
+  }
+
+  return <div className="content quotaConsole">
+    <div className="pageIntro"><div><h2>额度与用量</h2><p>按企业项目设置总闸门，再为测试或批处理 Key 收紧子额度。</p></div><span className={`quotaMode ${projectEnabled ? "guarded" : "open"}`}>{projectEnabled ? "额度已启用" : "当前不限额"}</span></div>
+    <div className="quotaSelector"><label>企业项目<select value={selectedProjectName} onChange={(event) => { setProjectName(event.target.value); setKeyId(""); }}>{projects.map((project) => <option key={project.name} value={project.name}>{project.displayName} · {project.name}</option>)}</select></label><div><b>{usage?.usage.cleanupPending ?? 0}</b><span>待清理 TOS 对象</span></div></div>
+
+    <section className="quotaMeters" aria-label="项目额度使用情况">
+      {quotaFields.map((field) => {
+        const used = usage?.usage[field.key] ?? 0;
+        const limit = projectEnabled ? usage?.quota[field.key] : null;
+        const ratio = limit ? Math.min(100, used / limit * 100) : 0;
+        return <article className="quotaMeter" key={field.key}><div><span>{field.label}</span><b>{field.bytes ? bytesLabel(used) : used.toLocaleString()}</b></div><div className="meterTrack"><i style={{ width: `${ratio}%` }} /></div><small>{limit ? `上限 ${field.bytes ? bytesLabel(limit) : limit.toLocaleString()}` : "不限额"}</small></article>;
+      })}
+    </section>
+
+    <div className="quotaEditGrid">
+      <form className="panel quotaForm" onSubmit={saveProject}><div className="panelHead"><div><h3>项目总额度</h3><p>留空表示该指标不限额，关闭后整套项目额度不生效。</p></div><label className="compactToggle"><input type="checkbox" checked={projectEnabled} onChange={(event) => setProjectEnabled(event.target.checked)} /><span>{projectEnabled ? "启用" : "关闭"}</span></label></div><div className="quotaFieldGrid">{quotaFields.map((field) => <label key={field.key}>{field.label}<input type="number" min={field.bytes ? "0.01" : "1"} step={field.bytes ? "0.01" : "1"} value={projectForm[field.key] ?? ""} onChange={(event) => setProjectForm({ ...projectForm, [field.key]: event.target.value })} placeholder="不限额" /><small>{field.note}</small></label>)}</div><button className="primary" disabled={busy || !selectedProjectName}>保存项目额度</button></form>
+
+      <form className="panel quotaForm" onSubmit={saveKey}><div className="panelHead"><div><h3>API Key 子额度</h3><p>留空继承项目；填写值只能比项目额度更严格。</p></div></div><div className="keyQuotaSelect"><label>选择 Key<select value={selectedKeyId} onChange={(event) => setKeyId(event.target.value)}><option value="">该项目暂无 Key</option>{projectKeys.map((key) => <option key={key.id} value={key.id}>{key.name} · {key.keyPrefix}</option>)}</select></label></div><div className="quotaFieldGrid">{quotaFields.filter((field) => !field.projectOnly).map((field) => <label key={field.key}>{field.label}<input type="number" min={field.bytes ? "0.01" : "1"} step={field.bytes ? "0.01" : "1"} value={keyForm[field.key] ?? ""} onChange={(event) => setKeyForm({ ...keyForm, [field.key]: event.target.value })} placeholder="继承项目" /><small>{field.note}</small></label>)}</div><button className="secondary" disabled={busy || !selectedKeyId}>保存 Key 子额度</button></form>
+    </div>
+    {message && <div className="quotaMessage">{message}</div>}
+
+    <section className="panel quotaEvents"><div className="panelHead"><div><h3>额度事件</h3><p>70%、90%、100% 阈值及硬限制会在这里留痕，同一窗口自动去重。</p></div></div>{events.length ? events.map((event) => <div className={`quotaEvent ${event.acknowledged ? "acknowledged" : ""}`} key={event.id}><span className="eventMark"><AlertTriangle size={16} /></span><div><b>{event.projectName} · {quotaFields.find((field) => field.key === event.metric.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()))?.label ?? event.metric}</b><small>{event.scopeType === "project" ? "项目" : "API Key"}达到 {event.threshold}% · {event.usedValue}/{event.limitValue} · {formatTime(event.createdAt)}</small></div>{event.acknowledged ? <i>已确认</i> : <button className="secondary" onClick={() => void acknowledge(event.id)}>确认</button>}</div>) : <div className="emptyRow">暂无额度事件</div>}</section>
+    <div className="quotaBottomGrid">
+      <section className="panel quotaLedger"><div className="panelHead"><div><h3>待处理 TOS 对象</h3><p>未注册文件保留 48 小时；删除失败对象由后台重试。</p></div></div>{usage?.cleanupObjects?.length ? usage.cleanupObjects.map((item) => <div className="ledgerRow" key={item.recordId}><div><b>{item.objectKey}</b><small>{bytesLabel(item.sizeBytes)} · {formatTime(item.createdAt)}</small></div><span>{item.status}{item.cleanupAttempts ? ` · 重试 ${item.cleanupAttempts}` : ""}</span></div>) : <div className="emptyRow">当前没有待处理对象</div>}</section>
+      <section className="panel quotaLedger"><div className="panelHead"><div><h3>额度修改审计</h3><p>记录修改目标、来源 IP 与操作时间。</p></div></div>{audits.length ? audits.map((audit) => <div className="ledgerRow" key={audit.id}><div><b>{audit.targetType === "project" ? "项目" : "API Key"} · {audit.targetId}</b><small>{audit.sourceIp || "未知来源"} · {formatTime(audit.createdAt)}</small></div><span>{audit.action.endsWith("project.update") ? "项目额度" : "Key 子额度"}</span></div>) : <div className="emptyRow">暂无额度修改记录</div>}</section>
+    </div>
   </div>;
 }
 

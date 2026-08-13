@@ -1,8 +1,11 @@
+import json
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, File, Query, Request, UploadFile
 from fastapi.responses import Response
 
+from ..errors import ApiError
 from ..schemas import AssetCreate, AssetGroupCreate, AssetGroupUpdate, AssetUpdate
 from ..security import PrincipalDependency
 
@@ -14,6 +17,32 @@ async def upstream(request: Request, action: str, body: dict[str, Any], principa
     body.pop("ProjectName", None)
     body.pop("projectName", None)
     return await request.app.state.volcengine.call(action, body, principal)
+
+
+def response_json(response: Response) -> dict[str, Any]:
+    try:
+        value = json.loads(response.body)
+    except (AttributeError, TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def find_asset_id(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key in ("AssetId", "assetId", "Id", "id"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.startswith("asset-"):
+                return candidate
+        for nested in value.values():
+            candidate = find_asset_id(nested)
+            if candidate:
+                return candidate
+    elif isinstance(value, list):
+        for nested in value:
+            candidate = find_asset_id(nested)
+            if candidate:
+                return candidate
+    return None
 
 
 @router.post("/asset-group/create")
@@ -83,7 +112,46 @@ async def create_asset(payload: AssetCreate, request: Request, principal: Princi
         "AssetType": "Image",
         "Name": payload.name,
     }
-    return await upstream(request, "CreateAsset", {k: v for k, v in body.items() if v is not None}, principal)
+    database = request.app.state.database
+    record = database.find_upload_record(
+        principal.project_name,
+        principal.id,
+        upload_id=payload.upload_id,
+        source_url=None if payload.upload_id else payload.url,
+    )
+    if payload.upload_id and record is None:
+        raise ApiError("uploadId 不存在或不属于当前 API Key", 404, "upload_not_found")
+    record_id = record["record_id"] if record else f"assetrec_{uuid.uuid4().hex}"
+    reservation_id = request.app.state.quota.reserve(principal.project_name, principal.id, {
+        "daily_asset_creates": 1,
+        "total_assets": 1,
+    })
+    try:
+        if record:
+            database.update_asset_record(record_id, "registering", group_id=payload.group_id)
+        else:
+            database.create_asset_record(
+                record_id,
+                principal.project_name,
+                principal.id,
+                "external_url",
+                payload.url,
+                status="registering",
+                group_id=payload.group_id,
+            )
+        response = await upstream(request, "CreateAsset", {k: v for k, v in body.items() if v is not None}, principal)
+    except Exception as error:
+        request.app.state.quota.finish_reservation(reservation_id, commit=False)
+        database.update_asset_record(record_id, "registration_failed", last_error=str(error))
+        raise
+    if 200 <= response.status_code < 300:
+        asset_id = find_asset_id(response_json(response))
+        database.update_asset_record(record_id, "active", group_id=payload.group_id, asset_id=asset_id)
+        request.app.state.quota.finish_reservation(reservation_id, commit=True)
+    else:
+        database.update_asset_record(record_id, "registration_failed", last_error=f"HTTP {response.status_code}")
+        request.app.state.quota.finish_reservation(reservation_id, commit=False)
+    return response
 
 
 @router.get("/asset/list")
@@ -132,7 +200,11 @@ async def delete_asset(
     principal: PrincipalDependency,
     asset_id: str = Query(min_length=1, alias="assetId"),
 ) -> Response:
-    return await upstream(request, "DeleteAsset", {"Id": asset_id}, principal)
+    record = request.app.state.database.find_asset_by_asset_id(principal.project_name, asset_id)
+    response = await upstream(request, "DeleteAsset", {"Id": asset_id}, principal)
+    if record and 200 <= response.status_code < 300:
+        await request.app.state.storage.delete_record_object(record)
+    return response
 
 
 @router.post("/asset/upload-file")

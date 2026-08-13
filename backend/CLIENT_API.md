@@ -1,6 +1,6 @@
 # Avatar Proxy 客户 API 接入文档
 
-版本：1.0  
+版本：1.1
 适用对象：通过程序、脚本或自动化任务调用素材库与 Seedance 视频生成服务的客户。
 
 > 结论：客户不需要运行或操作任何前端。服务方签发一枚 `vap_live_...` 业务 API Key 后，客户即可通过本文件中的 HTTP API 完成鉴权、素材管理、图片上传、视频生成、任务轮询、取消、历史查询和用量查询。
@@ -107,7 +107,7 @@ curl "$BASE_URL/api/video/task/cgt-xxxxxxxx" \
 | `GET` | `/api/asset-group/get` | 查询单个素材组 |
 | `PUT` | `/api/asset-group/update` | 更新素材组 |
 | `DELETE` | `/api/asset-group/delete` | 删除素材组 |
-| `POST` | `/api/asset/create` | 从公网图片 URL 创建素材 |
+| `POST` | `/api/asset/create` | 从公网图片 URL 或已上传文件创建素材 |
 | `GET` | `/api/asset/list` | 分页查询素材 |
 | `GET` | `/api/asset/get` | 查询单个素材 |
 | `PUT` | `/api/asset/update` | 修改素材名称 |
@@ -203,6 +203,19 @@ X-Upstream-Service: volcengine-ark
 
 `url` 必须以 `http://` 或 `https://` 开头，最长 2048 字符。生产环境建议只使用稳定的 HTTPS 公网地址。
 
+如果图片刚刚由本系统的 `/api/asset/upload-file` 上传，应同时传回响应中的 `uploadId`：
+
+```json
+{
+  "groupId": "group-xxxxxxxx",
+  "url": "https://assets.example.com/avatar-assets/project/uuid-person.png",
+  "uploadId": "upload_0123456789abcdef",
+  "name": "人物正面照"
+}
+```
+
+`uploadId` 只能由上传它的同一枚 API Key 使用。旧客户端可以继续只传 `url`；建议新客户端保留并回传 `uploadId`，以便服务端可靠关联素材与 TOS 对象，在删除素材时同步释放存储。
+
 ### 5.2 查询素材列表
 
 `GET /api/asset/list`
@@ -264,6 +277,7 @@ curl -X POST "$BASE_URL/api/asset/upload-file" \
 ```json
 {
   "url": "https://assets.example.com/avatar-assets/project/uuid-person.png",
+  "uploadId": "upload_0123456789abcdef",
   "objectKey": "avatar-assets/project/uuid-person.png",
   "contentType": "image/png",
   "size": 123456,
@@ -272,7 +286,7 @@ curl -X POST "$BASE_URL/api/asset/upload-file" \
 }
 ```
 
-如果需要将上传文件注册为素材，继续把响应中的 `url` 传给 `POST /api/asset/create`。
+如果需要将上传文件注册为素材，继续把响应中的 `url` 和 `uploadId` 一起传给 `POST /api/asset/create`。未注册成功的上传文件保留 48 小时，之后由服务端自动清理。
 
 ## 6. 视频生成接口
 
@@ -466,6 +480,29 @@ DELETE /api/video/history
 
 素材库和 Seedance 返回的业务错误可能保持上游格式。客户程序应同时处理 HTTP 状态码、`error`、`detail` 和 `ResponseMetadata.Error`。
 
+本系统的写入 QPM、并发或素材额度达到硬上限时统一返回 `429`：
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "额度已用尽",
+    "metric": "dailyUploadBytes",
+    "scope": "api_key",
+    "limit": 1073741824,
+    "used": 1073741824,
+    "resetAt": "2026-08-14T00:00:00+08:00",
+    "requestId": "req_0123456789abcdef"
+  }
+}
+```
+
+- `metric` 表示超限指标；`scope` 为 `project` 或 `api_key`。
+- `limit` 和 `used` 使用请求数、文件数或字节数等对应指标单位。
+- 自然分钟或自然日可自动恢复的限制会返回 `Retry-After` 响应头；`resetAt` 使用北京时间并带时区。
+- 素材总数、TOS 总存储等无固定恢复时间的限制可能返回 `resetAt: null`，需删除素材或联系服务方调整额度。
+- 查询 QPM 达到 70%、90%、100% 只记录服务端告警，不阻断客户查询。
+
 | HTTP 状态 | 含义 | 建议 |
 |---:|---|---|
 | `400` | 请求内容或任务 ID 不合法 | 修正请求，不要自动重试 |
@@ -475,7 +512,7 @@ DELETE /api/video/history
 | `413` | 上传文件过大 | 压缩文件后重试 |
 | `415` | 不支持的图片格式 | 改用 JPEG、PNG 或 WebP |
 | `422` | 参数校验失败 | 根据 `detail` 修正请求 |
-| `429` | 频率或额度限制（如上游返回） | 指数退避并遵守 `Retry-After` |
+| `429` | 本系统或上游的频率、并发或额度限制 | 遵守 `Retry-After`；无恢复时间时停止重试并联系服务方 |
 | `502` | 无法连接或上游拒绝 | 指数退避，限制重试次数 |
 | `503` | 服务端凭据或存储未配置 | 联系服务方，不要持续重试 |
 
@@ -589,7 +626,7 @@ with ThreadPoolExecutor(max_workers=3) as executor:
 现有接口已经足以让客户完全脱离前端完成自动化，但在开放大批量生产调用前，应处理以下事项：
 
 1. **必须启用 HTTPS。** 当前 IP 地址的 HTTP 服务只能用于验收，不能安全传输 API Key。
-2. **约定并发和额度。** 当前网关没有自己的并发上限、每 Key 限流或费用配额；应在 Nginx/API 层增加限制，并给客户明确数值。
+2. **约定并发和额度。** 服务端支持项目总额度与 API Key 子额度；交付 Key 时应明确客户的 QPM、并发、每日上传和素材上限。当前限流是单实例实现，横向扩容前需迁移到共享计数器。
 3. **增加创建任务幂等性。** 当前 `POST /api/video/generate` 不接受幂等键，网络重试可能重复计费。
 4. **稳定响应契约。** 素材与视频响应目前大部分透传上游；上游字段变化会直接影响客户。长期应增加 `/api/v1` 并统一响应模型。
 5. **明确模型参数矩阵。** 不同 Seedance 模型支持的分辨率、比例、时长和音频能力可能不同，应由服务方随模型升级维护。
