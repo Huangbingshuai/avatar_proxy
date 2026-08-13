@@ -35,7 +35,7 @@ class ProjectDelete(ApiModel):
 
 class ApiKeyCreate(ApiModel):
     name: str = Field(min_length=1, max_length=100)
-    project_name: str = Field(default="avatar-proxy", min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
+    project_name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
 
 
 class ApiKeyDisable(ApiModel):
@@ -56,7 +56,7 @@ class ApiKeyBindProject(ApiModel):
 
 
 class ProjectQuotaUpdate(ApiModel):
-    project_name: str = Field(min_length=2, max_length=63, pattern=r"^[a-z][a-z0-9_-]+$")
+    project_name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
     enabled: bool = False
     read_qpm: int | None = Field(default=None, ge=1)
     write_qpm: int | None = Field(default=None, ge=1)

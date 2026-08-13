@@ -8,7 +8,7 @@ from typing import Annotated, AsyncIterator
 from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .database import DEFAULT_PROJECT_NAME, Database
+from .database import Database
 from .errors import ApiError
 
 
@@ -54,8 +54,10 @@ async def require_api_key(
     row = database.find_api_key(hash_api_key(credentials.credentials))
     if not row:
         raise ApiError("API Key 无效或已禁用", 401, "invalid_api_key")
-    project_name = (row.get("projectName") or DEFAULT_PROJECT_NAME).strip()
-    principal = ApiPrincipal(id=row["id"], project_name=project_name or DEFAULT_PROJECT_NAME)
+    project_name = (row.get("projectName") or "").strip()
+    if not project_name or not database.project_exists(project_name):
+        raise ApiError("API Key 未绑定有效项目", 403, "invalid_project_binding")
+    principal = ApiPrincipal(id=row["id"], project_name=project_name)
     async with request.app.state.quota.request_slot(
         principal.project_name,
         principal.id,

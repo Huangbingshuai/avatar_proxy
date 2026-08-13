@@ -2,7 +2,7 @@ import sqlite3
 
 from fastapi import APIRouter, Query, Request, status
 
-from ..database import DEFAULT_PROJECT_NAME, Database
+from ..database import Database
 from ..errors import ApiError
 from ..schemas import (
     ApiKeyBindProject,
@@ -32,10 +32,29 @@ def list_projects(request: Request, _: AdminDependency) -> dict:
 
 
 @router.post("/project/create", status_code=status.HTTP_201_CREATED)
-def create_project(payload: ProjectCreate, request: Request, _: AdminDependency) -> dict:
+async def create_project(payload: ProjectCreate, request: Request, _: AdminDependency) -> dict:
+    db = database(request)
+    if db.resolve_project_name(payload.name) is not None:
+        raise ApiError("项目标识已存在", 409, "project_exists")
+
+    volcengine_project = await request.app.state.volcengine.get_project(payload.name)
+    if volcengine_project is None:
+        raise ApiError(
+            "火山引擎中不存在该 ProjectName，请先在火山控制台创建项目",
+            422,
+            "volcengine_project_not_found",
+        )
+    if volcengine_project["ProjectName"] != payload.name:
+        raise ApiError(
+            "ProjectName 必须与火山引擎中的名称完全一致（区分大小写）",
+            422,
+            "volcengine_project_name_mismatch",
+            details={"volcengineProjectName": volcengine_project["ProjectName"]},
+        )
+
     display_name = (payload.display_name or payload.name).strip()
     try:
-        project = database(request).create_project(payload.name, display_name, payload.description.strip())
+        project = db.create_project(payload.name, display_name, payload.description.strip())
     except sqlite3.IntegrityError as error:
         raise ApiError("项目标识已存在", 409, "project_exists") from error
     return {"project": project}
@@ -43,17 +62,24 @@ def create_project(payload: ProjectCreate, request: Request, _: AdminDependency)
 
 @router.delete("/project/delete")
 def delete_project(payload: ProjectDelete, request: Request, _: AdminDependency) -> dict:
-    if payload.name.casefold() == DEFAULT_PROJECT_NAME.casefold():
-        raise ApiError("默认项目 avatar-proxy 不能删除", 400, "default_project_protected")
-    moved_key_count = database(request).delete_project(payload.name)
-    if moved_key_count is None:
+    result = database(request).delete_project(payload.name)
+    if result is None:
         raise ApiError("项目不存在", 404, "project_not_found")
-    return {
-        "deleted": True,
-        "projectName": payload.name,
-        "movedKeyCount": moved_key_count,
-        "fallbackProjectName": DEFAULT_PROJECT_NAME,
-    }
+    if result["keyCount"]:
+        raise ApiError(
+            "项目仍有关联 API Key，请先迁移或删除全部 Key",
+            409,
+            "project_has_api_keys",
+            details={"keyCount": result["keyCount"], "assetCount": result["assetCount"]},
+        )
+    if result["assetCount"]:
+        raise ApiError(
+            "项目仍有未删除素材，请先完成素材删除和 TOS 清理",
+            409,
+            "project_has_assets",
+            details={"keyCount": 0, "assetCount": result["assetCount"]},
+        )
+    return {"deleted": True, "projectName": result["projectName"]}
 
 
 @router.get("/apikey/list")
@@ -64,7 +90,9 @@ def list_api_keys(request: Request, _: AdminDependency) -> dict:
 @router.post("/apikey/create", status_code=status.HTTP_201_CREATED)
 def create_api_key(payload: ApiKeyCreate, request: Request, _: AdminDependency) -> dict:
     db = database(request)
-    project_name = db.ensure_project(payload.project_name)
+    project_name = db.resolve_project_name(payload.project_name)
+    if project_name is None:
+        raise ApiError("项目不存在，请先创建并绑定真实的火山 ProjectName", 404, "project_not_found")
     secret = generate_api_key()
     key_id = generate_key_id()
     prefix = f"{secret[:16]}…"
@@ -111,7 +139,9 @@ def delete_api_key(payload: ApiKeyDelete, request: Request, _: AdminDependency) 
 @router.post("/apikey/bind-project")
 def bind_api_key_project(payload: ApiKeyBindProject, request: Request, _: AdminDependency) -> dict:
     db = database(request)
-    project_name = db.ensure_project(payload.project_name)
+    project_name = db.resolve_project_name(payload.project_name)
+    if project_name is None:
+        raise ApiError("项目不存在，请先创建并绑定真实的火山 ProjectName", 404, "project_not_found")
     if not db.bind_api_key_project(payload.key_id, project_name):
         raise ApiError("API Key 不存在", 404, "api_key_not_found")
     return {"bound": True, "keyId": payload.key_id, "projectName": project_name}

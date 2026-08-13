@@ -13,9 +13,11 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.storage import tos
+from app.volcengine import VolcengineClient
 
 
 ADMIN_HEADERS = {"x-admin-token": "test-admin", "content-type": "application/json"}
+REAL_GET_PROJECT = VolcengineClient.get_project
 
 
 class FakeVolcengine:
@@ -87,43 +89,35 @@ def test_assets_use_project_bound_to_business_api_key(tmp_path: Path) -> None:
     }
 
 
-def test_api_key_defaults_to_avatar_proxy_project_and_injects_it_into_asset_group(tmp_path: Path) -> None:
+def test_api_key_requires_an_explicit_existing_project(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "test.db"))
     with TestClient(app) as client:
-        key_response = client.post(
+        missing_binding = client.post(
             "/api/internal/apikey/create",
             headers=ADMIN_HEADERS,
             json={"name": "default-user"},
         )
-        assert key_response.status_code == 201
-        secret = key_response.json()["secret"]
-        assert key_response.json()["apiKey"]["projectName"] == "avatar-proxy"
-
-        app.state.volcengine = FakeVolcengine()
-        group_response = client.post(
-            "/api/asset-group/create",
-            headers={"Authorization": f"Bearer {secret}"},
-            json={
-                "name": "默认素材库",
-                "description": "默认项目素材",
-                "projectName": "attempted_override",
-            },
+        unknown_project = client.post(
+            "/api/internal/apikey/create",
+            headers=ADMIN_HEADERS,
+            json={"name": "unknown-project", "projectName": "not-created"},
         )
 
-    assert group_response.status_code == 200
-    assert group_response.json()["projectName"] == "avatar-proxy"
-    assert group_response.json()["payload"] == {
-        "Name": "默认素材库",
-        "Description": "默认项目素材",
-        "GroupType": "AIGC",
-    }
+    assert missing_binding.status_code == 422
+    assert unknown_project.status_code == 404
+    assert unknown_project.json()["error"]["code"] == "project_not_found"
 
 
-def test_delete_project_moves_keys_to_avatar_proxy_and_protects_default(tmp_path: Path) -> None:
+def test_project_with_any_api_key_cannot_be_deleted(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "test.db"))
     with TestClient(app) as client:
         create_project(client)
         key_id, _ = create_key(client)
+        client.put(
+            "/api/internal/apikey/disable",
+            headers=ADMIN_HEADERS,
+            json={"keyId": key_id},
+        )
         deleted = client.request(
             "DELETE",
             "/api/internal/project/delete",
@@ -131,29 +125,23 @@ def test_delete_project_moves_keys_to_avatar_proxy_and_protects_default(tmp_path
             json={"name": "drama_prod"},
         )
         projects = client.get("/api/internal/project/list", headers=ADMIN_HEADERS).json()["projects"]
-        keys = client.get("/api/internal/apikey/list", headers=ADMIN_HEADERS).json()["apiKeys"]
-        protected = client.request(
-            "DELETE",
-            "/api/internal/project/delete",
-            headers=ADMIN_HEADERS,
-            json={"name": "AVATAR-PROXY"},
-        )
 
-    assert deleted.status_code == 200
-    assert deleted.json()["movedKeyCount"] == 1
-    assert all(project["name"] != "drama_prod" for project in projects)
-    assert next(key for key in keys if key["id"] == key_id)["projectName"] == "avatar-proxy"
-    assert protected.status_code == 400
-    assert protected.json()["error"]["code"] == "default_project_protected"
+    assert deleted.status_code == 409
+    assert deleted.json()["error"] == {
+        "code": "project_has_api_keys",
+        "message": "项目仍有关联 API Key，请先迁移或删除全部 Key",
+        "keyCount": 1,
+        "assetCount": 0,
+    }
+    assert any(project["name"] == "drama_prod" for project in projects)
 
 
-def test_delete_project_preserves_asset_ledger_in_default_project(tmp_path: Path) -> None:
+def test_project_with_active_asset_cannot_be_deleted(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "test.db"))
     with TestClient(app) as client:
         create_project(client)
-        key_id, _ = create_key(client)
         app.state.database.create_asset_record(
-            "asset-record", "drama_prod", key_id, "tos", "https://cdn.example.com/asset.png",
+            "asset-record", "drama_prod", "historical-key", "tos", "https://cdn.example.com/asset.png",
             bucket="test-bucket", object_key="avatar-assets/drama_prod/asset.png", size_bytes=12,
             status="active", group_id="group-1",
         )
@@ -161,15 +149,24 @@ def test_delete_project_preserves_asset_ledger_in_default_project(tmp_path: Path
         deleted = client.request(
             "DELETE", "/api/internal/project/delete", headers=ADMIN_HEADERS, json={"name": "drama_prod"},
         )
-        usage = client.get(
-            "/api/internal/quota/usage", headers=ADMIN_HEADERS, params={"projectName": "avatar-proxy"},
-        ).json()["usage"]
-        record = app.state.database.find_asset_by_asset_id("avatar-proxy", "asset-preserved")
+
+    assert deleted.status_code == 409
+    assert deleted.json()["error"]["code"] == "project_has_assets"
+    assert deleted.json()["error"]["assetCount"] == 1
+
+
+def test_empty_project_can_be_deleted_without_a_fallback(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        deleted = client.request(
+            "DELETE", "/api/internal/project/delete", headers=ADMIN_HEADERS, json={"name": "DRAMA_PROD"},
+        )
+        projects = client.get("/api/internal/project/list", headers=ADMIN_HEADERS).json()["projects"]
 
     assert deleted.status_code == 200
-    assert record is not None
-    assert usage["totalAssets"] == 1
-    assert usage["totalStorageBytes"] == 12
+    assert deleted.json() == {"deleted": True, "projectName": "drama_prod"}
+    assert projects == []
 
 
 def test_internal_bind_project_and_disable_key(tmp_path: Path) -> None:
@@ -243,7 +240,8 @@ def test_project_name_rules_match_volcengine_and_are_case_insensitive(tmp_path: 
             headers=ADMIN_HEADERS,
             json={"name": "xinchuang8.0"},
         )
-        assert deleted.status_code == 200
+        assert deleted.status_code == 409
+        assert deleted.json()["error"]["code"] == "project_has_api_keys"
 
 
 @pytest.mark.parametrize("name", ["a", "A.Z-_9", "a" * 64])
@@ -259,6 +257,106 @@ def test_volcengine_project_name_valid_boundaries_are_accepted(tmp_path: Path, n
     assert response.status_code == 201
     assert response.json()["project"]["name"] == name
     assert response.json()["project"]["displayName"] == name
+
+
+def test_project_creation_validates_exact_volcengine_project_name(tmp_path: Path) -> None:
+    captured: dict[str, httpx.Request] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["request"] = request
+        return httpx.Response(
+            200,
+            json={"ResponseMetadata": {"RequestId": "iam-request"}, "Result": {"ProjectName": "XinChuang8.0"}},
+        )
+
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        app.state.volcengine.get_project = REAL_GET_PROJECT.__get__(app.state.volcengine, VolcengineClient)
+        app.state.volcengine.transport = httpx.MockTransport(handler)
+        response = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": "XinChuang8.0", "displayName": "客户生产"},
+        )
+
+    assert response.status_code == 201
+    request = captured["request"]
+    assert request.method == "GET"
+    assert request.url.host == "iam.volcengineapi.com"
+    assert request.url.params["Action"] == "GetProject"
+    assert request.url.params["Version"] == "2021-08-01"
+    assert request.url.params["ProjectName"] == "XinChuang8.0"
+    assert "/cn-beijing/iam/request" in request.headers["authorization"]
+
+
+@pytest.mark.parametrize(
+    ("upstream_status", "upstream_body", "expected_status", "expected_code"),
+    [
+        (
+            404,
+            {"ResponseMetadata": {"Error": {"Code": "EntityNotFound", "Message": "project not found"}}},
+            422,
+            "volcengine_project_not_found",
+        ),
+        (
+            403,
+            {"ResponseMetadata": {"Error": {"Code": "AccessDenied", "Message": "forbidden"}}},
+            502,
+            "volcengine_project_validation_forbidden",
+        ),
+        (
+            500,
+            {"ResponseMetadata": {"Error": {"Code": "InternalError", "Message": "failed"}}},
+            502,
+            "volcengine_project_validation_failed",
+        ),
+    ],
+)
+def test_project_creation_fails_closed_when_volcengine_validation_fails(
+    tmp_path: Path,
+    upstream_status: int,
+    upstream_body: dict,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(upstream_status, json=upstream_body)
+
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        app.state.volcengine.get_project = REAL_GET_PROJECT.__get__(app.state.volcengine, VolcengineClient)
+        app.state.volcengine.transport = httpx.MockTransport(handler)
+        response = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": "missing-project", "displayName": "不能创建"},
+        )
+        projects = client.get("/api/internal/project/list", headers=ADMIN_HEADERS).json()["projects"]
+
+    assert response.status_code == expected_status
+    assert response.json()["error"]["code"] == expected_code
+    assert projects == []
+
+
+def test_project_creation_rejects_volcengine_case_mismatch(tmp_path: Path) -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"Result": {"ProjectName": "XinChuang8.0"}})
+
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        app.state.volcengine.get_project = REAL_GET_PROJECT.__get__(app.state.volcengine, VolcengineClient)
+        app.state.volcengine.transport = httpx.MockTransport(handler)
+        response = client.post(
+            "/api/internal/project/create",
+            headers=ADMIN_HEADERS,
+            json={"name": "xinchuang8.0", "displayName": "大小写错误"},
+        )
+        projects = client.get("/api/internal/project/list", headers=ADMIN_HEADERS).json()["projects"]
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "volcengine_project_name_mismatch"
+    assert response.json()["error"]["volcengineProjectName"] == "XinChuang8.0"
+    assert projects == []
 
 
 @pytest.mark.parametrize("name", ["", "a" * 65, "中文项目", "has space", "has/slash", "name@company"])

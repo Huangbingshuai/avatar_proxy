@@ -111,11 +111,18 @@ def test_real_legacy_schema_upgrades_idempotently_and_preserves_rows(tmp_path: P
         "quota_events",
         "admin_audit_logs",
     } <= tables
-    assert key["project_name"] == "avatar-proxy"
+    assert key["project_name"] == "default"
     assert key["status"] == "disabled"
-    assert request["project_name"] == usage["project_name"] == task["project_name"] == "avatar-proxy"
+    assert request["project_name"] == usage["project_name"] == task["project_name"] == "default"
     assert usage["total_tokens"] == 123
-    assert [row["name"] for row in projects] == ["avatar-proxy"]
+    assert [row["name"] for row in projects] == ["default"]
+
+
+def test_fresh_database_has_no_fallback_project(tmp_path: Path) -> None:
+    database = Database(tmp_path / "fresh.db")
+    database.initialize()
+
+    assert database.list_projects() == []
 
 
 def test_new_and_upgraded_projects_default_to_unlimited(tmp_path: Path) -> None:
@@ -177,7 +184,9 @@ def test_deleted_project_recreated_with_same_name_does_not_inherit_usage_or_quot
     reservation = quota.reserve("customer", "key-1", {"daily_upload_files": 1})
     quota.finish_reservation(reservation, commit=True)
 
-    assert database.delete_project("customer") == 1
+    database.disable_api_key("key-1")
+    assert database.delete_api_key("key-1") == "deleted"
+    assert database.delete_project("customer")["deleted"] is True
     database.create_project("customer", "Recreated", "")
 
     recreated = quota.project_quota("customer")

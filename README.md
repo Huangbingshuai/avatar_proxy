@@ -50,7 +50,7 @@ CORS_ORIGINS=http://localhost:3000
 ENABLE_API_DOCS=false
 ```
 
-`VOLCENGINE_ACCESS_KEY/SECRET_KEY` 用于素材库请求签名；`SEEDANCE_ARK_API_KEY` 用于视频生成，二者不能互相替代。
+`VOLCENGINE_ACCESS_KEY/SECRET_KEY` 用于素材库请求签名和创建本地项目时校验火山资源项目，凭证至少需要相应素材接口权限及 `iam:GetProject` 权限；`SEEDANCE_ARK_API_KEY` 用于视频生成，二者不能互相替代。
 
 ## 本地启动内部控制台
 
@@ -131,7 +131,7 @@ POST /api/video/task/{taskId}/cancel
 - 内部项目：`/api/internal/project/create|list`
 - 内部 API Key：`/api/internal/apikey/create|list|disable|bind-project`
 
-项目绑定会由服务端注入到火山素材库请求的 `ProjectName`；用户不能在请求体中覆盖。
+创建本地项目时，服务端会调用火山 IAM `GetProject` 校验 `ProjectName`。火山项目不存在、名称大小写不一致、凭证无读取权限或校验服务异常时，本地项目均不会写入。绑定成功后，项目名会由服务端注入到火山素材库请求中，用户不能在请求体中覆盖。
 
 ## 测试
 

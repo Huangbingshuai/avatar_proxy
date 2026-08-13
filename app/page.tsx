@@ -31,6 +31,7 @@ type Project = {
   description: string;
   keyCount: number;
   activeKeyCount: number;
+  activeAssetCount: number;
 };
 
 type ApiKey = {
@@ -117,7 +118,6 @@ type Tab = "overview" | "projects" | "keys" | "quotas" | "playground" | "integra
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const DEFAULT_MODEL = "doubao-seedance-2-0-260128";
-const DEFAULT_PROJECT_NAME = "avatar-proxy";
 const RUNNING_STATUSES = new Set(["queued", "running"]);
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
@@ -166,8 +166,10 @@ export default function ConsolePage() {
   const [quotaAudits, setQuotaAudits] = useState<QuotaAudit[]>([]);
   const [secret, setSecret] = useState("");
   const [projectForm, setProjectForm] = useState({ name: "", displayName: "", description: "" });
-  const [keyForm, setKeyForm] = useState({ name: "", projectName: DEFAULT_PROJECT_NAME });
+  const [keyForm, setKeyForm] = useState({ name: "", projectName: "" });
   const [showProjectForm, setShowProjectForm] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [projectCreateError, setProjectCreateError] = useState("");
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
@@ -215,13 +217,19 @@ export default function ConsolePage() {
 
   async function createProject(event: FormEvent) {
     event.preventDefault();
+    if (creatingProject) return;
+    setCreatingProject(true);
+    setProjectCreateError("");
+    setError("");
     try {
       await adminApi("/api/internal/project/create", { method: "POST", body: JSON.stringify(projectForm) });
       setProjectForm({ name: "", displayName: "", description: "" });
       setShowProjectForm(false);
       await loadAll();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "创建项目失败");
+      setProjectCreateError(caught instanceof Error ? caught.message : "创建项目失败");
+    } finally {
+      setCreatingProject(false);
     }
   }
 
@@ -248,7 +256,7 @@ export default function ConsolePage() {
     try {
       const data = await adminApi("/api/internal/apikey/create", { method: "POST", body: JSON.stringify(keyForm) });
       setSecret(data.secret as string);
-      setKeyForm({ name: "", projectName: DEFAULT_PROJECT_NAME });
+      setKeyForm({ name: "", projectName: "" });
       setShowKeyForm(false);
       await loadAll();
     } catch (caught) {
@@ -331,8 +339,8 @@ export default function ConsolePage() {
         {error && !locked && <div className="errorBanner"><Ban size={17} />{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
 
         {tab === "overview" && <OverviewPanel overview={overview} onOpenPlayground={() => setTab("playground")} />}
-        {tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => setShowProjectForm(true)} onDelete={setProjectToDelete} />}
-        {tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => setShowKeyForm(true)} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
+        {tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
+        {tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
         {tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
         {tab === "playground" && <VideoPlayground />}
         {tab === "integration" && <IntegrationPanel />}
@@ -346,11 +354,13 @@ export default function ConsolePage() {
         <button className="primary wide" disabled={!tokenDraft || loading}>{loading ? <><LoaderCircle size={17} className="spin" />验证中</> : "进入控制台"}</button>
       </form></div>}
 
-      {showProjectForm && <Modal title="新建项目" onClose={() => setShowProjectForm(false)}><form onSubmit={createProject} className="stackForm">
+      {showProjectForm && <Modal title="新建项目" onClose={() => { if (!creatingProject) setShowProjectForm(false); }}><form onSubmit={createProject} className="stackForm">
         <label>显示名称<input maxLength={64} value={projectForm.displayName} onChange={(event) => setProjectForm({ ...projectForm, displayName: event.target.value })} placeholder="短剧生产（选填，最多 64 个字符）" /></label>
         <label>火山 ProjectName<input required minLength={1} maxLength={64} pattern="[A-Za-z0-9._-]+" title="1～64 个字符，仅允许英文字母、数字、英文句点、下划线和连字符" value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} placeholder="例如 xinchuang8.0" /></label>
         <label>描述<textarea maxLength={128} value={projectForm.description} onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })} placeholder="选填，最多 128 个字符" /></label>
-        <button className="primary wide">创建项目</button>
+        <div className="note">创建前会由后端使用火山 AK/SK 校验资源项目；ProjectName 必须真实存在且大小写完全一致。</div>
+        {projectCreateError && <div className="formError" role="alert">{projectCreateError}</div>}
+        <button className="primary wide" disabled={creatingProject || !projectForm.name.trim()}>{creatingProject ? <><LoaderCircle size={17} className="spin" />正在校验火山项目</> : "创建项目"}</button>
       </form></Modal>}
 
       {projectToDelete && <Modal title="删除项目" onClose={() => { if (!deletingProject) setProjectToDelete(null); }}>
@@ -360,11 +370,12 @@ export default function ConsolePage() {
             <h3>确认删除“{projectToDelete.displayName}”？</h3>
             <p>项目标识：<code>{projectToDelete.name}</code></p>
           </div>
-          {projectToDelete.keyCount > 0 && <div className="note">关联的 {projectToDelete.keyCount} 个 API Key 将迁移到 <code>{DEFAULT_PROJECT_NAME}</code>，不会失效。</div>}
+          {projectToDelete.keyCount > 0 && <div className="note">该项目仍关联 {projectToDelete.keyCount} 个 API Key，因此不能删除。请先迁移这些 Key，或将其禁用后逐一删除。</div>}
+          {projectToDelete.activeAssetCount > 0 && <div className="note">该项目仍有 {projectToDelete.activeAssetCount} 个未删除素材，请先完成删除和 TOS 清理。</div>}
           <p className="deleteProjectHint">此操作只删除本系统中的项目映射，不会删除火山控制台中的真实项目。</p>
           <div className="modalActions">
             <button type="button" className="secondary" onClick={() => setProjectToDelete(null)} disabled={deletingProject}>取消</button>
-            <button type="button" className="dangerButton" onClick={() => void deleteProject()} disabled={deletingProject}>
+            <button type="button" className="dangerButton" onClick={() => void deleteProject()} disabled={deletingProject || projectToDelete.keyCount > 0 || projectToDelete.activeAssetCount > 0}>
               {deletingProject ? <><LoaderCircle size={16} className="spin" />删除中</> : <><Trash2 size={16} />确认删除</>}
             </button>
           </div>
@@ -412,7 +423,7 @@ function OverviewPanel({ overview, onOpenPlayground }: { overview: Overview | nu
 
 function ProjectsPanel({ projects, onCreate, onDelete }: { projects: Project[]; onCreate: () => void; onDelete: (project: Project) => void }) {
   return <div className="content"><div className="pageIntro"><div><h2>项目隔离</h2><p>项目名必须是火山方舟控制台中真实存在的 ProjectName。</p></div><button className="primary" onClick={onCreate}><Plus size={17} />新建项目</button></div>
-    <div className="cardGrid">{projects.map((project) => <article className="projectCard" key={project.name}><div className="projectTop"><span className="projectIcon">{project.displayName.slice(0, 1).toUpperCase()}</span><div><h3>{project.displayName}</h3><code>{project.name}</code></div>{project.name === DEFAULT_PROJECT_NAME ? <span className="defaultProjectBadge">默认</span> : <button className="projectDelete" type="button" onClick={() => void onDelete(project)} aria-label={`删除项目 ${project.displayName}`}><Trash2 size={15} /></button>}</div><p>{project.description || "暂无描述"}</p><footer><span>{project.activeKeyCount || 0} 个有效 Key</span><span>{project.keyCount || 0} 个 Key</span></footer></article>)}{!projects.length && <Empty text="还没有项目，请先创建并填写真实的火山 ProjectName。" />}</div>
+    <div className="cardGrid">{projects.map((project) => <article className="projectCard" key={project.name}><div className="projectTop"><span className="projectIcon">{project.displayName.slice(0, 1).toUpperCase()}</span><div><h3>{project.displayName}</h3><code>{project.name}</code></div><button className="projectDelete" type="button" onClick={() => void onDelete(project)} aria-label={`删除项目 ${project.displayName}`}><Trash2 size={15} /></button></div><p>{project.description || "暂无描述"}</p><footer><span>{project.activeKeyCount || 0} 个有效 Key</span><span>{project.keyCount || 0} 个 Key</span></footer></article>)}{!projects.length && <Empty text="还没有项目，请先创建并填写真实的火山 ProjectName。" />}</div>
   </div>;
 }
 

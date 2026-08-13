@@ -8,6 +8,7 @@ from hypothesis import settings as hypothesis_settings
 
 from app.config import Settings
 from app.main import create_app
+from app.volcengine import VolcengineClient
 
 
 ADMIN_HEADERS = {"x-admin-token": "test-admin", "content-type": "application/json"}
@@ -16,6 +17,14 @@ ADMIN_HEADERS = {"x-admin-token": "test-admin", "content-type": "application/jso
 class FakeVolcengine:
     async def call(self, action, payload, principal):
         return JSONResponse({"action": action, "payload": payload, "projectName": principal.project_name})
+
+
+@pytest.fixture(autouse=True)
+def stub_volcengine_project_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def get_project(_: VolcengineClient, project_name: str) -> dict[str, str]:
+        return {"ProjectName": project_name, "Status": "active"}
+
+    monkeypatch.setattr(VolcengineClient, "get_project", get_project)
 
 
 def build_settings(database_path: Path, **overrides: object) -> Settings:

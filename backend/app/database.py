@@ -6,10 +6,6 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-DEFAULT_PROJECT_NAME = "avatar-proxy"
-LEGACY_DEFAULT_PROJECT_NAME = "default"
-
-
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
     name TEXT PRIMARY KEY,
@@ -170,24 +166,6 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
-            connection.execute(
-                "INSERT INTO projects (name, display_name, description) VALUES (?, ?, ?) "
-                "ON CONFLICT(name) DO NOTHING",
-                (DEFAULT_PROJECT_NAME, "Avatar Proxy 默认项目", "未显式绑定项目的 API Key 使用此项目"),
-            )
-            connection.execute(
-                "UPDATE api_keys SET project_name = ? WHERE project_name = ?",
-                (DEFAULT_PROJECT_NAME, LEGACY_DEFAULT_PROJECT_NAME),
-            )
-            for table in ("request_logs", "video_usage", "video_tasks"):
-                connection.execute(
-                    f"UPDATE {table} SET project_name = ? WHERE project_name = ?",
-                    (DEFAULT_PROJECT_NAME, LEGACY_DEFAULT_PROJECT_NAME),
-                )
-            connection.execute(
-                "DELETE FROM projects WHERE name = ?",
-                (LEGACY_DEFAULT_PROJECT_NAME,),
-            )
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations
@@ -230,7 +208,9 @@ class Database:
             rows = connection.execute("""
                 SELECT p.name, p.display_name AS displayName, p.description, p.created_at AS createdAt,
                     COUNT(k.id) AS keyCount,
-                    SUM(CASE WHEN k.status = 'active' THEN 1 ELSE 0 END) AS activeKeyCount
+                    SUM(CASE WHEN k.status = 'active' THEN 1 ELSE 0 END) AS activeKeyCount,
+                    (SELECT COUNT(*) FROM asset_records a
+                     WHERE a.project_name = p.name AND a.status != 'deleted') AS activeAssetCount
                 FROM projects p LEFT JOIN api_keys k ON k.project_name = p.name
                 GROUP BY p.name ORDER BY p.created_at DESC
             """).fetchall()
@@ -252,7 +232,7 @@ class Database:
             ).fetchone()
         return row["name"] if row else None
 
-    def delete_project(self, name: str) -> int | None:
+    def delete_project(self, name: str) -> dict[str, Any] | None:
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT name FROM projects WHERE name = ? COLLATE NOCASE",
@@ -261,15 +241,21 @@ class Database:
             if row is None:
                 return None
             canonical_name = row["name"]
-            cursor = connection.execute(
-                "UPDATE api_keys SET project_name = ? WHERE project_name = ?",
-                (DEFAULT_PROJECT_NAME, canonical_name),
-            )
-            for table in ("request_logs", "video_usage", "video_tasks", "asset_records"):
-                connection.execute(
-                    f"UPDATE {table} SET project_name = ? WHERE project_name = ?",
-                    (DEFAULT_PROJECT_NAME, canonical_name),
-                )
+            key_count = connection.execute(
+                "SELECT COUNT(*) FROM api_keys WHERE project_name = ?",
+                (canonical_name,),
+            ).fetchone()[0]
+            asset_count = connection.execute(
+                "SELECT COUNT(*) FROM asset_records WHERE project_name = ? AND status != 'deleted'",
+                (canonical_name,),
+            ).fetchone()[0]
+            if key_count or asset_count:
+                return {
+                    "deleted": False,
+                    "projectName": canonical_name,
+                    "keyCount": key_count,
+                    "assetCount": asset_count,
+                }
             connection.execute(
                 "DELETE FROM quota_reservations WHERE scope_type='project' AND scope_id=?",
                 (canonical_name,),
@@ -279,21 +265,7 @@ class Database:
                 (canonical_name,),
             )
             connection.execute("DELETE FROM projects WHERE name = ?", (canonical_name,))
-        return cursor.rowcount
-
-    def ensure_project(self, name: str) -> str:
-        with self.connect() as connection:
-            connection.execute(
-                "INSERT INTO projects (name, display_name) VALUES (?, ?) ON CONFLICT DO NOTHING",
-                (name, name),
-            )
-            row = connection.execute(
-                "SELECT name FROM projects WHERE name = ? COLLATE NOCASE",
-                (name,),
-            ).fetchone()
-        if row is None:
-            raise RuntimeError("项目创建后无法读取")
-        return row["name"]
+        return {"deleted": True, "projectName": canonical_name, "keyCount": 0, "assetCount": 0}
 
     def project_exists(self, name: str) -> bool:
         with self.connect() as connection:

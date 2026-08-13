@@ -11,6 +11,7 @@ type MockData = {
   events?: Array<Record<string, unknown>>;
   audits?: Array<Record<string, unknown>>;
   projectQuotaError?: string;
+  projectCreateError?: string;
 };
 
 
@@ -24,8 +25,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function installFetch(data: MockData = {}) {
   const projects = data.projects ?? [
-    { name: "customer_a", displayName: "客户 A", description: "", keyCount: 1, activeKeyCount: 1 },
-    { name: "customer_b", displayName: "客户 B", description: "", keyCount: 1, activeKeyCount: 1 },
+    { name: "customer_a", displayName: "客户 A", description: "", keyCount: 1, activeKeyCount: 1, activeAssetCount: 0 },
+    { name: "customer_b", displayName: "客户 B", description: "", keyCount: 1, activeKeyCount: 1, activeAssetCount: 0 },
   ];
   const apiKeys = data.apiKeys ?? [
     { id: "key-a", name: "生产 Key", keyPrefix: "vap_live_a…", projectName: "customer_a", status: "active", createdAt: "2026-08-13 00:00:00" },
@@ -84,6 +85,11 @@ function installFetch(data: MockData = {}) {
     }
     if (url.pathname === "/api/internal/apikey/quota" && init?.method === "PUT") return jsonResponse({ quota: {} });
     if (url.pathname === "/api/internal/quota/event/ack") return jsonResponse({ acknowledged: true });
+    if (url.pathname === "/api/internal/project/create" && init?.method === "POST") {
+      if (data.projectCreateError) return jsonResponse({ error: { message: data.projectCreateError } }, 422);
+      return jsonResponse({ project: JSON.parse(String(init.body)) }, 201);
+    }
+    if (url.pathname === "/api/internal/project/delete" && init?.method === "DELETE") return jsonResponse({ deleted: true });
     return jsonResponse({ error: { message: `未模拟接口 ${url.pathname}` } }, 500);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -201,5 +207,38 @@ describe("内部控制台", () => {
     const projectForm = screen.getByRole("heading", { name: "项目总额度" }).closest("form");
     await user.click(within(projectForm!).getByRole("button", { name: "保存项目额度" }));
     expect(await screen.findByText("项目额度配置无效")).toBeInTheDocument();
+  });
+
+  it("项目存在 API Key 时禁止确认删除", async () => {
+    const { calls } = installFetch({
+      projects: [{ name: "customer_a", displayName: "客户 A", description: "", keyCount: 1, activeKeyCount: 0, activeAssetCount: 0 }],
+      apiKeys: [{ id: "key-a", name: "停用 Key", keyPrefix: "vap_live_a…", projectName: "customer_a", status: "disabled", createdAt: "2026-08-13 00:00:00" }],
+    });
+    const user = await unlock();
+    await waitFor(() => expect(screen.queryByText("解锁内部控制台")).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "项目" }));
+    await user.click(screen.getByRole("button", { name: "删除项目 客户 A" }));
+
+    expect(screen.getByText("该项目仍关联 1 个 API Key，因此不能删除。", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认删除" })).toBeDisabled();
+    expect(calls.some((call) => call.path === "/api/internal/project/delete")).toBe(false);
+  });
+
+  it("新建项目时展示火山校验说明和服务端校验错误", async () => {
+    const { calls } = installFetch({ projectCreateError: "火山引擎中不存在该 ProjectName，请先在火山控制台创建项目" });
+    const user = await unlock();
+    await waitFor(() => expect(screen.queryByText("解锁内部控制台")).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "项目" }));
+    await user.click(screen.getByRole("button", { name: "新建项目" }));
+
+    expect(screen.getByText("ProjectName 必须真实存在且大小写完全一致。", { exact: false })).toBeInTheDocument();
+    const submit = screen.getByRole("button", { name: "创建项目" });
+    expect(submit).toBeDisabled();
+    await user.type(screen.getByLabelText("火山 ProjectName"), "missing-project");
+    await user.click(submit);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("火山引擎中不存在该 ProjectName");
+    const createCall = calls.find((call) => call.path === "/api/internal/project/create");
+    expect(JSON.parse(String(createCall?.init?.body))).toMatchObject({ name: "missing-project" });
   });
 });
