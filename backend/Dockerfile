@@ -8,7 +8,9 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY app ./app
 ARG PIP_INDEX_URL
-RUN apt-get update \
+ARG APT_MIRROR=https://deb.debian.org
+RUN sed -i "s|http://deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install --no-install-recommends -y ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir .
