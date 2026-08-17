@@ -1,84 +1,58 @@
-# 瑞池素材管理 API 接入文档
+# 瑞池多类型素材 API 接入文档
 
-版本：2.2
+版本：3.0
 正式地址：`https://api.richbest.cn`
 
-本文档面向直接通过 HTTP API 接入的客户。调用过程不依赖控制台或其他前端页面，可从客户自己的后端服务、命令行程序或批处理脚本发起请求。
+本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档只描述素材上传与方舟素材库管理接口。
 
-## 1. 当前能力状态
+## 1. 鉴权
 
-当前开放：
-
-- 上传 JPEG、PNG、WebP 图片；
-- 创建、查询、修改和删除素材组；
-- 将图片登记到素材组；
-- 查询、修改和删除素材；
-- 验证业务 API Key。
-
-当前暂不可用：
-
-- 纯文本生成视频；
-- 图生视频；
-- 依赖 Seedance 上游服务的视频任务查询和取消。
-
-视频功能暂不可用的原因是服务端火山 Seedance API Key 已停用。素材上传和素材库使用独立的对象存储及素材服务配置，不受 Seedance API Key 停用影响。
-
-火山 Seedance API Key 不是客户请求参数。后续如恢复视频能力，该 Key 仍通过约定的安全渠道线下人工交付并由服务端配置，客户请求中不要传入火山 Key。
-
-## 2. 地址与鉴权
-
-所有接口均使用以下正式地址：
-
-```text
-https://api.richbest.cn
-```
-
-除 `/health` 外，所有接口都必须携带瑞池签发的 `vap_live_...` 业务 API Key：
+除 `/health` 外，请求都必须携带瑞池签发的业务 API Key：
 
 ```http
 Authorization: Bearer vap_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Accept: application/json
 ```
 
-JSON 请求还需要：
+JSON 请求还需携带 `Content-Type: application/json`。
 
-```http
-Content-Type: application/json
+业务 API Key 已在服务端绑定火山项目。请求中不需要、也不能覆盖 `projectName`。请只在服务端保存 API Key，不要写入网页代码、公开仓库、日志或 URL。
+
+## 2. 支持的素材规格
+
+| 素材类型 | `assetType` | 扩展名 | MIME 类型 | 大小及媒体要求 |
+|---|---|---|---|---|
+| 图片 | `Image` | jpg、jpeg、png、webp、bmp、tif、tiff、gif、heic、heif | `image/jpeg`、`image/png`、`image/webp`、`image/bmp`、`image/tiff`、`image/gif`、`image/heic`、`image/heif` | 小于 30 MB；宽高分别大于 300px 且小于 6000px；宽高比大于 0.4 且小于 2.5 |
+| 视频 | `Video` | mp4、mov | `video/mp4`、`video/quicktime` | 不超过 200 MB；2～30 秒；24～60 FPS；宽高分别为 300～6000px；宽高比为 0.4～2.5；总像素数为 407,696～8,295,044 |
+| 音频 | `Audio` | wav、mp3 | `audio/wav`、`audio/mpeg` | 不超过 15 MB；2～30 秒 |
+
+服务端会检查真实媒体内容，而不只检查扩展名或请求声明的 MIME。空文件、损坏文件、伪造 MIME、扩展名不匹配以及超出规格的媒体都会在上传阶段被拒绝。
+
+## 3. 推荐接入流程
+
+1. 调用 `/api/auth/me` 验证业务 API Key；
+2. 调用 `/api/asset-group/create` 创建素材组并保存素材组 ID；
+3. 调用 `/api/asset/upload-file` 上传本地文件，保存 `url`、`uploadId` 和 `assetType`；
+4. 调用 `/api/asset/create`，使用上一步的三个字段登记素材；
+5. 使用 `/api/asset/get` 或 `/api/asset/list` 轮询方舟处理状态；
+6. 状态为 `Active` 后再使用该素材；状态为 `Failed` 时读取方舟返回的失败信息；
+7. 不再使用时调用 `/api/asset/delete` 删除素材。
+
+上传文件和登记素材是两个独立步骤。只调用上传接口不会自动创建方舟素材。
+
+方舟登记是异步处理。`CreateAsset` 请求成功只代表方舟已接收任务，不代表素材已经可用。素材可能经历 `Processing`，最终变为 `Active` 或 `Failed`。
+
+## 4. 基础接口
+
+### 4.1 健康检查
+
+```bash
+curl "https://api.richbest.cn/health"
 ```
 
-请将业务 API Key 保存在客户自己的后端环境变量或密钥管理服务中，不要写入浏览器前端代码、公开仓库、日志或 URL。
+该接口无需鉴权。
 
-## 3. 接口总览
-
-### 3.1 基础接口
-
-| 方法 | 路径 | 用途 |
-|---|---|---|
-| `GET` | `/health` | 健康检查，无需鉴权 |
-| `GET` | `/api/auth/me` | 验证业务 API Key |
-
-### 3.2 素材上传和素材组
-
-| 方法 | 路径 | 用途 |
-|---|---|---|
-| `POST` | `/api/asset/upload-file` | 上传图片并取得公网 URL |
-| `POST` | `/api/asset-group/create` | 创建素材组 |
-| `GET` | `/api/asset-group/list` | 查询素材组列表 |
-| `GET` | `/api/asset-group/get` | 查询单个素材组 |
-| `PUT` | `/api/asset-group/update` | 修改素材组 |
-| `DELETE` | `/api/asset-group/delete` | 删除素材组 |
-
-### 3.3 素材管理
-
-| 方法 | 路径 | 用途 |
-|---|---|---|
-| `POST` | `/api/asset/create` | 将图片登记到素材组 |
-| `GET` | `/api/asset/list` | 查询素材列表 |
-| `GET` | `/api/asset/get` | 查询单个素材 |
-| `PUT` | `/api/asset/update` | 修改素材名称 |
-| `DELETE` | `/api/asset/delete` | 删除素材 |
-
-## 4. 验证业务 API Key
+### 4.2 验证 API Key
 
 ```bash
 export BASE_URL="https://api.richbest.cn"
@@ -98,125 +72,113 @@ curl "$BASE_URL/api/auth/me" \
 }
 ```
 
-每枚业务 API Key 已绑定项目。客户不需要、也不能通过请求体覆盖 `projectName`。
+## 5. 上传本地素材
 
-## 5. 推荐素材接入流程
+接口为 `POST /api/asset/upload-file`，请求类型是 `multipart/form-data`，表单字段名固定为 `file`。不要手动填写 multipart boundary，应交给 HTTP 客户端生成。
 
-1. 调用 `/api/auth/me` 验证业务 API Key；
-2. 调用 `/api/asset-group/create` 创建素材组并保存素材组 ID；
-3. 调用 `/api/asset/upload-file` 上传本地图片并取得 `url` 与 `uploadId`；
-4. 调用 `/api/asset/create`，使用素材组 ID、`url` 和 `uploadId` 登记素材；
-5. 调用 `/api/asset/get` 或 `/api/asset/list` 查询素材处理状态；
-6. 保存返回的素材 ID，后续查询、修改和删除都需要使用该 ID。
-
-上传文件和登记素材是两个独立步骤。仅上传文件不会自动在素材库中创建素材记录。
-
-## 6. 上传图片
+### 5.1 上传图片
 
 ```bash
 curl -X POST "$BASE_URL/api/asset/upload-file" \
   -H "Authorization: Bearer $API_KEY" \
-  -F "file=@./portrait.png"
+  -F "file=@./portrait.heic;type=image/heic"
 ```
 
-要求：
+### 5.2 上传视频
 
-- 表单字段名必须为 `file`；
-- 支持 JPEG、PNG、WebP；
-- 文件内容必须与声明的 MIME 类型一致；
-- 当前默认大小上限为 10 MB，实际以服务端返回为准；
-- 不要手动设置 multipart boundary，交给 HTTP 客户端生成。
+```bash
+curl -X POST "$BASE_URL/api/asset/upload-file" \
+  -H "Authorization: Bearer $API_KEY" \
+  -F "file=@./reference.mp4;type=video/mp4"
+```
 
-成功响应示例：
+### 5.3 上传音频
+
+```bash
+curl -X POST "$BASE_URL/api/asset/upload-file" \
+  -H "Authorization: Bearer $API_KEY" \
+  -F "file=@./voice.mp3;type=audio/mpeg"
+```
+
+图片成功响应示例：
 
 ```json
 {
   "url": "https://cdn.example.com/avatar-assets/customer_project/xxx-portrait.png",
   "uploadId": "upload_0123456789abcdef",
   "objectKey": "avatar-assets/customer_project/xxx-portrait.png",
+  "assetType": "Image",
   "contentType": "image/png",
   "size": 284931,
+  "mediaMetadata": {
+    "width": 1024,
+    "height": 1024,
+    "frames": 1
+  },
   "etag": "xxxxxxxx",
   "requestId": "xxxxxxxx"
 }
 ```
 
-后续登记素材时建议同时使用响应中的 `url` 和 `uploadId`。未注册成功的上传文件保留 48 小时，之后由服务端自动清理。
+视频的 `mediaMetadata` 包含 `width`、`height`、`duration` 和 `fps`；音频包含 `duration`。
 
-## 7. 素材组接口
+未成功登记的上传文件会按照服务端清理规则回收。后续登记时建议始终同时传递 `url`、`uploadId` 和 `assetType`。
 
-### 7.1 创建素材组
+## 6. 素材组
+
+### 6.1 创建素材组
 
 ```bash
 curl -X POST "$BASE_URL/api/asset-group/create" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "人物素材",
-    "description": "主要角色参考图"
+    "name": "客户素材",
+    "description": "图片、视频和音频参考素材"
   }'
 ```
 
-字段：
+请保存响应中的素材组 ID，例如 `group-xxxxxxxx`。
 
-| 字段 | 必填 | 说明 |
-|---|---:|---|
-| `name` | 是 | 素材组名称，1～128 个字符 |
-| `description` | 否 | 描述，最多 1000 个字符 |
-
-响应由上游素材服务返回。请保存 `Result.Id` 中的素材组 ID。
-
-### 7.2 查询素材组列表
+### 6.2 查询素材组列表
 
 ```bash
 curl "$BASE_URL/api/asset-group/list?pageNumber=1&pageSize=20" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-可选查询参数：
+可选参数包括 `name` 和可重复传递的 `groupIds`。
 
-| 参数 | 说明 |
-|---|---|
-| `pageNumber` | 页码，默认 1 |
-| `pageSize` | 每页数量，1～100，默认 20 |
-| `name` | 按名称筛选 |
-| `groupIds` | 按素材组 ID 筛选；多个值可重复传递该参数 |
-
-### 7.3 查询单个素材组
+### 6.3 查询、修改和删除素材组
 
 ```bash
 curl "$BASE_URL/api/asset-group/get?groupId=group-xxxxxxxx" \
   -H "Authorization: Bearer $API_KEY"
-```
 
-### 7.4 修改素材组
-
-`name` 和 `description` 至少提供一个：
-
-```bash
 curl -X PUT "$BASE_URL/api/asset-group/update" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "groupId": "group-xxxxxxxx",
-    "name": "人物素材（已审核）"
-  }'
-```
+  -d '{"groupId":"group-xxxxxxxx","name":"已审核素材"}'
 
-### 7.5 删除素材组
-
-```bash
 curl -X DELETE "$BASE_URL/api/asset-group/delete?groupId=group-xxxxxxxx" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-删除前请确认该素材组及其内容不再使用。删除操作可能无法恢复。
+## 7. 登记素材
 
-## 8. 素材接口
+接口：`POST /api/asset/create`
 
-### 8.1 登记素材
+| 字段 | 必填 | 说明 |
+|---|---:|---|
+| `groupId` | 是 | 目标素材组 ID |
+| `url` | 是 | HTTP(S) 素材地址；本地上传时使用上传响应中的 `url` |
+| `uploadId` | 否 | 上传响应中的关联 ID；本地上传的新客户端建议必传 |
+| `assetType` | 建议必传 | 只允许 `Image`、`Video`、`Audio`；省略时兼容旧客户端并默认 `Image` |
+| `name` | 否 | 素材名称，最多 64 个字符 |
 
-先上传图片并取得 URL，再调用：
+当提供 `uploadId` 时，服务端会校验它属于当前项目和当前 API Key，`url` 与上传记录完全一致，并且 `assetType` 与服务端识别出的真实素材类型一致。
+
+### 7.1 登记图片
 
 ```bash
 curl -X POST "$BASE_URL/api/asset/create" \
@@ -225,23 +187,60 @@ curl -X POST "$BASE_URL/api/asset/create" \
   -d '{
     "groupId": "group-xxxxxxxx",
     "url": "https://cdn.example.com/avatar-assets/customer_project/xxx-portrait.png",
-    "uploadId": "upload_0123456789abcdef",
-    "name": "角色正面照"
+    "uploadId": "upload_image_xxx",
+    "assetType": "Image",
+    "name": "人物正面照"
   }'
 ```
 
-字段：
+### 7.2 登记视频
 
-| 字段 | 必填 | 说明 |
-|---|---:|---|
-| `groupId` | 是 | 目标素材组 ID |
-| `url` | 是 | HTTP(S) 图片 URL，可直接使用上传接口返回的 `url` |
-| `uploadId` | 否 | 本系统上传接口返回的关联 ID；新客户端建议传递 |
-| `name` | 否 | 素材名称，最多 128 个字符 |
+```bash
+curl -X POST "$BASE_URL/api/asset/create" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "groupId": "group-xxxxxxxx",
+    "url": "https://cdn.example.com/avatar-assets/customer_project/xxx-reference.mp4",
+    "uploadId": "upload_video_xxx",
+    "assetType": "Video",
+    "name": "动作参考视频"
+  }'
+```
 
-`uploadId` 只能由上传它的同一项目、同一枚 API Key 使用，并且 `url` 必须与上传响应完全一致；否则返回 `409 upload_url_mismatch`。旧客户端可以继续只传 `url`。客户直接提供的公网 URL 不计入本系统 TOS 存储量。
+### 7.3 登记音频
 
-当前接口固定将素材类型登记为图片，客户不需要传 `assetType` 或 `projectName`。
+```bash
+curl -X POST "$BASE_URL/api/asset/create" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "groupId": "group-xxxxxxxx",
+    "url": "https://cdn.example.com/avatar-assets/customer_project/xxx-voice.mp3",
+    "uploadId": "upload_audio_xxx",
+    "assetType": "Audio",
+    "name": "角色声音"
+  }'
+```
+
+也可以不经过上传接口，直接登记符合方舟要求且可公网访问的 HTTP(S) URL。此时不传 `uploadId`，但必须正确传递 `assetType`。
+
+## 8. 轮询状态
+
+### 8.1 查询单个素材
+
+```bash
+curl "$BASE_URL/api/asset/get?assetId=asset-xxxxxxxx" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+建议每 2～5 秒查询一次，不要高频并发轮询：
+
+- `Processing`：仍在方舟处理，暂不可用于后续任务；
+- `Active`：处理完成，可以使用；
+- `Failed`：处理失败，不应继续使用该素材 ID。
+
+如果 `CreateAsset` 成功后立即使用素材，可能收到 `The asset is still processing and is not available yet`。这表示异步处理尚未结束，不是人工审核入口缺失。
 
 ### 8.2 查询素材列表
 
@@ -250,157 +249,69 @@ curl "$BASE_URL/api/asset/list?groupId=group-xxxxxxxx&pageNumber=1&pageSize=20" 
   -H "Authorization: Bearer $API_KEY"
 ```
 
-查询参数：
+可选参数：`name`、可重复传递的 `statuses`、`sortBy` 和 `sortOrder`。
 
-| 参数 | 必填 | 说明 |
-|---|---:|---|
-| `groupId` | 是 | 素材组 ID |
-| `pageNumber` | 否 | 页码，默认 1 |
-| `pageSize` | 否 | 每页数量，1～100，默认 20 |
-| `name` | 否 | 按名称筛选 |
-| `statuses` | 否 | 按状态筛选；多个值可重复传递该参数 |
-| `sortBy` | 否 | 排序字段，默认 `CreateTime` |
-| `sortOrder` | 否 | 排序方向，默认 `Desc` |
-
-素材进入上游素材库后可能需要异步处理。批量程序应根据列表或详情响应中的状态字段判断素材是否可用。
-
-### 8.3 查询单个素材
-
-```bash
-curl "$BASE_URL/api/asset/get?assetId=asset-xxxxxxxx" \
-  -H "Authorization: Bearer $API_KEY"
-```
-
-### 8.4 修改素材名称
+## 9. 修改和删除素材
 
 ```bash
 curl -X PUT "$BASE_URL/api/asset/update" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "assetId": "asset-xxxxxxxx",
-    "name": "角色正面照（新版）"
-  }'
-```
+  -d '{"assetId":"asset-xxxxxxxx","name":"新素材名称"}'
 
-### 8.5 删除素材
-
-```bash
 curl -X DELETE "$BASE_URL/api/asset/delete?assetId=asset-xxxxxxxx" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-## 9. Python 批量上传示例
+修改后的素材名称最多 64 个字符。删除成功后，本系统会同时清理与该登记记录关联的 TOS 对象；删除操作可能无法恢复。
 
-以下示例只负责上传文件。取得每个 `url` 后，再调用 `/api/asset/create` 将其登记到目标素材组。
+## 10. 错误处理
 
-```python
-import os
-import mimetypes
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-
-import requests
-
-BASE_URL = "https://api.richbest.cn"
-API_KEY = os.environ["RICHBEST_API_KEY"]
-HEADERS = {"Authorization": f"Bearer {API_KEY}"}
-
-
-def upload_image(path: Path) -> dict:
-    content_type = mimetypes.guess_type(path.name)[0]
-    if content_type not in {"image/jpeg", "image/png", "image/webp"}:
-        raise ValueError(f"不支持的图片格式：{path}")
-    with path.open("rb") as file_handle:
-        response = requests.post(
-            f"{BASE_URL}/api/asset/upload-file",
-            headers=HEADERS,
-            files={"file": (path.name, file_handle, content_type)},
-            timeout=120,
-        )
-    response.raise_for_status()
-    return {"file": str(path), **response.json()}
-
-
-image_paths = [
-    Path("./images/character-1.png"),
-    Path("./images/character-2.jpg"),
-]
-
-with ThreadPoolExecutor(max_workers=3) as executor:
-    futures = [executor.submit(upload_image, path) for path in image_paths]
-    for future in as_completed(futures):
-        try:
-            print(future.result())
-        except Exception as error:
-            print({"error": str(error)})
-```
-
-建议从较小并发开始，遇到 `429` 或 `5xx` 时使用指数退避并限制重试次数。
-
-## 10. 视频接口状态
-
-以下接口当前不要调用：
-
-| 方法 | 路径 | 当前状态 |
-|---|---|---|
-| `POST` | `/api/video/generate` | 暂不可用，纯文本和图生视频都会失败 |
-| `GET` | `/api/video/task/{taskId}` | 暂不可用，需要 Seedance 上游凭证 |
-| `POST` | `/api/video/task/{taskId}/cancel` | 暂不可用，需要 Seedance 上游凭证 |
-
-服务端恢复并验证新的火山 Seedance API Key 后，才会重新开放这些接口。客户不能通过请求头或请求体临时传入火山 Seedance API Key。
-
-直接使用火山 Seedance API Key 产生的视频任务、调用量和费用不经过本系统，因此不能通过本文接口查询。相关任务记录和用量请在对应的火山方舟账号或项目中查看。
-
-## 11. 错误处理与安全
-
-本系统错误格式示例：
+本系统校验错误示例：
 
 ```json
 {
   "error": {
-    "code": "invalid_api_key",
-    "message": "API Key 无效或已禁用"
+    "code": "upload_asset_type_mismatch",
+    "message": "assetType 与已上传文件的真实类型不匹配"
   }
 }
 ```
 
-写入 QPM、并发或素材额度达到硬上限时返回 `429`：
-
-```json
-{
-  "error": {
-    "code": "quota_exceeded",
-    "message": "额度已用尽",
-    "metric": "dailyUploadBytes",
-    "scope": "api_key",
-    "limit": 1073741824,
-    "used": 1073741824,
-    "resetAt": "2026-08-14T00:00:00+08:00",
-    "requestId": "req_xxxxxxxxxxxxxxxx"
-  }
-}
-```
-
-自然分钟或自然日可恢复的限制同时返回 `Retry-After`；素材总数、TOS 总存储等无固定恢复时间的限制可能返回 `resetAt: null`。查询 QPM 达到 70%、90%、100% 只记录服务端告警，不阻断查询。
-
-| HTTP 状态 | 含义 | 建议 |
+| HTTP 状态 | 错误码 | 说明 |
 |---:|---|---|
-| `400` | 请求内容不合法 | 修改请求，不要自动重试 |
-| `401` | 业务 API Key 缺失、无效或已禁用 | 停止调用并联系技术支持 |
-| `404` | 素材或素材组不存在 | 检查资源 ID |
-| `413` | 上传图片超过限制 | 压缩图片后重试 |
-| `415` | 图片格式不支持 | 改用 JPEG、PNG 或 WebP |
-| `422` | 参数校验失败 | 根据响应中的 `detail` 修改参数 |
-| `429` | 本系统或上游的频率、并发或额度限制 | 有 `Retry-After` 时按其退避；无恢复时间时停止重试并联系技术支持 |
-| `502` | 上游素材或存储服务请求失败 | 指数退避后有限重试 |
-| `503` | 对应服务未配置或暂不可用 | 联系技术支持，不要持续重试 |
+| 400 | `empty_file` | 文件为空 |
+| 400 | `invalid_file_extension` | 扩展名与声明格式不匹配 |
+| 400 | `invalid_media_content` | 文件损坏或不是真实的受支持媒体 |
+| 400 | `media_type_mismatch` | 真实内容与声明 MIME 不一致 |
+| 400 | `invalid_image_dimensions` / `invalid_image_ratio` | 图片规格不符合要求 |
+| 400 | `invalid_video_dimensions` / `invalid_video_ratio` / `invalid_video_pixels` | 视频画面规格不符合要求 |
+| 400 | `invalid_video_duration` / `invalid_video_fps` | 视频时长或帧率不符合要求 |
+| 400 | `invalid_audio_duration` | 音频时长不符合要求 |
+| 401 | `missing_api_key` / `invalid_api_key` | API Key 缺失或无效 |
+| 404 | `upload_not_found` | `uploadId` 不存在或不属于当前 API Key |
+| 409 | `upload_url_mismatch` | `uploadId` 与 `url` 不一致 |
+| 409 | `upload_asset_type_mismatch` | `assetType` 与真实上传类型不一致 |
+| 413 | `file_too_large` | 文件超过对应类型的大小上限 |
+| 415 | `unsupported_media_type` | 不支持该 MIME 类型 |
+| 429 | `quota_exceeded` / `rate_limit_exceeded` | 项目或 API Key 额度不足 |
 
-安全要求：
+方舟返回的错误响应会原样透传，包括 `ResponseMetadata.Error.Code`、`ResponseMetadata.Error.Message` 和 `RequestId`。排查问题时请保留完整响应以及 `RequestId`，但不要提供业务 API Key。
 
-- 仅通过 HTTPS 调用；
-- 不要在浏览器前端、移动 App 或公开脚本中内置业务 API Key；
-- 不要向本文任何接口提交火山 Seedance API Key、AK 或 SK；
-- 为批量任务设置并发上限、连接超时和重试上限；
-- 删除素材或素材组前先确认影响范围；
-- 如业务 API Key 泄露，应立即联系技术支持停用并重新签发。
+## 11. 接口总览
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| `GET` | `/health` | 健康检查 |
+| `GET` | `/api/auth/me` | 验证 API Key |
+| `POST` | `/api/asset/upload-file` | 上传图片、视频或音频 |
+| `POST` | `/api/asset-group/create` | 创建素材组 |
+| `GET` | `/api/asset-group/list` | 查询素材组列表 |
+| `GET` | `/api/asset-group/get` | 查询单个素材组 |
+| `PUT` | `/api/asset-group/update` | 修改素材组 |
+| `DELETE` | `/api/asset-group/delete` | 删除素材组 |
+| `POST` | `/api/asset/create` | 登记图片、视频或音频 |
+| `GET` | `/api/asset/list` | 查询素材列表和状态 |
+| `GET` | `/api/asset/get` | 查询单个素材和状态 |
+| `PUT` | `/api/asset/update` | 修改素材名称 |
+| `DELETE` | `/api/asset/delete` | 删除素材 |

@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     tos_region: str = "cn-beijing"
     tos_bucket: str = ""
     tos_public_base_url: str = ""
-    upload_max_bytes: int = Field(default=10 * 1024 * 1024, gt=0, le=50 * 1024 * 1024)
+    upload_max_bytes: int = Field(default=200 * 1024 * 1024, gt=0, le=512 * 1024 * 1024)
+    ffprobe_path: str = "ffprobe"
     console_admin_token: str = ""
     database_path: Path = Path("./data/avatar_proxy.db")
     cors_origins: str = (

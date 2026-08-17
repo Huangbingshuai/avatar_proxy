@@ -1,6 +1,4 @@
-import asyncio
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi.responses import JSONResponse, Response
@@ -9,8 +7,8 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.routers.assets import find_asset_id, response_json
 
-from conftest import ADMIN_HEADERS, build_settings, create_key, create_project
-from test_storage_deep import PNG, SuccessfulTosClient, upload
+from conftest import ADMIN_HEADERS, PNG, build_settings, create_key, create_project
+from test_storage_deep import SuccessfulTosClient, upload
 
 
 class RecordingVolcengine:
@@ -41,6 +39,85 @@ def test_response_json_handles_invalid_and_non_object_bodies() -> None:
     assert response_json(Response(content=b"not-json")) == {}
     assert response_json(Response(content=b"[1,2,3]")) == {}
     assert response_json(Response(content=b'{"ok":true}')) == {"ok": True}
+
+
+@pytest.mark.parametrize(
+    ("asset_type", "expected"),
+    [(None, "Image"), ("Image", "Image"), ("Video", "Video"), ("Audio", "Audio")],
+)
+def test_create_asset_forwards_all_official_asset_types_and_defaults_to_image(
+    tmp_path: Path, asset_type: str | None, expected: str
+) -> None:
+    app = create_app(build_settings(tmp_path / f"asset-type-{expected}-{asset_type}.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        recorder = RecordingVolcengine()
+        app.state.volcengine = recorder
+        body = {
+            "groupId": "group-1",
+            "url": f"https://example.com/material-{expected.lower()}",
+            "name": "客户素材",
+        }
+        if asset_type is not None:
+            body["assetType"] = asset_type
+        response = client.post(
+            "/api/asset/create",
+            headers={"Authorization": f"Bearer {secret}"},
+            json=body,
+        )
+
+    assert response.status_code == 200
+    assert recorder.calls[0][1]["AssetType"] == expected
+
+
+def test_create_asset_rejects_upload_id_asset_type_mismatch(tmp_path: Path) -> None:
+    app = create_app(build_settings(tmp_path / "upload-type-mismatch.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        key_id, secret = create_key(client)
+        app.state.database.create_asset_record(
+            "upload_video",
+            "drama_prod",
+            key_id,
+            "tos",
+            "https://cdn.example.com/material.mp4",
+            bucket="test-bucket",
+            object_key="material.mp4",
+            asset_type="Video",
+            content_type="video/mp4",
+        )
+        response = client.post(
+            "/api/asset/create",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={
+                "groupId": "group-1",
+                "url": "https://cdn.example.com/material.mp4",
+                "uploadId": "upload_video",
+                "assetType": "Image",
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "upload_asset_type_mismatch"
+
+
+def test_asset_name_is_limited_to_sixty_four_characters(tmp_path: Path) -> None:
+    app = create_app(build_settings(tmp_path / "asset-name.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        response = client.post(
+            "/api/asset/create",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={
+                "groupId": "group-1",
+                "url": "https://example.com/image.png",
+                "name": "素" * 65,
+            },
+        )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize(

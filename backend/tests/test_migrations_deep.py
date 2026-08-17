@@ -125,6 +125,63 @@ def test_fresh_database_has_no_fallback_project(tmp_path: Path) -> None:
     assert database.list_projects() == []
 
 
+def test_legacy_asset_records_gain_media_columns_and_default_to_image(tmp_path: Path) -> None:
+    path = tmp_path / "legacy-assets.db"
+    connection = sqlite3.connect(path)
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE asset_records (
+                record_id TEXT PRIMARY KEY,
+                project_name TEXT NOT NULL,
+                api_key_id TEXT NOT NULL,
+                group_id TEXT,
+                asset_id TEXT,
+                source_type TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                bucket TEXT,
+                object_key TEXT,
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                cleanup_attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                deleted_at TEXT
+            );
+            INSERT INTO asset_records(
+                record_id, project_name, api_key_id, source_type, source_url, status
+            ) VALUES (
+                'legacy-upload', 'legacy-project', 'legacy-key', 'tos',
+                'https://cdn.example.com/legacy.png', 'uploaded_pending'
+            );
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    database = Database(path)
+    database.initialize()
+    database.initialize()
+
+    with database.connect() as connection:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(asset_records)").fetchall()
+        }
+        record = connection.execute(
+            "SELECT asset_type,content_type,media_metadata_json FROM asset_records "
+            "WHERE record_id='legacy-upload'"
+        ).fetchone()
+
+    assert {"asset_type", "content_type", "media_metadata_json"} <= columns
+    assert dict(record) == {
+        "asset_type": "Image",
+        "content_type": None,
+        "media_metadata_json": None,
+    }
+
+
 def test_new_and_upgraded_projects_default_to_unlimited(tmp_path: Path) -> None:
     path = tmp_path / "defaults.db"
     database = Database(path)

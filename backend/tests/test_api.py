@@ -14,6 +14,7 @@ from app.config import Settings
 from app.main import create_app
 from app.storage import tos
 from app.volcengine import VolcengineClient
+from conftest import PNG
 
 
 ADMIN_HEADERS = {"x-admin-token": "test-admin", "content-type": "application/json"}
@@ -82,7 +83,7 @@ def test_assets_use_project_bound_to_business_api_key(tmp_path: Path) -> None:
         "payload": {
             "GroupId": "group-123",
             "URL": "https://example.com/avatar.png",
-            "AssetType": "Image",
+                "AssetType": "Video",
             "Name": "角色正面照",
         },
         "projectName": "drama_prod",
@@ -824,7 +825,11 @@ def test_upload_file_stores_image_in_project_namespace(tmp_path: Path, monkeypat
             captured["credentials"] = (ak, sk, endpoint, region)
 
         def put_object(self, bucket, key, **kwargs):
-            captured["upload"] = (bucket, key, kwargs)
+            captured["upload"] = (
+                bucket,
+                key,
+                {**kwargs, "content": kwargs["content"].read()},
+            )
             return SimpleNamespace(etag="etag-test", request_id="request-test")
 
     monkeypatch.setattr("app.storage.tos.TosClientV2", FakeTosClient)
@@ -835,18 +840,18 @@ def test_upload_file_stores_image_in_project_namespace(tmp_path: Path, monkeypat
         response = client.post(
             "/api/asset/upload-file",
             headers={"Authorization": f"Bearer {secret}"},
-            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+            files={"file": ("portrait.png", PNG, "image/png")},
         )
 
     assert response.status_code == 200
     body = response.json()
     assert body["url"].startswith("https://cdn.example.com/avatar-assets/drama_prod/")
     assert body["contentType"] == "image/png"
-    assert body["size"] == 12
+    assert body["size"] == len(PNG)
     bucket, key, kwargs = captured["upload"]
     assert bucket == "test-bucket"
     assert key.startswith("avatar-assets/drama_prod/")
-    assert kwargs["content"] == b"\x89PNG\r\n\x1a\nbody"
+    assert kwargs["content"] == PNG
 
 
 def test_upload_file_rejects_placeholder_bucket(tmp_path: Path) -> None:
@@ -859,7 +864,7 @@ def test_upload_file_rejects_placeholder_bucket(tmp_path: Path) -> None:
         response = client.post(
             "/api/asset/upload-file",
             headers={"Authorization": f"Bearer {secret}"},
-            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+            files={"file": ("portrait.png", PNG, "image/png")},
         )
 
     assert response.status_code == 503
@@ -949,7 +954,7 @@ def test_upload_id_is_scoped_to_the_creating_api_key(tmp_path: Path, monkeypatch
         upload = client.post(
             "/api/asset/upload-file",
             headers={"Authorization": f"Bearer {first_secret}"},
-            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+            files={"file": ("portrait.png", PNG, "image/png")},
         ).json()
         response = client.post(
             "/api/asset/create",
@@ -978,7 +983,7 @@ def test_upload_id_rejects_a_different_url(tmp_path: Path, monkeypatch) -> None:
         upload = client.post(
             "/api/asset/upload-file",
             headers=auth,
-            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+            files={"file": ("portrait.png", PNG, "image/png")},
         ).json()
         response = client.post(
             "/api/asset/create",
@@ -1024,7 +1029,7 @@ def test_deleting_registered_tos_asset_deletes_object_and_releases_storage(tmp_p
         upload = client.post(
             "/api/asset/upload-file",
             headers=auth,
-            files={"file": ("portrait.png", b"\x89PNG\r\n\x1a\nbody", "image/png")},
+            files={"file": ("portrait.png", PNG, "image/png")},
         ).json()
         created = client.post(
             "/api/asset/create",
@@ -1041,7 +1046,7 @@ def test_deleting_registered_tos_asset_deletes_object_and_releases_storage(tmp_p
 
     assert created.status_code == 200
     assert removed.status_code == 200
-    assert before["usage"]["totalStorageBytes"] == 12
+    assert before["usage"]["totalStorageBytes"] == len(PNG)
     assert after["usage"]["totalStorageBytes"] == 0
     assert len(deleted) == 1
 

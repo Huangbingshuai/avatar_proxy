@@ -109,7 +109,7 @@ async def create_asset(payload: AssetCreate, request: Request, principal: Princi
     body = {
         "GroupId": payload.group_id,
         "URL": payload.url,
-        "AssetType": "Image",
+        "AssetType": payload.asset_type.value,
         "Name": payload.name,
     }
     database = request.app.state.database
@@ -123,6 +123,8 @@ async def create_asset(payload: AssetCreate, request: Request, principal: Princi
         raise ApiError("uploadId 不存在或不属于当前 API Key", 404, "upload_not_found")
     if payload.upload_id and record and payload.url != record["source_url"]:
         raise ApiError("uploadId 与 URL 不匹配", 409, "upload_url_mismatch")
+    if record and payload.asset_type.value != (record.get("asset_type") or "Image"):
+        raise ApiError("assetType 与已上传文件的真实类型不匹配", 409, "upload_asset_type_mismatch")
     record_id = record["record_id"] if record else f"assetrec_{uuid.uuid4().hex}"
     reservation_id = request.app.state.quota.reserve(principal.project_name, principal.id, {
         "daily_asset_creates": 1,
@@ -138,6 +140,7 @@ async def create_asset(payload: AssetCreate, request: Request, principal: Princi
                 principal.id,
                 "external_url",
                 payload.url,
+                asset_type=payload.asset_type.value,
                 status="registering",
                 group_id=payload.group_id,
             )
@@ -214,5 +217,5 @@ async def upload_asset_file(
     request: Request,
     principal: PrincipalDependency,
     file: UploadFile = File(...),
-) -> dict[str, str | int]:
-    return await request.app.state.storage.upload_image(file, principal)
+) -> dict[str, Any]:
+    return await request.app.state.storage.upload_media(file, principal)

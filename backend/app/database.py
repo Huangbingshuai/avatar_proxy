@@ -117,6 +117,9 @@ CREATE TABLE IF NOT EXISTS asset_records (
     bucket TEXT,
     object_key TEXT,
     size_bytes INTEGER NOT NULL DEFAULT 0,
+    asset_type TEXT NOT NULL DEFAULT 'Image',
+    content_type TEXT,
+    media_metadata_json TEXT,
     status TEXT NOT NULL,
     cleanup_attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
@@ -166,6 +169,17 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            asset_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(asset_records)").fetchall()
+            }
+            if "asset_type" not in asset_columns:
+                connection.execute(
+                    "ALTER TABLE asset_records ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'Image'"
+                )
+            if "content_type" not in asset_columns:
+                connection.execute("ALTER TABLE asset_records ADD COLUMN content_type TEXT")
+            if "media_metadata_json" not in asset_columns:
+                connection.execute("ALTER TABLE asset_records ADD COLUMN media_metadata_json TEXT")
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations
@@ -523,15 +537,24 @@ class Database:
         bucket: str | None = None,
         object_key: str | None = None,
         size_bytes: int = 0,
+        asset_type: str = "Image",
+        content_type: str | None = None,
+        media_metadata: dict[str, Any] | None = None,
         status: str = "uploaded_pending",
         group_id: str | None = None,
     ) -> dict[str, Any]:
         with self.connect() as connection:
             connection.execute(
                 "INSERT INTO asset_records "
-                "(record_id, project_name, api_key_id, group_id, source_type, source_url, bucket, object_key, size_bytes, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (record_id, project_name, key_id, group_id, source_type, source_url, bucket, object_key, size_bytes, status),
+                "(record_id, project_name, api_key_id, group_id, source_type, source_url, bucket, object_key, "
+                "size_bytes, asset_type, content_type, media_metadata_json, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record_id, project_name, key_id, group_id, source_type, source_url, bucket,
+                    object_key, size_bytes, asset_type, content_type,
+                    json.dumps(media_metadata, ensure_ascii=False, separators=(",", ":")) if media_metadata else None,
+                    status,
+                ),
             )
         return self.get_asset_record(record_id) or {}
 

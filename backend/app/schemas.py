@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -99,16 +100,23 @@ class AssetGroupUpdate(ApiModel):
         return self
 
 
+class AssetType(str, Enum):
+    IMAGE = "Image"
+    VIDEO = "Video"
+    AUDIO = "Audio"
+
+
 class AssetCreate(ApiModel):
     group_id: str = Field(min_length=1)
     url: str = Field(min_length=1, max_length=2048, pattern=r"^https?://")
-    name: str | None = Field(default=None, max_length=128)
+    asset_type: AssetType = AssetType.IMAGE
+    name: str | None = Field(default=None, max_length=64)
     upload_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class AssetUpdate(ApiModel):
     asset_id: str = Field(min_length=1)
-    name: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=64)
 
 
 class VideoTaskMetadata(ApiModel):

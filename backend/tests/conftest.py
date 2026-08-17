@@ -1,10 +1,13 @@
 from collections.abc import Callable, Iterator
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from hypothesis import settings as hypothesis_settings
+from PIL import Image
+from pillow_heif import register_heif_opener
 
 from app.config import Settings
 from app.main import create_app
@@ -12,6 +15,22 @@ from app.volcengine import VolcengineClient
 
 
 ADMIN_HEADERS = {"x-admin-token": "test-admin", "content-type": "application/json"}
+
+
+def image_bytes(image_format: str) -> bytes:
+    register_heif_opener()
+    output = BytesIO()
+    Image.new("RGB", (512, 512), "#526d82").save(output, format=image_format)
+    return output.getvalue()
+
+
+JPEG = image_bytes("JPEG")
+PNG = image_bytes("PNG")
+WEBP = image_bytes("WEBP")
+BMP = image_bytes("BMP")
+TIFF = image_bytes("TIFF")
+GIF = image_bytes("GIF")
+HEIF = image_bytes("HEIF")
 
 
 class FakeVolcengine:

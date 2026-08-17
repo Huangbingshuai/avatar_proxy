@@ -1,5 +1,7 @@
 import asyncio
-from datetime import datetime, timedelta
+import json
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,16 +9,25 @@ import pytest
 import tos
 from fastapi.testclient import TestClient
 from hypothesis import assume, given, strategies as st
+from PIL import Image
 
 from app.main import create_app
-from app.storage import content_matches_type, is_placeholder
+from app.errors import ApiError
+from app.storage import content_matches_type, inspect_media, is_placeholder
 
-from conftest import ADMIN_HEADERS, build_settings, create_key, create_project
-
-
-PNG = b"\x89PNG\r\n\x1a\nbody"
-JPEG = b"\xff\xd8\xffbody"
-WEBP = b"RIFF\x04\x00\x00\x00WEBPbody"
+from conftest import (
+    ADMIN_HEADERS,
+    BMP,
+    GIF,
+    HEIF,
+    JPEG,
+    PNG,
+    TIFF,
+    WEBP,
+    build_settings,
+    create_key,
+    create_project,
+)
 
 
 class SuccessfulTosClient:
@@ -27,7 +38,8 @@ class SuccessfulTosClient:
         pass
 
     def put_object(self, bucket, key, *, content, content_type):
-        self.uploads.append((bucket, key, content, content_type))
+        payload = content.read() if hasattr(content, "read") else content
+        self.uploads.append((bucket, key, payload, content_type))
         return SimpleNamespace(etag="etag", request_id="request-id")
 
     def delete_object(self, bucket, key):
@@ -43,13 +55,59 @@ def upload(client: TestClient, secret: str, filename: str, content: bytes, conte
     )
 
 
+@pytest.fixture(scope="module")
+def media_samples(tmp_path_factory: pytest.TempPathFactory) -> dict[str, bytes]:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("ffmpeg is required for real audio/video validation tests")
+    directory = tmp_path_factory.mktemp("media-samples")
+    commands = {
+        "sample.mp4": [
+            "-f", "lavfi", "-i", "color=c=blue:s=640x640:r=24:d=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an",
+        ],
+        "sample.mov": [
+            "-f", "lavfi", "-i", "color=c=green:s=640x640:r=24:d=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an",
+        ],
+        "sample.wav": [
+            "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=2",
+            "-c:a", "pcm_s16le",
+        ],
+        "sample.mp3": [
+            "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=44100:duration=2",
+            "-c:a", "libmp3lame", "-b:a", "128k",
+        ],
+    }
+    samples: dict[str, bytes] = {}
+    for filename, arguments in commands.items():
+        destination = directory / filename
+        try:
+            subprocess.run(
+                [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *arguments, str(destination)],
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            pytest.skip(f"ffmpeg could not generate {filename}: {error}")
+        samples[filename] = destination.read_bytes()
+    return samples
+
+
 @pytest.mark.parametrize(
     ("filename", "content", "content_type", "suffix"),
     [
         ("portrait.jpg", JPEG, "image/jpeg", ".jpg"),
         ("portrait.png", PNG, "image/png", ".png"),
         ("portrait.webp", WEBP, "image/webp", ".webp"),
+        ("portrait.bmp", BMP, "image/bmp", ".bmp"),
+        ("portrait.tiff", TIFF, "image/tiff", ".tiff"),
+        ("portrait.gif", GIF, "image/gif", ".gif"),
+        ("portrait.heic", HEIF, "image/heic", ".heic"),
+        ("portrait.heif", HEIF, "image/heif", ".heif"),
     ],
+    ids=["jpeg", "png", "webp", "bmp", "tiff", "gif", "heic", "heif"],
 )
 def test_supported_image_types_upload_and_commit_usage(
     tmp_path: Path, monkeypatch, filename: str, content: bytes, content_type: str, suffix: str
@@ -71,30 +129,218 @@ def test_supported_image_types_upload_and_commit_usage(
     assert response.json()["objectKey"].endswith(suffix)
     assert response.json()["contentType"] == content_type
     assert response.json()["size"] == len(content)
+    assert response.json()["assetType"] == "Image"
+    assert response.json()["mediaMetadata"]["width"] == 512
+    record = app.state.database.get_asset_record(response.json()["uploadId"])
+    assert record is not None
+    assert record["asset_type"] == "Image"
+    assert record["content_type"] == content_type
     assert usage["totalStorageBytes"] == len(content)
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type", "asset_type"),
+    [
+        ("sample.mp4", "video/mp4", "Video"),
+        ("sample.mov", "video/quicktime", "Video"),
+        ("sample.wav", "audio/wav", "Audio"),
+        ("sample.mp3", "audio/mpeg", "Audio"),
+    ],
+)
+def test_supported_audio_and_video_uploads_are_probed_and_persisted(
+    tmp_path: Path,
+    monkeypatch,
+    media_samples: dict[str, bytes],
+    filename: str,
+    content_type: str,
+    asset_type: str,
+) -> None:
+    SuccessfulTosClient.uploads.clear()
+    monkeypatch.setattr("app.storage.tos.TosClientV2", SuccessfulTosClient)
+    app = create_app(build_settings(tmp_path / f"{filename}.db"))
+    content = media_samples[filename]
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        response = upload(client, secret, filename, content, content_type)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["assetType"] == asset_type
+    assert body["contentType"] == content_type
+    assert body["size"] == len(content)
+    assert body["mediaMetadata"]["duration"] >= 2
+    if asset_type == "Video":
+        assert body["mediaMetadata"]["width"] == 640
+        assert body["mediaMetadata"]["height"] == 640
+        assert body["mediaMetadata"]["fps"] == 24
+    record = app.state.database.get_asset_record(body["uploadId"])
+    assert record is not None
+    assert record["asset_type"] == asset_type
+    assert record["content_type"] == content_type
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type"),
+    [
+        ("broken.mp4", "video/mp4"),
+        ("broken.mov", "video/quicktime"),
+        ("broken.wav", "audio/wav"),
+        ("broken.mp3", "audio/mpeg"),
+    ],
+)
+def test_corrupt_audio_and_video_are_rejected(
+    tmp_path: Path, filename: str, content_type: str
+) -> None:
+    app = create_app(build_settings(tmp_path / f"broken-{filename}.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        response = upload(client, secret, filename, b"not-a-media-file", content_type)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_media_content"
+
+
+def ffprobe_result(
+    *,
+    media_type: str,
+    duration: float,
+    width: int = 640,
+    height: int = 640,
+    fps: float = 24,
+) -> SimpleNamespace:
+    if media_type == "video":
+        streams = [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": width,
+                "height": height,
+                "avg_frame_rate": f"{int(fps * 1000)}/1000",
+                "r_frame_rate": f"{int(fps * 1000)}/1000",
+                "duration": str(duration),
+            }
+        ]
+        format_name = "mov,mp4,m4a,3gp,3g2,mj2"
+    else:
+        streams = [{"codec_type": "audio", "codec_name": "mp3", "duration": str(duration)}]
+        format_name = "mp3"
+    return SimpleNamespace(
+        returncode=0,
+        stdout=json.dumps(
+            {"format": {"format_name": format_name, "duration": str(duration)}, "streams": streams}
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("duration", "fps", "expected_code"),
+    [
+        (1.999, 24, "invalid_video_duration"),
+        (30.001, 24, "invalid_video_duration"),
+        (2, 23.9, "invalid_video_fps"),
+        (2, 60.1, "invalid_video_fps"),
+    ],
+)
+def test_video_duration_and_fps_outside_official_boundaries_are_rejected(
+    tmp_path: Path, monkeypatch, duration: float, fps: float, expected_code: str
+) -> None:
+    monkeypatch.setattr(
+        "app.storage.subprocess.run",
+        lambda *args, **kwargs: ffprobe_result(media_type="video", duration=duration, fps=fps),
+    )
+
+    with pytest.raises(ApiError) as captured:
+        inspect_media(tmp_path / "probe.mp4", "video/mp4")
+
+    assert captured.value.code == expected_code
+
+
+@pytest.mark.parametrize(("duration", "fps"), [(2, 24), (30, 60)])
+def test_video_duration_and_fps_official_boundaries_are_accepted(
+    tmp_path: Path, monkeypatch, duration: float, fps: float
+) -> None:
+    monkeypatch.setattr(
+        "app.storage.subprocess.run",
+        lambda *args, **kwargs: ffprobe_result(media_type="video", duration=duration, fps=fps),
+    )
+
+    metadata = inspect_media(tmp_path / "probe.mp4", "video/mp4")
+
+    assert metadata["duration"] == duration
+    assert metadata["fps"] == fps
+
+
+@pytest.mark.parametrize(("duration", "valid"), [(1.999, False), (2, True), (30, True), (30.001, False)])
+def test_audio_duration_boundaries(tmp_path: Path, monkeypatch, duration: float, valid: bool) -> None:
+    monkeypatch.setattr(
+        "app.storage.subprocess.run",
+        lambda *args, **kwargs: ffprobe_result(media_type="audio", duration=duration),
+    )
+    if valid:
+        assert inspect_media(tmp_path / "probe.mp3", "audio/mpeg")["duration"] == duration
+    else:
+        with pytest.raises(ApiError) as captured:
+            inspect_media(tmp_path / "probe.mp3", "audio/mpeg")
+        assert captured.value.code == "invalid_audio_duration"
+
+
+@pytest.mark.parametrize(
+    ("size", "expected_code"),
+    [((300, 512), "invalid_image_dimensions"), ((6000, 512), "invalid_image_dimensions"),
+     ((512, 1280), "invalid_image_ratio"), ((1280, 512), "invalid_image_ratio")],
+)
+def test_image_dimension_and_ratio_boundaries(
+    tmp_path: Path, size: tuple[int, int], expected_code: str
+) -> None:
+    path = tmp_path / f"{size[0]}x{size[1]}.png"
+    Image.new("RGB", size, "#526d82").save(path, format="PNG")
+
+    with pytest.raises(ApiError) as captured:
+        inspect_media(path, "image/png")
+
+    assert captured.value.code == expected_code
 
 
 @pytest.mark.parametrize(
     ("content", "content_type", "status", "code"),
     [
         (b"", "image/png", 400, "empty_file"),
-        (b"plain text", "text/plain", 415, "unsupported_image_type"),
-        (JPEG, "image/png", 400, "invalid_image_content"),
-        (PNG, "image/jpeg", 400, "invalid_image_content"),
-        (b"RIFFbad-data", "image/webp", 400, "invalid_image_content"),
+        (b"plain text", "text/plain", 415, "unsupported_media_type"),
+        (JPEG, "image/png", 400, "media_type_mismatch"),
+        (PNG, "image/jpeg", 400, "media_type_mismatch"),
+        (b"RIFFbad-data", "image/webp", 400, "invalid_media_content"),
     ],
 )
 def test_upload_validation_rejects_empty_unsupported_and_forged_files(
     tmp_path: Path, content: bytes, content_type: str, status: int, code: str
 ) -> None:
     app = create_app(build_settings(tmp_path / f"{code}-{content_type.split('/')[-1]}.db"))
+    filename = {
+        "image/png": "payload.png",
+        "image/jpeg": "payload.jpg",
+        "image/webp": "payload.webp",
+        "text/plain": "payload.txt",
+    }[content_type]
     with TestClient(app) as client:
         create_project(client)
         _, secret = create_key(client)
-        response = upload(client, secret, "payload.bin", content, content_type)
+        response = upload(client, secret, filename, content, content_type)
 
     assert response.status_code == status
     assert response.json()["error"]["code"] == code
+
+
+def test_upload_rejects_extension_that_does_not_match_declared_media_type(tmp_path: Path) -> None:
+    app = create_app(build_settings(tmp_path / "extension.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        response = upload(client, secret, "portrait.exe", PNG, "image/png")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_file_extension"
 
 
 def test_upload_rejects_file_above_configured_limit(tmp_path: Path) -> None:
@@ -178,7 +424,12 @@ def test_tos_server_error_rolls_back_quota_and_maps_response(tmp_path: Path, mon
         client.put(
             "/api/internal/project/quota",
             headers=ADMIN_HEADERS,
-            json={"projectName": "drama_prod", "enabled": True, "dailyUploadFiles": 1, "dailyUploadBytes": 20},
+            json={
+                "projectName": "drama_prod",
+                "enabled": True,
+                "dailyUploadFiles": 1,
+                "dailyUploadBytes": len(PNG),
+            },
         )
         response = upload(client, secret, "portrait.png", PNG, "image/png")
         usage = client.get(
@@ -208,7 +459,12 @@ def test_tos_client_error_rolls_back_then_same_quota_can_succeed(tmp_path: Path,
         client.put(
             "/api/internal/project/quota",
             headers=ADMIN_HEADERS,
-            json={"projectName": "drama_prod", "enabled": True, "dailyUploadFiles": 1, "dailyUploadBytes": 20},
+            json={
+                "projectName": "drama_prod",
+                "enabled": True,
+                "dailyUploadFiles": 1,
+                "dailyUploadBytes": len(PNG),
+            },
         )
         failed = upload(client, secret, "portrait.png", PNG, "image/png")
         monkeypatch.setattr("app.storage.tos.TosClientV2", SuccessfulTosClient)
@@ -288,7 +544,7 @@ def test_external_url_delete_never_calls_tos_and_marks_deleted(tmp_path: Path, m
 
     monkeypatch.setattr("app.storage.tos.TosClientV2", MustNotConstruct)
     app = create_app(build_settings(tmp_path / "external.db"))
-    with TestClient(app) as client:
+    with TestClient(app):
         app.state.database.create_asset_record(
             "external", "avatar-proxy", "key", "external_url", "https://example.com/image.png", status="active"
         )

@@ -8,7 +8,10 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY app ./app
 ARG PIP_INDEX_URL
-RUN pip install --no-cache-dir .
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir .
 
 RUN useradd --create-home appuser && mkdir -p /app/data && chown -R appuser:appuser /app
 USER appuser
