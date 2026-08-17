@@ -42,11 +42,9 @@ import {
   clearVideoHistory,
   generateVideo,
   getLastFrameUrl,
-  getVideoHistory,
   getVideoTask,
   getVideoUsage,
   getVideoUrl,
-  importVideoHistory,
   isAssetActive,
   removeVideoHistoryTask,
   type Asset,
@@ -90,10 +88,7 @@ const RESOLUTION_OPTIONS = ["480p", "720p", "1080p", "4k"] as const;
 const DURATION_OPTIONS = Array.from({ length: 12 }, (_, index) => index + 4);
 
 const workspaceItems: Array<{ id: Workspace; label: string; icon: typeof WandSparkles }> = [
-  { id: "create", label: "视频生成", icon: WandSparkles },
   { id: "library", label: "素材库", icon: Layers3 },
-  { id: "tasks", label: "任务记录", icon: Clock3 },
-  { id: "usage", label: "用量统计", icon: BarChart3 },
 ];
 
 function compactTokens(value: number) {
@@ -168,22 +163,6 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
   </section>;
 }
 
-function readTaskAssets(value: unknown): TaskAsset[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const assets = value.flatMap((item): TaskAsset[] => {
-    if (!item || typeof item !== "object" || !("id" in item) || typeof item.id !== "string") return [];
-    const asset = item as Partial<TaskAsset> & { id: string };
-    return [{
-      id: asset.id,
-      groupId: typeof asset.groupId === "string" ? asset.groupId : "",
-      name: typeof asset.name === "string" ? asset.name : "参考素材",
-      status: typeof asset.status === "string" ? asset.status : "Active",
-      previewUrl: typeof asset.previewUrl === "string" ? asset.previewUrl : "",
-    }];
-  });
-  return assets.length ? assets : undefined;
-}
-
 function apiKeyFingerprint(apiKey: string) {
   let hash = 2166136261;
   for (let index = 0; index < apiKey.length; index += 1) {
@@ -195,51 +174,6 @@ function apiKeyFingerprint(apiKey: string) {
 
 function taskHistoryKey(apiKey: string) {
   return `${HISTORY_PREFIX}:${apiKeyFingerprint(apiKey)}`;
-}
-
-function readTaskHistory(apiKey: string): TaskRecord[] {
-  if (!apiKey) return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(taskHistoryKey(apiKey)) || "[]") as unknown;
-    const source = Array.isArray(parsed)
-      ? parsed
-      : parsed && typeof parsed === "object" && "items" in parsed && Array.isArray(parsed.items)
-        ? parsed.items
-        : [];
-    return source.flatMap((item): TaskRecord[] => {
-      if (typeof item === "string") return [{ id: item, createdAt: 0, prompt: "历史视频任务" }];
-      if (!item || typeof item !== "object" || !("id" in item) || typeof item.id !== "string") return [];
-      const record = item as Partial<TaskRecord> & { id: string };
-      return [{
-        id: record.id,
-        createdAt: typeof record.createdAt === "number" ? record.createdAt : 0,
-        prompt: typeof record.prompt === "string" && record.prompt ? record.prompt : "历史视频任务",
-        promptDocument: typeof record.promptDocument === "string" ? record.promptDocument : undefined,
-        assetName: typeof record.assetName === "string" ? record.assetName : undefined,
-        assetNames: Array.isArray(record.assetNames) ? record.assetNames.filter((name): name is string => typeof name === "string") : undefined,
-        assets: readTaskAssets(record.assets),
-        model: typeof record.model === "string" ? record.model : undefined,
-        ratio: typeof record.ratio === "string" ? record.ratio : undefined,
-        duration: typeof record.duration === "number" ? record.duration : undefined,
-        durationMode: record.durationMode === "smart" ? "smart" : "seconds",
-        resolution: typeof record.resolution === "string" ? record.resolution : undefined,
-        generationCount: typeof record.generationCount === "number" ? record.generationCount : undefined,
-        generateAudio: typeof record.generateAudio === "boolean" ? record.generateAudio : undefined,
-        status: typeof record.status === "string" ? record.status : undefined,
-        videoUrl: typeof record.videoUrl === "string" ? record.videoUrl : undefined,
-        lastFrameUrl: typeof record.lastFrameUrl === "string" ? record.lastFrameUrl : undefined,
-      }];
-    }).slice(0, 20);
-  } catch {
-    return [];
-  }
-}
-
-async function loadPersistentTaskHistory(apiKey: string) {
-  const cached = readTaskHistory(apiKey);
-  if (cached.length) await importVideoHistory(cached, apiKey);
-  const response = await getVideoHistory(apiKey);
-  return response.tasks as TaskRecord[];
 }
 
 function taskLabel(status?: string) {
@@ -533,7 +467,7 @@ function VideoDetailView({ record, task, onBack, onRegenerate, onEdit, onRemove 
 }
 
 function App() {
-  const [workspace, setWorkspace] = useState<Workspace>("create");
+  const [workspace, setWorkspace] = useState<Workspace>("library");
   const [apiKey, setApiKey] = useState("");
   const [loginDraft, setLoginDraft] = useState(() => sessionStorage.getItem(SESSION_KEY) || "");
   const [rememberKey, setRememberKey] = useState(() => Boolean(sessionStorage.getItem(SESSION_KEY)));
@@ -631,12 +565,12 @@ function App() {
     const storedKey = sessionStorage.getItem(SESSION_KEY)?.trim() || "";
     if (!storedKey) return undefined;
     let disposed = false;
-    Promise.all([authenticateApiKey(storedKey), loadPersistentTaskHistory(storedKey)])
-      .then(([, history]) => {
+    authenticateApiKey(storedKey)
+      .then(() => {
         if (disposed) return;
         setApiKey(storedKey);
         setLoginDraft(storedKey);
-        setTaskHistory(history);
+        setTaskHistory([]);
         setAuthStatus("signed-in");
       })
       .catch(() => {
@@ -734,12 +668,9 @@ function App() {
     setLoginBusy(true);
     setLoginError("");
     try {
-      const [, history] = await Promise.all([
-        authenticateApiKey(candidate),
-        loadPersistentTaskHistory(candidate),
-      ]);
+      await authenticateApiKey(candidate);
       setApiKey(candidate);
-      setTaskHistory(history);
+      setTaskHistory([]);
       setSelectedAssets([]);
       setTaskSnapshots({});
       setAuthStatus("signed-in");
@@ -762,7 +693,7 @@ function App() {
     setTaskHistory([]);
     setTaskSnapshots({});
     setSelectedAssets([]);
-    setWorkspace("create");
+    setWorkspace("library");
     startNewConversation();
   }
 
@@ -990,8 +921,8 @@ function App() {
             <div className="loginIntro">
               <span className="loginEyebrow">PROJECT ACCESS</span>
               <h1 id="login-title">进入专属创作空间</h1>
-              <p>登录后，即可查看所属项目的素材库、视频任务和用量数据。</p>
-              <div className="loginBoundary" aria-hidden="true"><span>API KEY</span><i /><span>PROJECT</span><i /><span>STUDIO</span></div>
+              <p>登录后，即可管理所属项目的图片、视频和音频素材。</p>
+              <div className="loginBoundary" aria-hidden="true"><span>API KEY</span><i /><span>PROJECT</span><i /><span>ASSETS</span></div>
             </div>
             <form className="loginForm" onSubmit={loginWithApiKey}>
               <div className="loginFormTitle"><ShieldCheck size={20} /><span><b>{checking ? "正在恢复登录" : "项目登录"}</b><small>{checking ? "正在验证当前标签页保存的凭证" : "请输入管理员分配给你的业务 API Key"}</small></span></div>
@@ -1008,7 +939,7 @@ function App() {
             </form>
           </section>
         </main>
-        <footer className="officialFooter"><span>瑞池创作空间</span><p>素材与视频任务按项目隔离</p></footer>
+        <footer className="officialFooter"><span>瑞池素材空间</span><p>素材按项目与 API Key 隔离</p></footer>
       </div>
     );
   }
@@ -1016,7 +947,7 @@ function App() {
   return (
     <div className="officialShell">
       <header className="officialHeader">
-        <a className="officialBrand" href="#main" onClick={() => changeWorkspace("create")}><span className="brandLogoFrame"><img src="/ruichi-logo.jpg" alt="" /></span><b>瑞池创作空间</b></a>
+        <a className="officialBrand" href="#main" onClick={() => changeWorkspace("library")}><span className="brandLogoFrame"><img src="/ruichi-logo.jpg" alt="" /></span><b>瑞池素材空间</b></a>
         <nav className="officialNav" aria-label="工作区">
           {workspaceItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" className={workspace === item.id ? "active" : ""} onClick={() => changeWorkspace(item.id)}><Icon size={15} />{item.label}</button>; })}
         </nav>
@@ -1095,7 +1026,7 @@ function App() {
           </div>
         ) : null}
 
-        {workspace === "library" ? <section className="officialSection" aria-labelledby="library-title"><div className="sectionTitleRow"><div><h1 id="library-title">项目素材库</h1><p>创建素材库并上传人物图片，处理完成后即可用于生成视频。</p></div></div><AssetLibrary apiKey={normalizedKey} apiKeyValid={keyValid} mode="manage" selectedAssets={selectedAssets} onSelectionChange={setSelectedAssets} onMessage={handleLibraryMessage} /></section> : null}
+        {workspace === "library" ? <section className="officialSection" aria-labelledby="library-title"><div className="sectionTitleRow"><div><h1 id="library-title">项目素材库</h1><p>按照方舟素材规范上传并管理图片、视频和音频，处理状态以方舟返回结果为准。</p></div></div><AssetLibrary apiKey={normalizedKey} apiKeyValid={keyValid} mode="manage" selectedAssets={selectedAssets} onSelectionChange={setSelectedAssets} onMessage={handleLibraryMessage} /></section> : null}
 
         {workspace === "tasks" ? <section className="officialSection taskSection" aria-labelledby="tasks-title">
           <div className="sectionTitleRow"><div><h1 id="tasks-title">任务记录</h1><p>任务保存在服务端，使用同一个 API Key 登录即可继续查看。</p></div><div className="taskHeaderActions"><button type="button" className="secondaryButton" disabled={!keyValid || historyRefreshing} onClick={() => setHistoryRefreshToken((value) => value + 1)}>{historyRefreshing ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}刷新状态</button>{taskHistory.length ? <button type="button" className="quietDanger" disabled={historyRefreshing} onClick={() => void clearTaskHistory()}><Trash2 size={14} />清空</button> : null}</div></div>
@@ -1109,7 +1040,7 @@ function App() {
 
         {workspace === "usage" ? <UsagePanel apiKey={normalizedKey} apiKeyValid={keyValid} /> : null}
       </main>
-      <footer className="officialFooter"><span>瑞池创作空间</span><p>素材与视频任务按项目隔离</p></footer>
+      <footer className="officialFooter"><span>瑞池素材空间</span><p>图片、视频和音频按项目隔离</p></footer>
     </div>
   );
 }

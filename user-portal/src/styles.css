@@ -513,6 +513,25 @@ a { color: inherit; text-decoration: none; }
 .chooseFileButton { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 36px; padding: 0 10px; overflow: hidden; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--primary); background: #fff; font-size: 10px; font-weight: 600; cursor: pointer; }
 .chooseFileButton span { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
 .assetUploadBar .primaryButton { min-width: 118px; min-height: 36px; }
+.assetFormatGuide { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.assetFormatGuide > span { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 7px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.assetFormatGuide svg { grid-row: 1 / 3; }
+.assetFormatGuide b { font-size: 9px; font-weight: 700; }
+.assetFormatGuide small { overflow: hidden; color: var(--muted); font-size: 7px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.assetFormatGuide .image { border-color: rgba(8, 145, 178, .18); background: rgba(236, 254, 255, .72); }
+.assetFormatGuide .image svg { color: #0e7490; }
+.assetFormatGuide .video { border-color: rgba(225, 29, 72, .15); background: rgba(255, 241, 242, .72); }
+.assetFormatGuide .video svg { color: #be123c; }
+.assetFormatGuide .audio { border-color: rgba(217, 119, 6, .18); background: rgba(255, 251, 235, .8); }
+.assetFormatGuide .audio svg { color: #b45309; }
+.selectedUploadMeta, .assetUploadProgress { display: flex; grid-column: 1 / -1; align-items: center; gap: 7px; min-height: 30px; padding: 6px 9px; border-radius: 8px; font-size: 8px; }
+.selectedUploadMeta { border: 1px solid var(--line); color: var(--muted); background: #fff; }
+.selectedUploadMeta b { color: var(--text); font-size: 9px; }
+.selectedUploadMeta span + span::before { margin-right: 7px; color: var(--line-strong); content: "•"; }
+.selectedUploadMeta.image { border-color: rgba(8, 145, 178, .2); }
+.selectedUploadMeta.video { border-color: rgba(225, 29, 72, .18); }
+.selectedUploadMeta.audio { border-color: rgba(217, 119, 6, .22); }
+.assetUploadProgress { color: #744210; background: #fff8e7; }
 .assetToolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 13px; }
 .assetToolbar .compactSearch { width: min(330px, 100%); margin-top: 0; }
 .assetToolbar > span { color: var(--muted); font-size: 9px; }
@@ -523,11 +542,16 @@ a { color: inherit; text-decoration: none; }
 .assetCard.disabled { opacity: .68; }
 .assetPreview { position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; border: 0; background: #eef0f5; cursor: pointer; }
 .assetPreview:disabled { cursor: default; }
-.assetPreview > img { width: 100%; height: 100%; object-fit: cover; }
+.assetPreview > img, .assetPreview > video { width: 100%; height: 100%; object-fit: cover; }
 .assetImageFallback { display: grid; width: 100%; height: 100%; place-content: center; justify-items: center; gap: 5px; color: #9298a7; background: #eff1f5; font-size: 8px; }
-.selectionMark, .assetState { position: absolute; display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; font-size: 8px; font-weight: 700; backdrop-filter: blur(7px); }
+.assetImageFallback.video { color: #be123c; background: #fff1f2; }
+.assetImageFallback.audio { color: #b45309; background: #fffbeb; }
+.selectionMark, .assetState, .assetTypeBadge { position: absolute; display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; font-size: 8px; font-weight: 700; backdrop-filter: blur(7px); }
 .selectionMark { top: 7px; right: 7px; padding: 4px 6px; color: #fff; background: rgba(32, 35, 48, .72); }
 .assetCard.selected .selectionMark { background: var(--primary); }
+.assetTypeBadge { top: 7px; left: 7px; padding: 4px 7px; color: #0e7490; border: 1px solid rgba(8, 145, 178, .2); background: rgba(236, 254, 255, .9); }
+.assetTypeBadge.video { color: #be123c; border-color: rgba(225, 29, 72, .2); background: rgba(255, 241, 242, .92); }
+.assetTypeBadge.audio { color: #b45309; border-color: rgba(217, 119, 6, .22); background: rgba(255, 251, 235, .94); }
 .assetState { bottom: 7px; left: 7px; padding: 4px 6px; color: #fff; background: rgba(32, 35, 48, .72); }
 .assetState.active { background: rgba(16, 135, 100, .9); }
 .assetCaption { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 9px; }
@@ -648,6 +672,8 @@ a { color: inherit; text-decoration: none; }
   .assetLibrary.isPicker .groupShelf { max-height: 300px; overflow: auto; }
   .assetLibrary.isPicker .contactSheet { max-height: none; }
   .assetUploadBar { grid-template-columns: 1fr; }
+  .assetFormatGuide { grid-template-columns: 1fr; }
+  .selectedUploadMeta, .assetUploadProgress { flex-wrap: wrap; }
   .assetGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .assetToolbar { align-items: stretch; flex-direction: column; }
   .assetToolbar .compactSearch { width: 100%; }

@@ -100,11 +100,18 @@ export type VideoHistoryRecord = {
   lastFrameUrl?: string;
 };
 
+export type AssetType = "Image" | "Video" | "Audio";
+
+export type MediaMetadata = Record<string, string | number | boolean | null>;
+
 export type UploadResult = {
   url: string;
+  uploadId?: string;
+  assetType?: AssetType;
   contentType?: string;
   size?: number;
   key?: string;
+  mediaMetadata?: MediaMetadata;
 };
 
 export type AssetGroup = {
@@ -120,6 +127,7 @@ export type Asset = {
   groupId: string;
   name: string;
   status: string;
+  assetType: AssetType;
   previewUrl: string;
   createdAt?: string;
 };
@@ -223,6 +231,13 @@ function firstNumber(record: UnknownRecord, keys: string[]) {
   const value = firstValue(record, keys);
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : undefined;
+}
+
+function normalizeAssetType(value: string): AssetType {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "video") return "Video";
+  if (normalized === "audio") return "Audio";
+  return "Image";
 }
 
 function resultRecord(value: unknown): UnknownRecord {
@@ -357,6 +372,7 @@ export function normalizeAssets(
       groupId: firstString(item, ["GroupId", "groupId", "AssetGroupId", "assetGroupId"], groupId),
       name: firstString(item, ["Name", "name", "AssetName", "assetName"], "未命名素材"),
       status: firstString(item, ["Status", "status", "AssetStatus", "assetStatus"], "Unknown"),
+      assetType: normalizeAssetType(firstString(item, ["AssetType", "assetType", "Type", "type"], "Image")),
       previewUrl: firstString(item, ["URL", "Url", "url", "PreviewUrl", "previewUrl", "ImageUrl", "imageUrl", "CoverUrl", "coverUrl"]),
       createdAt: firstString(item, ["CreateTime", "createTime", "CreatedAt", "createdAt"]),
     }))
@@ -442,10 +458,16 @@ export function uploadAssetFile(file: File, apiKey: string) {
   return apiRequest<UploadResult>("/api/asset/upload-file", apiKey, { method: "POST", body: form });
 }
 
-export async function createAsset(apiKey: string, groupId: string, url: string, name?: string) {
+export async function createAsset(apiKey: string, groupId: string, upload: UploadResult, name?: string) {
   const result = await apiRequest<unknown>("/api/asset/create", apiKey, {
     method: "POST",
-    body: JSON.stringify({ groupId, url, name: name?.trim() || undefined }),
+    body: JSON.stringify({
+      groupId,
+      url: upload.url,
+      uploadId: upload.uploadId || undefined,
+      assetType: upload.assetType || "Image",
+      name: name?.trim() || undefined,
+    }),
   });
   invalidateBrowserCache(apiKey, "assets");
   return result;
