@@ -20,6 +20,7 @@ REGION = "cn-beijing"
 SERVICE = "ark"
 VERSION = "2024-01-01"
 HOST = "ark.cn-beijing.volcengineapi.com"
+OPEN_API_HOST = "open.volcengineapi.com"
 logger = logging.getLogger(__name__)
 
 
@@ -56,19 +57,29 @@ class VolcengineClient:
             await self._client.aclose()
             self._client = None
 
-    def _signed_request(self, action: str, payload: dict[str, Any], project_name: str) -> tuple[str, bytes, dict[str, str]]:
+    def _signed_request(
+        self,
+        action: str,
+        payload: dict[str, Any],
+        project_name: str | None,
+        *,
+        host: str = HOST,
+    ) -> tuple[str, bytes, dict[str, str]]:
         access_key = self.settings.volcengine_access_key
         secret_key = self.settings.volcengine_secret_key
         if not access_key or not secret_key:
             raise ApiError("服务端尚未配置火山引擎 AK/SK", 503, "upstream_credentials_missing")
 
-        body = json.dumps({**payload, "ProjectName": project_name}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        request_payload = dict(payload)
+        if project_name:
+            request_payload["ProjectName"] = project_name
+        body = json.dumps(request_payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         payload_hash = _sha256(body)
         x_date = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         short_date = x_date[:8]
         query = f"Action={quote(action, safe='')}&Version={quote(VERSION, safe='')}"
         canonical_headers = (
-            f"content-type:application/json\nhost:{HOST}\n"
+            f"content-type:application/json\nhost:{host}\n"
             f"x-content-sha256:{payload_hash}\nx-date:{x_date}\n"
         )
         signed_headers = "content-type;host;x-content-sha256;x-date"
@@ -86,12 +97,78 @@ class VolcengineClient:
         )
         headers = {
             "content-type": "application/json",
-            "host": HOST,
+            "host": host,
             "x-content-sha256": payload_hash,
             "x-date": x_date,
             "authorization": authorization,
         }
-        return f"https://{HOST}/?{query}", body, headers
+        return f"https://{host}/?{query}", body, headers
+
+    async def query_inference_usage(
+        self,
+        ark_api_key: str,
+        start_time: str,
+        end_time: str,
+        interval: str,
+    ) -> dict[str, Any]:
+        """Query account-scoped Ark usage while filtering to one presented Ark API key."""
+        payload = {
+            "QueryInterval": interval,
+            "StartTime": start_time,
+            "EndTime": end_time,
+            "Filters": [
+                {"FieldName": "AuthToken", "Values": [ark_api_key]},
+                {"FieldName": "ModelName"},
+            ],
+            "ShowWindowDetail": False,
+        }
+        url, body, headers = self._signed_request(
+            "GetInferenceUsage",
+            payload,
+            None,
+            host=OPEN_API_HOST,
+        )
+        try:
+            upstream = await self._http_client().post(url, content=body, headers=headers)
+        except httpx.RequestError as error:
+            logger.warning("Ark usage query failed: error=%s", type(error).__name__)
+            raise ApiError("无法连接火山方舟用量服务", 502, "ark_usage_unreachable") from error
+
+        try:
+            content = upstream.json()
+        except ValueError as error:
+            raise ApiError("火山方舟用量服务返回了无效响应", 502, "ark_usage_invalid_response") from error
+
+        metadata = content.get("ResponseMetadata") if isinstance(content, dict) else None
+        request_id = metadata.get("RequestId") if isinstance(metadata, dict) else None
+        details = {"upstreamRequestId": request_id} if request_id else None
+        if upstream.status_code in {401, 403}:
+            raise ApiError(
+                "服务端火山 IAM 凭证无权查询方舟用量",
+                503,
+                "ark_usage_permission_denied",
+                details=details,
+            )
+        if upstream.status_code == 429:
+            retry_after = upstream.headers.get("retry-after")
+            headers_out = {"Retry-After": retry_after} if retry_after else None
+            raise ApiError(
+                "火山方舟用量查询过于频繁，请稍后重试",
+                503,
+                "ark_usage_rate_limited",
+                details=details,
+                headers=headers_out,
+            )
+        if upstream.status_code >= 400:
+            raise ApiError(
+                "火山方舟拒绝了用量查询",
+                502,
+                "ark_usage_query_failed",
+                details=details,
+            )
+        if not isinstance(content, dict) or not isinstance(content.get("Result"), dict):
+            raise ApiError("火山方舟用量服务返回了无效响应", 502, "ark_usage_invalid_response")
+        return content
 
     async def call(self, action: str, payload: dict[str, Any], principal: ApiPrincipal) -> Response:
         started = time.monotonic()

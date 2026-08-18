@@ -1,6 +1,6 @@
 # Avatar Proxy 客户 API 接入文档
 
-版本：1.1
+版本：1.2
 适用对象：通过程序、脚本或自动化任务调用素材库与 Seedance 视频生成服务的客户。
 
 > 结论：客户不需要运行或操作任何前端。服务方签发一枚 `vap_live_...` 业务 API Key 后，客户即可通过本文件中的 HTTP API 完成鉴权、素材管理、图片上传、视频生成、任务轮询、取消、历史查询和用量查询。
@@ -16,7 +16,7 @@ API_KEY=vap_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 当前服务器的临时验收地址是 `http://101.96.224.33:8088`。该地址没有 HTTPS，API Key 会以明文方式经过网络，不应作为客户生产地址。
 
-除 `/health` 外，本文所有客户接口均使用同一鉴权头：
+除 `/health` 和 `/api/video/ark-usage` 外，本文客户接口均使用服务方签发的业务 API Key：
 
 ```http
 Authorization: Bearer vap_live_xxx
@@ -36,6 +36,8 @@ Content-Type: application/json
 - 每枚 API Key 绑定一个项目；服务端会自动注入项目标识。
 - 客户传入的 `ProjectName` 或 `projectName` 会被忽略，不能跨项目访问素材。
 - API Key 被禁用或删除后，所有客户接口立即返回 `401`。
+
+`/api/video/ark-usage` 是一个独立的火山方舟用量查询入口。该接口的 Bearer Token 是客户自己的方舟 API Key，而不是 `vap_live_...` 业务 API Key；详细规则见 7.3。
 
 ## 2. 五分钟快速接入
 
@@ -121,6 +123,7 @@ curl "$BASE_URL/api/video/task/cgt-xxxxxxxx" \
 | `DELETE` | `/api/video/history/{taskId}` | 从历史中隐藏单个任务 |
 | `DELETE` | `/api/video/history` | 清空当前 API Key 的可见历史 |
 | `GET` | `/api/video/usage` | 查询视频 Token 用量 |
+| `GET` | `/api/video/ark-usage` | 使用方舟 API Key 查询火山侧 Seedance 聚合用量 |
 
 ## 4. 素材组接口
 
@@ -450,6 +453,67 @@ DELETE /api/video/history
   ]
 }
 ```
+
+该接口只统计经过本系统视频代理、且火山任务响应中包含 `usage` 的记录，不代表该方舟 Key 在火山侧的全部消耗。
+
+### 7.3 使用方舟 API Key 查询火山侧用量
+
+`GET /api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day`
+
+该接口用于查询客户直接调用火山方舟产生的 Seedance 聚合用量。此处必须使用客户自己的方舟 API Key：
+
+```bash
+curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day" \
+  -H "Authorization: Bearer $ARK_API_KEY"
+```
+
+参数：
+
+- `start`、`end`：必填，格式为 `YYYY-MM-DD`，单次跨度不能超过 31 天。
+- `interval`：可选，`Day` 或 `Hour`，默认 `Day`。
+- API Key 只从 `Authorization` 请求头读取，不允许放入 URL。
+
+成功响应示例：
+
+```json
+{
+  "source": "volcengine_ark",
+  "scope": "ark_api_key",
+  "keySuffix": "123456789abc",
+  "start": "2026-08-01",
+  "end": "2026-08-18",
+  "interval": "Day",
+  "dataDelayMinutes": {"min": 5, "max": 30},
+  "billingAmountIncluded": false,
+  "summary": {
+    "inputTokens": 0,
+    "outputTokens": 35800,
+    "totalTokens": 35800,
+    "requestCount": 2,
+    "metrics": {}
+  },
+  "records": [
+    {
+      "date": "2026-08-18",
+      "modelName": "doubao-seedance-2-5",
+      "requestCount": 2,
+      "inputTokens": 0,
+      "outputTokens": 35800,
+      "totalTokens": 35800
+    }
+  ],
+  "upstreamRequestId": "0217865260..."
+}
+```
+
+安全与口径说明：
+
+- 后端仅在当前请求内将完整方舟 Key 作为火山用量过滤条件，不落库、不写业务日志，响应只显示末 12 位。
+- 查询由服务端 IAM AK/SK 签名完成；服务端 AK/SK 不会返回给客户。
+- 只返回模型名包含 `seedance` 的记录，其他文字、图片或语音模型用量不会混入汇总。
+- 火山聚合用量通常有约 5～30 分钟延迟，不能用于实时限流。
+- `billingAmountIncluded: false` 表示该接口不包含人民币费用；实际账单金额属于 T+1 账单查询，应另设账单接口。
+- 返回零用量表示查询区间内没有匹配记录，也可能是 Key 尚未产生聚合数据；不能据此证明 Key 一定有效。
 
 ## 8. 错误处理
 

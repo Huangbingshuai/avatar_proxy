@@ -41,6 +41,7 @@ import {
   cancelVideoTask,
   clearVideoHistory,
   generateVideo,
+  getArkVideoUsage,
   getLastFrameUrl,
   getVideoHistory,
   getVideoTask,
@@ -50,6 +51,7 @@ import {
   isAssetActive,
   removeVideoHistoryTask,
   type Asset,
+  type ArkUsageStats,
   type VideoTask,
   type UsageStats,
 } from "./api";
@@ -106,12 +108,33 @@ function shortDate(value: string) {
   return `${month}/${day}`;
 }
 
+function dateInputValue(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultArkUsageStart() {
+  const value = new Date();
+  value.setDate(value.getDate() - 13);
+  return dateInputValue(value);
+}
+
 function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: boolean }) {
   const [days, setDays] = useState(14);
   const [usage, setUsage] = useState<UsageStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
+  const [arkApiKey, setArkApiKey] = useState("");
+  const [showArkApiKey, setShowArkApiKey] = useState(false);
+  const [arkStart, setArkStart] = useState(defaultArkUsageStart);
+  const [arkEnd, setArkEnd] = useState(() => dateInputValue(new Date()));
+  const [arkInterval, setArkInterval] = useState<"Day" | "Hour">("Day");
+  const [arkUsage, setArkUsage] = useState<ArkUsageStats | null>(null);
+  const [arkLoading, setArkLoading] = useState(false);
+  const [arkError, setArkError] = useState("");
 
   useEffect(() => {
     if (!apiKeyValid) return undefined;
@@ -134,6 +157,34 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
     void loadUsage();
     return () => { disposed = true; };
   }, [apiKey, apiKeyValid, days, refreshToken]);
+
+  async function queryArkUsage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const key = arkApiKey.trim();
+    setArkError("");
+    setArkUsage(null);
+    if (!key) {
+      setArkError("请输入火山方舟 API Key");
+      return;
+    }
+    if (!arkStart || !arkEnd || arkEnd < arkStart) {
+      setArkError("请选择有效的开始和结束日期");
+      return;
+    }
+    const rangeDays = Math.round((Date.parse(arkEnd) - Date.parse(arkStart)) / 86_400_000);
+    if (rangeDays > 31) {
+      setArkError("单次最多查询 31 天");
+      return;
+    }
+    setArkLoading(true);
+    try {
+      setArkUsage(await getArkVideoUsage(key, arkStart, arkEnd, arkInterval));
+    } catch (caught) {
+      setArkError(caught instanceof Error ? caught.message : "方舟用量查询失败");
+    } finally {
+      setArkLoading(false);
+    }
+  }
 
   if (!apiKeyValid) return <div className="officialEmpty usageLocked"><KeyRound size={28} /><b>请先连接服务</b><p>输入业务 API Key 后，仅显示这个 Key 的视频生成用量。</p></div>;
 
@@ -165,6 +216,31 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
       </div>
       {!loading && summary.requestCount === 0 ? <div className="usageEmptyNote"><BarChart3 size={18} /><span>这个周期还没有视频生成记录；创建任务后会从这里开始累计。</span></div> : null}
     </div>
+    <section className="arkUsageCard" aria-labelledby="ark-usage-title">
+      <div className="arkUsageHeading">
+        <div><span className="usageEyebrow">VOLCENGINE ARK</span><h2 id="ark-usage-title">查询火山方舟 Key 用量</h2><p>查询这个方舟 Key 直接调用 Seedance 产生的聚合用量，与上方业务 Key 统计相互独立。</p></div>
+        <span className="arkPrivacyBadge"><ShieldCheck size={15} />仅随本次请求发送</span>
+      </div>
+      <form className="arkUsageForm" onSubmit={queryArkUsage}>
+        <label className="arkKeyField"><span>方舟 API Key</span><div><input type={showArkApiKey ? "text" : "password"} value={arkApiKey} onChange={(event) => setArkApiKey(event.target.value)} placeholder="请输入客户自己的方舟 API Key" autoComplete="off" spellCheck={false} aria-describedby="ark-key-security" /><button type="button" onClick={() => setShowArkApiKey((value) => !value)} aria-label={showArkApiKey ? "隐藏方舟 API Key" : "显示方舟 API Key"}>{showArkApiKey ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+        <label><span>开始日期</span><input type="date" value={arkStart} max={arkEnd} onChange={(event) => setArkStart(event.target.value)} /></label>
+        <label><span>结束日期</span><input type="date" value={arkEnd} min={arkStart} onChange={(event) => setArkEnd(event.target.value)} /></label>
+        <label><span>统计粒度</span><select value={arkInterval} onChange={(event) => setArkInterval(event.target.value as "Day" | "Hour")}><option value="Day">按天</option><option value="Hour">按小时</option></select></label>
+        <button className="primaryButton arkUsageSubmit" type="submit" disabled={arkLoading}>{arkLoading ? <LoaderCircle size={16} className="spin" /> : <BarChart3 size={16} />}{arkLoading ? "查询中" : "查询用量"}</button>
+      </form>
+      <p className="arkSecurityNote" id="ark-key-security"><KeyRound size={14} />完整 Key 不会写入浏览器存储或本系统数据库；响应只显示末 12 位。聚合数据通常延迟 5～30 分钟，且不包含人民币账单金额。</p>
+      {arkError ? <div className="officialMessage error" role="alert"><CircleAlert size={17} /><span>{arkError}</span></div> : null}
+      {arkUsage ? <div className="arkUsageResult">
+        <div className="arkUsageResultHead"><div><span>查询结果</span><strong>Key ····{arkUsage.keySuffix}</strong></div><span>{arkUsage.start} — {arkUsage.end} · {arkUsage.interval === "Day" ? "按天" : "按小时"}</span></div>
+        <div className="arkUsageMetrics">
+          <article><span>总 tokens</span><strong>{compactTokens(arkUsage.summary.totalTokens)}</strong></article>
+          <article><span>输出 tokens</span><strong>{compactTokens(arkUsage.summary.outputTokens)}</strong></article>
+          <article><span>输入 tokens</span><strong>{compactTokens(arkUsage.summary.inputTokens)}</strong></article>
+          <article><span>调用次数</span><strong>{arkUsage.summary.requestCount.toLocaleString("zh-CN")}</strong></article>
+        </div>
+        {arkUsage.records.length ? <div className="arkUsageTableWrap"><table className="arkUsageTable"><thead><tr><th>时间</th><th>Seedance 模型</th><th>接入点</th><th>调用次数</th><th>总 tokens</th></tr></thead><tbody>{arkUsage.records.map((record, index) => <tr key={`${record.date || "unknown"}-${record.modelName}-${record.endpointId || index}`}><td>{record.date || "—"}</td><td>{record.modelName}</td><td>{record.endpointId || "—"}</td><td>{record.requestCount.toLocaleString("zh-CN")}</td><td>{record.totalTokens.toLocaleString("zh-CN")}</td></tr>)}</tbody></table></div> : <div className="usageEmptyNote arkUsageEmpty"><BarChart3 size={18} /><span>查询区间内没有匹配到这个 Key 的 Seedance 聚合用量。</span></div>}
+      </div> : null}
+    </section>
   </section>;
 }
 
