@@ -26,6 +26,11 @@ IAM_HOST = "iam.volcengineapi.com"
 logger = logging.getLogger(__name__)
 
 
+def ark_usage_token_mask(ark_api_key: str) -> str:
+    """Return the masked token representation used by Ark usage statistics."""
+    return f"{ark_api_key[:3]}****{ark_api_key[-5:]}"
+
+
 def _sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -217,7 +222,7 @@ class VolcengineClient:
         interval: str,
     ) -> dict[str, Any]:
         """Query account-scoped Ark usage while filtering to one presented Ark API key."""
-        key_suffix = ark_api_key[-12:]
+        masked_token = ark_usage_token_mask(ark_api_key)
         payload = {
             "QueryInterval": interval,
             "StartTime": start_time,
@@ -226,7 +231,7 @@ class VolcengineClient:
                 {"Key": "ModelEndpoint", "Values": []},
                 {"Key": "ModelName", "Values": []},
                 {"Key": "ModelUnitID", "Values": []},
-                {"Key": "AuthToken", "ValueLike": key_suffix, "Values": []},
+                {"Key": "AuthToken", "ValueLike": masked_token, "Values": []},
                 {"Key": "BillingStatus", "Values": []},
             ],
         }

@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from ..errors import ApiError
 from ..schemas import VideoGenerate, VideoHistoryImport
 from ..security import PrincipalDependency
+from ..volcengine import ark_usage_token_mask
 
 
 router = APIRouter(prefix="/api/video", tags=["Seedance 视频生成"])
@@ -59,6 +60,8 @@ def ark_key_from_request(request: Request) -> str:
         raise ApiError("请使用 Authorization: Bearer <ARK_API_KEY>", 401, "missing_ark_api_key")
     if not 16 <= len(key) <= 512 or any(ord(character) < 33 or ord(character) > 126 for character in key):
         raise ApiError("方舟 API Key 格式无效", 401, "invalid_ark_api_key")
+    if len(re.sub(r"[^A-Za-z0-9]", "", key)) < 12:
+        raise ApiError("方舟 API Key 格式无效", 401, "invalid_ark_api_key")
     return key
 
 
@@ -81,7 +84,14 @@ def _usage_records(result: dict[str, Any]) -> list[dict[str, Any]]:
         for field in raw_fields
         if isinstance(field, dict)
     ]
-    raw_records = result.get("Records") or result.get("records") or result.get("Values") or []
+    raw_records = (
+        result.get("Data")
+        or result.get("data")
+        or result.get("Records")
+        or result.get("records")
+        or result.get("Values")
+        or []
+    )
     if not raw_records and raw_fields:
         column_count = max(
             (len(field.get("Values", [])) for field in raw_fields if isinstance(field, dict)),
@@ -124,11 +134,12 @@ def normalize_ark_video_usage(content: dict[str, Any], ark_api_key: str, start: 
     records = _usage_records(result)
     video_records = []
     key_suffix = ark_api_key[-12:]
+    masked_token = ark_usage_token_mask(ark_api_key)
     totals: dict[str, int | float] = {value: 0 for value in USAGE_ALIASES.values()}
     extra_totals: dict[str, int | float] = {}
     for record in records:
         returned_token = str(record.get("AuthToken") or "")
-        if returned_token and not returned_token.endswith(key_suffix):
+        if returned_token and returned_token != masked_token:
             continue
         model_name = str(record.get("ModelName") or record.get("FoundationModelName") or "")
         if not VIDEO_MODEL_PATTERN.search(model_name):

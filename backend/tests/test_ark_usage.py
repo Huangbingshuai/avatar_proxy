@@ -8,6 +8,8 @@ from app.main import create_app
 
 
 ARK_KEY = "12345678-1234-1234-1234-123456789abc"
+ARK_MASK = "123****89abc"
+HYPHENATED_ARK_KEY = "ark-live-part-2c0ba9-e2dca"
 
 
 def ark_headers(key: str = ARK_KEY) -> dict[str, str]:
@@ -27,7 +29,7 @@ def test_ark_usage_queries_key_suffix_and_returns_only_seedance(tmp_path: Path, 
                     "Fields": [
                         {"Metric": "Day", "Values": ["2026-08-17", "2026-08-18"]},
                         {"Metric": "ModelName", "Values": ["doubao-seedance-2-5", "doubao-seed-2-0-pro"]},
-                        {"Metric": "AuthToken", "Values": [ARK_KEY, ARK_KEY]},
+                        {"Metric": "AuthToken", "Values": [ARK_MASK, ARK_MASK]},
                         {"Metric": "ReqCnt", "Values": ["2", "9"]},
                         {"Metric": "InputTokens", "Values": ["10", "90"]},
                         {"Metric": "OutputTokens", "Values": ["20", "90"]},
@@ -86,7 +88,7 @@ def test_ark_usage_queries_key_suffix_and_returns_only_seedance(tmp_path: Path, 
             {"Key": "ModelEndpoint", "Values": []},
             {"Key": "ModelName", "Values": []},
             {"Key": "ModelUnitID", "Values": []},
-            {"Key": "AuthToken", "ValueLike": ARK_KEY[-12:], "Values": []},
+            {"Key": "AuthToken", "ValueLike": ARK_MASK, "Values": []},
             {"Key": "BillingStatus", "Values": []},
         ],
     }
@@ -121,6 +123,63 @@ def test_ark_usage_accepts_object_and_encoded_records(tmp_path: Path, settings_f
     assert len(response.json()["records"]) == 2
 
 
+def test_ark_usage_masks_key_and_parses_real_data_shape(
+    tmp_path: Path,
+    settings_factory,
+) -> None:
+    expected_mask = "ark****e2dca"
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={
+            "ResponseMetadata": {"RequestId": "real-shape-request"},
+            "Result": {
+                "Fields": [
+                    {"Name": "Day", "Type": "DATE"},
+                    {"Name": "ModelName", "Type": "STRING"},
+                    {"Name": "AuthToken", "Type": "STRING"},
+                    {"Name": "OutputTokens", "Type": "BIGINT"},
+                    {"Name": "TotalTokens", "Type": "BIGINT"},
+                    {"Name": "ReqCnt", "Type": "BIGINT"},
+                ],
+                "Data": [[
+                    "2026-08-17",
+                    "doubao-seedance-2-5",
+                    expected_mask,
+                    "2830950",
+                    "2830950",
+                    "12",
+                ]],
+                "DataCount": 1,
+            },
+        })
+
+    app = create_app(settings_factory(tmp_path / "ark-real-data.db"))
+    with TestClient(app) as client:
+        app.state.volcengine.transport = httpx.MockTransport(handler)
+        response = client.get(
+            "/api/video/ark-usage",
+            headers=ark_headers(HYPHENATED_ARK_KEY),
+            params={"start": "2026-08-05", "end": "2026-08-18"},
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["keySuffix"] == HYPHENATED_ARK_KEY[-12:]
+    assert body["summary"]["outputTokens"] == 2830950
+    assert body["summary"]["totalTokens"] == 2830950
+    assert body["summary"]["requestCount"] == 12
+    assert body["records"][0]["modelName"] == "doubao-seedance-2-5"
+    upstream_body = captured["body"]
+    assert isinstance(upstream_body, dict)
+    assert upstream_body["Filters"][3] == {
+        "Key": "AuthToken",
+        "ValueLike": expected_mask,
+        "Values": [],
+    }
+
+
 def test_ark_usage_discards_non_matching_auth_token_records(tmp_path: Path, settings_factory) -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={
@@ -133,7 +192,7 @@ def test_ark_usage_discards_non_matching_auth_token_records(tmp_path: Path, sett
                     {"Metric": "ReqCnt"},
                 ],
                 "Records": [
-                    ["2026-08-18", "doubao-seedance-2-5", ARK_KEY[-12:], "30", "1"],
+                    ["2026-08-18", "doubao-seedance-2-5", ARK_MASK, "30", "1"],
                     ["2026-08-18", "doubao-seedance-2-5", "different-token", "999", "9"],
                 ],
             }
