@@ -565,13 +565,16 @@ export function getVideoUsage(apiKey: string, days = 14) {
 }
 
 export function getArkVideoUsage(
+  apiKey: string,
   arkApiKey: string,
   start: string,
   end: string,
   interval: "Day" | "Hour" = "Day",
 ) {
   const parameters = new URLSearchParams({ start, end, interval });
-  return apiRequest<ArkUsageStats>(`/api/video/ark-usage?${parameters.toString()}`, arkApiKey);
+  return apiRequest<ArkUsageStats>(`/api/video/ark-usage?${parameters.toString()}`, apiKey, {
+    headers: { "X-Ark-Api-Key": arkApiKey.trim() },
+  });
 }
 
 export function cancelVideoTask(taskId: string, apiKey: string) {

@@ -1,19 +1,49 @@
+import asyncio
 import json
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
+from app.database import Database
+from app.errors import ApiError
 from app.main import create_app
+from app.security import generate_api_key, generate_key_id, hash_api_key
+from app.volcengine import VolcengineClient
 
 
 ARK_KEY = "12345678-1234-1234-1234-123456789abc"
 ARK_MASK = "123****89abc"
 HYPHENATED_ARK_KEY = "ark-live-part-2c0ba9-e2dca"
+PROJECT_NAME = "drama_prod"
+REAL_VALIDATE_ARK_API_KEY_PROJECT = VolcengineClient.validate_ark_api_key_project
 
 
-def ark_headers(key: str = ARK_KEY) -> dict[str, str]:
-    return {"Authorization": f"Bearer {key}"}
+@pytest.fixture(autouse=True)
+def stub_ark_project_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def validate(_: VolcengineClient, __: str, ___: str) -> None:
+        return None
+
+    monkeypatch.setattr(VolcengineClient, "validate_ark_api_key_project", validate)
+
+
+def ark_headers(client: TestClient, key: str = ARK_KEY) -> dict[str, str]:
+    database = client.app.state.database
+    if not database.project_exists(PROJECT_NAME):
+        database.create_project(PROJECT_NAME, "短剧生产", "production")
+    secret = generate_api_key()
+    database.create_api_key(
+        generate_key_id(),
+        "usage-test",
+        f"{secret[:16]}…",
+        hash_api_key(secret),
+        PROJECT_NAME,
+    )
+    return {
+        "Authorization": f"Bearer {secret}",
+        "X-Ark-Api-Key": key,
+    }
 
 
 def test_ark_usage_queries_key_suffix_and_returns_only_seedance(tmp_path: Path, settings_factory) -> None:
@@ -46,7 +76,7 @@ def test_ark_usage_queries_key_suffix_and_returns_only_seedance(tmp_path: Path, 
         app.state.volcengine.transport = httpx.MockTransport(handler)
         response = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(),
+            headers=ark_headers(client),
             params={"start": "2026-08-17", "end": "2026-08-18", "interval": "Day"},
         )
 
@@ -79,8 +109,9 @@ def test_ark_usage_queries_key_suffix_and_returns_only_seedance(tmp_path: Path, 
     assert request.url.params["Action"] == "GetInferenceUsage"
     assert request.headers["authorization"].startswith("HMAC-SHA256 ")
     upstream_body = json.loads(request.content)
-    assert "ProjectName" not in upstream_body
+    assert upstream_body["ProjectName"] == PROJECT_NAME
     assert upstream_body == {
+        "ProjectName": PROJECT_NAME,
         "QueryInterval": "Day",
         "StartTime": "2026-08-17",
         "EndTime": "2026-08-18",
@@ -114,7 +145,7 @@ def test_ark_usage_accepts_object_and_encoded_records(tmp_path: Path, settings_f
         app.state.volcengine.transport = httpx.MockTransport(handler)
         response = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(),
+            headers=ark_headers(client),
             params={"start": "2026-08-18", "end": "2026-08-18"},
         )
 
@@ -170,7 +201,7 @@ def test_ark_usage_masks_key_and_parses_real_data_shape(
         app.state.volcengine.transport = httpx.MockTransport(handler)
         response = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(HYPHENATED_ARK_KEY),
+            headers=ark_headers(client, HYPHENATED_ARK_KEY),
             params={"start": "2026-08-05", "end": "2026-08-18"},
         )
 
@@ -215,7 +246,7 @@ def test_ark_usage_discards_non_matching_auth_token_records(tmp_path: Path, sett
         app.state.volcengine.transport = httpx.MockTransport(handler)
         response = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(),
+            headers=ark_headers(client),
             params={"start": "2026-08-18", "end": "2026-08-18"},
         )
 
@@ -227,27 +258,36 @@ def test_ark_usage_discards_non_matching_auth_token_records(tmp_path: Path, sett
 def test_ark_usage_requires_ark_key_and_valid_date_range(tmp_path: Path, settings_factory) -> None:
     app = create_app(settings_factory(tmp_path / "ark-validation.db"))
     with TestClient(app) as client:
-        missing = client.get(
+        missing_system_key = client.get(
             "/api/video/ark-usage", params={"start": "2026-08-01", "end": "2026-08-18"}
+        )
+        system_only_headers = ark_headers(client)
+        system_only_headers.pop("X-Ark-Api-Key")
+        missing_ark_key = client.get(
+            "/api/video/ark-usage",
+            headers=system_only_headers,
+            params={"start": "2026-08-01", "end": "2026-08-18"},
         )
         malformed = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers("short key"),
+            headers=ark_headers(client, "short key"),
             params={"start": "2026-08-01", "end": "2026-08-18"},
         )
         reversed_range = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(),
+            headers=ark_headers(client),
             params={"start": "2026-08-18", "end": "2026-08-01"},
         )
         too_large = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(),
+            headers=ark_headers(client),
             params={"start": "2026-06-01", "end": "2026-08-18"},
         )
 
-    assert missing.status_code == 401
-    assert missing.json()["error"]["code"] == "missing_ark_api_key"
+    assert missing_system_key.status_code == 401
+    assert missing_system_key.json()["error"]["code"] == "missing_api_key"
+    assert missing_ark_key.status_code == 401
+    assert missing_ark_key.json()["error"]["code"] == "missing_ark_api_key"
     assert malformed.status_code == 401
     assert malformed.json()["error"]["code"] == "invalid_ark_api_key"
     assert reversed_range.status_code == 400
@@ -264,7 +304,7 @@ def test_ark_usage_returns_zero_for_key_without_usage(tmp_path: Path, settings_f
         )
         response = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(),
+            headers=ark_headers(client),
             params={"start": "2026-08-18", "end": "2026-08-18"},
         )
 
@@ -302,7 +342,7 @@ def test_ark_usage_maps_upstream_failures_without_leaking_key(tmp_path: Path, se
             )
             response = client.get(
                 "/api/video/ark-usage",
-                headers=ark_headers(),
+                headers=ark_headers(client),
                 params={"start": "2026-08-18", "end": "2026-08-18"},
             )
 
@@ -337,7 +377,7 @@ def test_ark_usage_maps_error_envelope_even_when_upstream_returns_http_200(
         )
         response = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(),
+            headers=ark_headers(client),
             params={"start": "2026-08-18", "end": "2026-08-18"},
         )
 
@@ -360,9 +400,132 @@ def test_ark_usage_rejects_missing_server_credentials(tmp_path: Path, settings_f
     with TestClient(app) as client:
         response = client.get(
             "/api/video/ark-usage",
-            headers=ark_headers(),
+            headers=ark_headers(client),
             params={"start": "2026-08-18", "end": "2026-08-18"},
         )
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "upstream_credentials_missing"
+
+
+def test_ark_key_project_validation_uses_exact_raw_key_and_project_scope(
+    tmp_path: Path,
+    settings_factory,
+) -> None:
+    actions: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        action = request.url.params["Action"]
+        actions.append(action)
+        body = json.loads(request.content)
+        assert body["ProjectName"] == PROJECT_NAME
+        if action == "ListApiKeys":
+            return httpx.Response(200, json={
+                "Result": {
+                    "Items": [
+                        {"Id": "candidate-1", "Key": "*" * 32, "ProjectName": PROJECT_NAME, "Status": "Active"},
+                        {"Id": "candidate-2", "Key": "*" * 32, "ProjectName": PROJECT_NAME, "Status": "Restricted"},
+                    ],
+                    "PageNumber": 1,
+                    "PageSize": 100,
+                    "TotalCount": 2,
+                }
+            })
+        assert action == "GetRawApiKey"
+        raw_key = "12345678-1234-1234-1234-000000000000" if body["Id"] == "candidate-1" else ARK_KEY
+        return httpx.Response(200, json={"Result": {"ApiKey": raw_key, "SID": "apikey-test"}})
+
+    async def run_validation() -> None:
+        client = VolcengineClient(
+            settings_factory(tmp_path / "ark-key-project.db"),
+            Database(tmp_path / "ark-key-project.db"),
+            httpx.MockTransport(handler),
+        )
+        try:
+            await REAL_VALIDATE_ARK_API_KEY_PROJECT(client, ARK_KEY, PROJECT_NAME)
+        finally:
+            await client.aclose()
+
+    asyncio.run(run_validation())
+    assert actions == ["ListApiKeys", "GetRawApiKey", "GetRawApiKey"]
+
+
+@pytest.mark.parametrize(
+    ("items", "raw_key", "expected_code"),
+    [
+        ([], None, "ark_key_project_mismatch"),
+        ([{"Id": "disabled", "Key": ARK_MASK, "ProjectName": PROJECT_NAME, "Status": "Disabled"}], ARK_KEY, "ark_key_inactive"),
+        ([{"Id": "other", "Key": ARK_MASK, "ProjectName": "another_project", "Status": "Active"}], ARK_KEY, "ark_key_project_mismatch"),
+    ],
+)
+def test_ark_key_project_validation_rejects_mismatch_and_inactive_keys(
+    tmp_path: Path,
+    settings_factory,
+    items: list[dict[str, object]],
+    raw_key: str | None,
+    expected_code: str,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        action = request.url.params["Action"]
+        if action == "ListApiKeys":
+            return httpx.Response(200, json={"Result": {"Items": items, "TotalCount": len(items)}})
+        assert action == "GetRawApiKey"
+        return httpx.Response(200, json={"Result": {"ApiKey": raw_key}})
+
+    async def run_validation() -> None:
+        client = VolcengineClient(
+            settings_factory(tmp_path / f"ark-key-{expected_code}.db"),
+            Database(tmp_path / f"ark-key-{expected_code}.db"),
+            httpx.MockTransport(handler),
+        )
+        try:
+            await REAL_VALIDATE_ARK_API_KEY_PROJECT(client, ARK_KEY, PROJECT_NAME)
+        finally:
+            await client.aclose()
+
+    with pytest.raises(ApiError) as caught:
+        asyncio.run(run_validation())
+    assert caught.value.status_code == 403
+    assert caught.value.code == expected_code
+
+
+def test_ark_usage_rejects_project_mismatch_before_query(tmp_path: Path, settings_factory) -> None:
+    app = create_app(settings_factory(tmp_path / "ark-route-project-mismatch.db"))
+    with TestClient(app) as client:
+        headers = ark_headers(client)
+
+        async def reject_project(_: str, __: str) -> None:
+            raise ApiError(
+                "方舟 API Key 不属于当前系统 API Key 绑定的火山项目",
+                403,
+                "ark_key_project_mismatch",
+            )
+
+        app.state.volcengine.validate_ark_api_key_project = reject_project
+        response = client.get(
+            "/api/video/ark-usage",
+            headers=headers,
+            params={"start": "2026-08-18", "end": "2026-08-18"},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ark_key_project_mismatch"
+    assert ARK_KEY not in response.text
+
+
+def test_ark_usage_cors_allows_separate_ark_key_header(tmp_path: Path, settings_factory) -> None:
+    app = create_app(settings_factory(tmp_path / "ark-cors.db"))
+    with TestClient(app) as client:
+        response = client.options(
+            "/api/video/ark-usage",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization,x-ark-api-key",
+            },
+        )
+
+    assert response.status_code == 200
+    allowed_headers = response.headers["access-control-allow-headers"].lower()
+    assert "authorization" in allowed_headers
+    assert "x-ark-api-key" in allowed_headers

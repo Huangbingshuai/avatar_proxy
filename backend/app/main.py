@@ -53,7 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origin_regex=resolved.cors_origin_regex or None,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Admin-Token"],
+        allow_headers=["Authorization", "Content-Type", "X-Admin-Token", "X-Ark-Api-Key"],
         expose_headers=["X-Upstream-Service", "Retry-After"],
     )
     install_error_handlers(app)

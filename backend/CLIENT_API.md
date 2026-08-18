@@ -1,13 +1,13 @@
 # 瑞池多类型素材 API 接入文档
 
-版本：3.1
+版本：3.2
 正式地址：`https://api.richbest.cn`
 
 本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理及 Seedance 聚合用量查询接口。
 
 ## 1. 鉴权
 
-除 `/health` 和 `/api/video/ark-usage` 外，请求都必须携带瑞池签发的业务 API Key：
+除 `/health` 外，请求都必须携带瑞池签发的业务 API Key：
 
 ```http
 Authorization: Bearer vap_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -18,7 +18,7 @@ JSON 请求还需携带 `Content-Type: application/json`。
 
 业务 API Key 已在服务端绑定火山项目。请求中不需要、也不能覆盖 `projectName`。请只在服务端保存 API Key，不要写入网页代码、公开仓库、日志或 URL。
 
-`/api/video/ark-usage` 是独立的火山方舟用量查询入口，其 Bearer Token 必须是客户自己的方舟 API Key，而不是 `vap_live_...` 业务 API Key。
+`/api/video/ark-usage` 还需要通过 `X-Ark-Api-Key` 请求头携带客户自己的方舟 API Key。服务端会实时校验该方舟 Key 是否真实存在、处于可用状态，并且与业务 API Key 绑定的是同一个火山项目；方舟 Key 不得放在 URL 中。
 
 ## 2. 支持的素材规格
 
@@ -271,14 +271,18 @@ curl -X DELETE "$BASE_URL/api/asset/delete?assetId=asset-xxxxxxxx" \
 
 ```bash
 curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day" \
-  -H "Authorization: Bearer $ARK_API_KEY"
+  -H "Authorization: Bearer $API_KEY" \
+  -H "X-Ark-Api-Key: $ARK_API_KEY"
 ```
 
 参数：
 
 - `start`、`end`：必填，格式为 `YYYY-MM-DD`，单次跨度不能超过 31 天；
 - `interval`：可选，`Day` 或 `Hour`，默认 `Day`；
-- 方舟 API Key 只允许放在 `Authorization` 请求头，不得放入 URL。
+- `Authorization` 必须传瑞池签发的业务 API Key；
+- 方舟 API Key 必须放在 `X-Ark-Api-Key` 请求头，不得放入 URL；
+- 两枚 Key 绑定的火山项目不一致时返回 `403 ark_key_project_mismatch`；
+- 方舟 Key 已禁用或不可用时返回 `403 ark_key_inactive`。
 
 成功响应：
 
@@ -373,4 +377,4 @@ curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day
 | `GET` | `/api/asset/get` | 查询单个素材和状态 |
 | `PUT` | `/api/asset/update` | 修改素材名称 |
 | `DELETE` | `/api/asset/delete` | 删除素材 |
-| `GET` | `/api/video/ark-usage` | 使用客户方舟 API Key 查询 Seedance 聚合用量 |
+| `GET` | `/api/video/ark-usage` | 使用业务 Key 鉴权并校验同项目后，查询客户方舟 Key 的 Seedance 聚合用量 |

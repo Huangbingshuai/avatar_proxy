@@ -200,7 +200,7 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
     }
     setArkLoading(true);
     try {
-      setArkUsage(await getArkVideoUsage(key, arkStart, arkEnd, arkInterval));
+      setArkUsage(await getArkVideoUsage(apiKey, key, arkStart, arkEnd, arkInterval));
     } catch (caught) {
       setArkError(caught instanceof Error ? caught.message : "方舟用量查询失败");
     } finally {
@@ -250,7 +250,7 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
         <label><span>统计粒度</span><select value={arkInterval} onChange={(event) => setArkInterval(event.target.value as "Day" | "Hour")}><option value="Day">按天</option><option value="Hour">按小时</option></select></label>
         <button className="primaryButton arkUsageSubmit" type="submit" disabled={arkLoading}>{arkLoading ? <LoaderCircle size={16} className="spin" /> : <BarChart3 size={16} />}{arkLoading ? "查询中" : "查询用量"}</button>
       </form>
-      <p className="arkSecurityNote" id="ark-key-security"><KeyRound size={14} />完整 Key 不会写入浏览器存储或本系统数据库；响应只显示末 12 位。聚合数据通常延迟 5～30 分钟，且不包含人民币账单金额。</p>
+      <p className="arkSecurityNote" id="ark-key-security"><KeyRound size={14} />系统会先校验方舟 Key 与当前业务 Key 属于同一个火山项目；完整 Key 不会写入浏览器存储或本系统数据库，响应只显示末 12 位。聚合数据通常延迟 5～30 分钟，且不包含人民币账单金额。</p>
       {arkError ? <div className="officialMessage error" role="alert"><CircleAlert size={17} /><span>{arkError}</span></div> : null}
       {arkUsage ? <div className="arkUsageResult">
         <div className="arkUsageResultHead"><div><span>查询结果</span><strong>Key ····{arkUsage.keySuffix}</strong></div><span>{arkUsage.start} — {arkUsage.end} · {arkUsage.interval === "Day" ? "按天" : "按小时"}</span></div>

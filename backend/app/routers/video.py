@@ -4,7 +4,7 @@ import time
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import Response
 
 from ..errors import ApiError
@@ -52,12 +52,10 @@ def first_url(data: dict[str, Any], key: str) -> str | None:
     return None
 
 
-def ark_key_from_request(request: Request) -> str:
-    authorization = request.headers.get("authorization", "")
-    scheme, separator, value = authorization.partition(" ")
-    key = value.strip()
-    if separator != " " or scheme.lower() != "bearer" or not key:
-        raise ApiError("请使用 Authorization: Bearer <ARK_API_KEY>", 401, "missing_ark_api_key")
+def validate_ark_api_key(value: str | None) -> str:
+    key = (value or "").strip()
+    if not key:
+        raise ApiError("请使用 X-Ark-Api-Key 请求头传入方舟 API Key", 401, "missing_ark_api_key")
     if not 16 <= len(key) <= 512 or any(ord(character) < 33 or ord(character) > 126 for character in key):
         raise ApiError("方舟 API Key 格式无效", 401, "invalid_ark_api_key")
     if len(re.sub(r"[^A-Za-z0-9]", "", key)) < 12:
@@ -314,20 +312,27 @@ def get_video_usage(
 @router.get("/ark-usage")
 async def get_ark_video_usage(
     request: Request,
+    principal: PrincipalDependency,
     start: date = Query(description="开始日期，格式 YYYY-MM-DD"),
     end: date = Query(description="结束日期，格式 YYYY-MM-DD"),
     interval: str = Query(default="Day", pattern="^(Day|Hour)$"),
+    x_ark_api_key: str | None = Header(default=None, alias="X-Ark-Api-Key"),
 ) -> dict[str, Any]:
-    ark_api_key = ark_key_from_request(request)
+    ark_api_key = validate_ark_api_key(x_ark_api_key)
     if end < start:
         raise ApiError("结束日期不能早于开始日期", 400, "invalid_usage_date_range")
     if (end - start).days > 31:
         raise ApiError("单次最多查询 31 天", 400, "usage_date_range_too_large")
+    await request.app.state.volcengine.validate_ark_api_key_project(
+        ark_api_key,
+        principal.project_name,
+    )
     content = await request.app.state.volcengine.query_inference_usage(
         ark_api_key,
         start.isoformat(),
         end.isoformat(),
         interval,
+        principal.project_name,
     )
     return normalize_ark_video_usage(content, ark_api_key, start, end, interval)
 
