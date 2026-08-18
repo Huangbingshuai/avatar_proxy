@@ -143,15 +143,25 @@ def test_ark_usage_masks_key_and_parses_real_data_shape(
                     {"Name": "TotalTokens", "Type": "BIGINT"},
                     {"Name": "ReqCnt", "Type": "BIGINT"},
                 ],
-                "Data": [[
-                    "2026-08-17",
-                    "doubao-seedance-2-5",
-                    expected_mask,
-                    "2830950",
-                    "2830950",
-                    "12",
-                ]],
-                "DataCount": 1,
+                "Data": [
+                    [
+                        "2026-08-17",
+                        "doubao-seedance-2-5",
+                        expected_mask,
+                        "2830950",
+                        "2830950",
+                        "12",
+                    ],
+                    [
+                        "2026-08-18",
+                        "doubao-seedance-2-0",
+                        expected_mask,
+                        "0",
+                        "0",
+                        "1",
+                    ],
+                ],
+                "DataCount": 2,
             },
         })
 
@@ -171,6 +181,8 @@ def test_ark_usage_masks_key_and_parses_real_data_shape(
     assert body["summary"]["totalTokens"] == 2830950
     assert body["summary"]["requestCount"] == 12
     assert body["records"][0]["modelName"] == "doubao-seedance-2-5"
+    assert body["records"][1]["outputTokens"] == 0
+    assert body["records"][1]["requestCount"] == 0
     upstream_body = captured["body"]
     assert isinstance(upstream_body, dict)
     assert upstream_body["Filters"][3] == {

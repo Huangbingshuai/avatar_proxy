@@ -235,7 +235,6 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
         <div className="arkUsageMetrics">
           <article><span>总 tokens</span><strong>{compactTokens(arkUsage.summary.totalTokens)}</strong></article>
           <article><span>输出 tokens</span><strong>{compactTokens(arkUsage.summary.outputTokens)}</strong></article>
-          <article><span>输入 tokens</span><strong>{compactTokens(arkUsage.summary.inputTokens)}</strong></article>
           <article><span>调用次数</span><strong>{arkUsage.summary.requestCount.toLocaleString("zh-CN")}</strong></article>
         </div>
         {arkUsage.records.length ? <div className="arkUsageTableWrap"><table className="arkUsageTable"><thead><tr><th>时间</th><th>Seedance 模型</th><th>接入点</th><th>调用次数</th><th>总 tokens</th></tr></thead><tbody>{arkUsage.records.map((record, index) => <tr key={`${record.date || "unknown"}-${record.modelName}-${record.endpointId || index}`}><td>{record.date || "—"}</td><td>{record.modelName}</td><td>{record.endpointId || "—"}</td><td>{record.requestCount.toLocaleString("zh-CN")}</td><td>{record.totalTokens.toLocaleString("zh-CN")}</td></tr>)}</tbody></table></div> : <div className="usageEmptyNote arkUsageEmpty"><BarChart3 size={18} /><span>查询区间内没有匹配到这个 Key 的 Seedance 聚合用量。</span></div>}

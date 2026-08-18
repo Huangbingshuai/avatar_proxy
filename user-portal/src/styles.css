@@ -641,7 +641,7 @@ a { color: inherit; text-decoration: none; }
 .arkUsageResultHead { display: flex; align-items: center; justify-content: space-between; gap: 18px; color: var(--muted); font-size: 9px; }
 .arkUsageResultHead > div { display: grid; gap: 3px; }
 .arkUsageResultHead strong { color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
-.arkUsageMetrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.arkUsageMetrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .arkUsageMetrics article { display: grid; gap: 7px; padding: 16px 18px; border-left: 1px solid var(--line); }
 .arkUsageMetrics article:first-child { border-left: 0; }
 .arkUsageMetrics span { color: var(--muted); font-size: 9px; }
@@ -739,8 +739,7 @@ a { color: inherit; text-decoration: none; }
   .arkKeyField { grid-column: 1 / -1; }
   .arkUsageSubmit { width: 100%; }
   .arkUsageMetrics { grid-template-columns: 1fr 1fr; }
-  .arkUsageMetrics article:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }
-  .arkUsageMetrics article:nth-child(4) { border-top: 1px solid var(--line); }
+  .arkUsageMetrics article:nth-child(3) { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
 }
 
 @media (max-width: 460px) {

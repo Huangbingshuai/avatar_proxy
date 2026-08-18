@@ -150,6 +150,9 @@ def normalize_ark_video_usage(content: dict[str, Any], ark_api_key: str, start: 
             "modelUnitId": record.get("ModelUnitID"),
             "endpointId": record.get("ModelEndpoint"),
         }
+        exclude_request_count = (
+            "OutputTokens" in record and _usage_number(record.get("OutputTokens")) == 0
+        )
         metrics: dict[str, int | float] = {}
         for name, value in record.items():
             if name in USAGE_DIMENSIONS or name == "FoundationModelName":
@@ -157,6 +160,8 @@ def normalize_ark_video_usage(content: dict[str, Any], ark_api_key: str, start: 
             metric_value = _usage_number(value)
             alias = USAGE_ALIASES.get(name)
             if alias:
+                if alias == "requestCount" and exclude_request_count:
+                    metric_value = 0
                 normalized[alias] = metric_value
                 totals[alias] += metric_value
             else:
