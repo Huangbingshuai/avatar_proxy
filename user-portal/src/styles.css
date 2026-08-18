@@ -510,8 +510,18 @@ a { color: inherit; text-decoration: none; }
 .contactSheet { min-width: 0; padding: 21px; overflow: auto; background: #fff; }
 .assetLibrary.isPicker .contactSheet { max-height: 680px; }
 .assetUploadBar { display: grid; grid-template-columns: minmax(150px, .75fr) minmax(150px, 1fr) auto; gap: 8px; margin-top: 16px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #f8f9fb; }
+.assetUploadBar.urlMode { grid-template-columns: minmax(200px, 1.2fr) minmax(150px, .8fr) minmax(128px, .45fr) auto; }
+.assetUploadTabs { display: flex; grid-column: 1 / -1; align-items: center; gap: 4px; width: fit-content; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.assetUploadTabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 11px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: 9px; font-weight: 700; cursor: pointer; }
+.assetUploadTabs button:hover { color: var(--primary); background: var(--primary-soft); }
+.assetUploadTabs button.active { color: #fff; background: var(--primary); box-shadow: 0 4px 12px rgba(91, 99, 232, .2); }
 .chooseFileButton { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 36px; padding: 0 10px; overflow: hidden; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--primary); background: #fff; font-size: 10px; font-weight: 600; cursor: pointer; }
 .chooseFileButton span { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.assetUrlField { display: flex; align-items: center; gap: 7px; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--primary); background: #fff; }
+.assetUrlField:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(91, 99, 232, .09); }
+.assetUrlField input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--text); background: transparent; font-size: 10px; }
+.assetTypeSelect { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 7px; min-width: 0; height: 36px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--muted); background: #fff; font-size: 8px; font-weight: 700; }
+.assetTypeSelect select { min-width: 0; border: 0; outline: 0; color: var(--text); background: #fff; font-size: 9px; }
 .assetUploadBar .primaryButton { min-width: 118px; min-height: 36px; }
 .assetFormatGuide { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .assetFormatGuide > span { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 7px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }

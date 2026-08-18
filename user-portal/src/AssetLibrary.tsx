@@ -9,6 +9,7 @@ import {
   FolderPlus,
   Image as ImageIcon,
   Images,
+  Link2,
   LoaderCircle,
   RefreshCw,
   Search,
@@ -164,8 +165,11 @@ export default function AssetLibrary({
   const [newGroupDescription, setNewGroupDescription] = useState("");
   const [editingGroup, setEditingGroup] = useState<AssetGroup | null>(null);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
+  const [uploadMode, setUploadMode] = useState<"file" | "url">("file");
   const [uploadName, setUploadName] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadUrl, setUploadUrl] = useState("");
+  const [urlAssetType, setUrlAssetType] = useState<AssetType>("Image");
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [busy, setBusy] = useState("");
@@ -389,27 +393,43 @@ export default function AssetLibrary({
 
   async function handleUpload(event: FormEvent) {
     event.preventDefault();
-    if (!selectedGroupId || !uploadFile) return;
-    const rule = uploadRuleFor(uploadFile);
-    const problem = uploadProblem(uploadFile, rule);
-    if (problem || !rule) {
+    if (!selectedGroupId) return;
+    const normalizedUrl = uploadUrl.trim();
+    if (uploadMode === "url") {
+      try {
+        const parsed = new URL(normalizedUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error();
+      } catch {
+        message("请输入可公开访问的 HTTP(S) 素材地址", "error");
+        return;
+      }
+    }
+    if (uploadMode === "file" && !uploadFile) return;
+    const rule = uploadFile ? uploadRuleFor(uploadFile) : undefined;
+    const problem = uploadFile ? uploadProblem(uploadFile, rule) : "";
+    if (uploadMode === "file" && (problem || !rule)) {
       message(problem || "无法识别素材类型", "error");
       return;
     }
     setBusy("upload");
     try {
-      const uploaded = await uploadAssetFile(uploadFile, apiKey);
-      if (!uploaded.url) throw new Error("文件已上传，但没有取得可用于入库的地址");
-      if ((uploaded.assetType || rule.assetType) !== rule.assetType) throw new Error("服务端识别的素材类型与所选文件不一致");
-      await createAsset(apiKey, selectedGroupId, uploaded, uploadName);
+      if (uploadMode === "url") {
+        await createAsset(apiKey, selectedGroupId, { url: normalizedUrl, assetType: urlAssetType }, uploadName);
+      } else {
+        const uploaded = await uploadAssetFile(uploadFile!, apiKey);
+        if (!uploaded.url) throw new Error("文件已上传，但没有取得可用于入库的地址");
+        if ((uploaded.assetType || rule!.assetType) !== rule!.assetType) throw new Error("服务端识别的素材类型与所选文件不一致");
+        await createAsset(apiKey, selectedGroupId, uploaded, uploadName);
+      }
       setUploadFile(null);
+      setUploadUrl("");
       setUploadName("");
       if (fileInputRef.current) fileInputRef.current.value = "";
       setAssetPage(1);
       setPollUntil(Date.now() + 120_000);
       setPollTick((value) => value + 1);
       await loadAssets();
-      message(`${assetTypeLabel(uploaded.assetType || rule.assetType)}已提交入库，请等待方舟处理完成`, "notice");
+      message(`${assetTypeLabel(uploadMode === "url" ? urlAssetType : rule!.assetType)}已提交入库，请等待方舟处理完成`, "notice");
     } catch (caught) {
       message(caught instanceof Error ? caught.message : "素材入库失败，请重试", "error");
     } finally {
@@ -536,18 +556,26 @@ export default function AssetLibrary({
         </div>
 
         {mode === "manage" && selectedGroupId ? (
-          <form className="assetUploadBar" onSubmit={handleUpload}>
-            <input ref={fileInputRef} className="visuallyHidden" type="file" accept={FILE_ACCEPT} onChange={handleFileChange} />
-            <button type="button" className="chooseFileButton" onClick={() => fileInputRef.current?.click()}><Upload size={16} /><span>{uploadFile?.name || "选择图片、视频或音频"}</span></button>
+          <form className={`assetUploadBar ${uploadMode === "url" ? "urlMode" : ""}`} onSubmit={handleUpload}>
+            <div className="assetUploadTabs" role="tablist" aria-label="素材录入方式">
+              <button type="button" role="tab" aria-selected={uploadMode === "file"} className={uploadMode === "file" ? "active" : ""} onClick={() => setUploadMode("file")}><Upload size={14} />上传文件</button>
+              <button type="button" role="tab" aria-selected={uploadMode === "url"} className={uploadMode === "url" ? "active" : ""} onClick={() => setUploadMode("url")}><Link2 size={14} />通过 URL</button>
+            </div>
+            {uploadMode === "file" ? <>
+              <input ref={fileInputRef} className="visuallyHidden" type="file" accept={FILE_ACCEPT} onChange={handleFileChange} />
+              <button type="button" className="chooseFileButton" onClick={() => fileInputRef.current?.click()}><Upload size={16} /><span>{uploadFile?.name || "选择图片、视频或音频"}</span></button>
+            </> : <label className="assetUrlField"><Link2 size={15} /><span className="visuallyHidden">公网素材 URL</span><input type="url" value={uploadUrl} onChange={(event) => setUploadUrl(event.target.value)} placeholder="https://example.com/material.wav" autoComplete="off" spellCheck={false} /></label>}
             <input className="plainInput" value={uploadName} maxLength={64} onChange={(event) => setUploadName(event.target.value.slice(0, 64))} placeholder="素材名称（可选，最多64字符）" />
-            <button type="submit" className="primaryButton" disabled={!uploadFile || busy === "upload"}>{busy === "upload" ? <LoaderCircle size={16} className="spin" /> : <Upload size={16} />}上传并入库</button>
+            {uploadMode === "url" ? <label className="assetTypeSelect"><span>素材类型</span><select value={urlAssetType} onChange={(event) => setUrlAssetType(event.target.value as AssetType)}><option value="Image">图片 Image</option><option value="Video">视频 Video</option><option value="Audio">音频 Audio</option></select></label> : null}
+            <button type="submit" className="primaryButton" disabled={(uploadMode === "file" ? !uploadFile : !uploadUrl.trim()) || busy === "upload"}>{busy === "upload" ? <LoaderCircle size={16} className="spin" /> : uploadMode === "url" ? <Link2 size={16} /> : <Upload size={16} />}{uploadMode === "url" ? "URL 入库" : "上传并入库"}</button>
             <div className="assetFormatGuide" aria-label="支持的素材格式">
               <span className="image"><ImageIcon size={15} /><b>图片</b><small>JPG / PNG / WebP / BMP / TIFF / GIF / HEIC / HEIF，&lt;30MB</small></span>
               <span className="video"><Video size={15} /><b>视频</b><small>MP4 / MOV，2–30秒，24–60FPS，≤200MB</small></span>
               <span className="audio"><AudioLines size={15} /><b>音频</b><small>WAV / MP3，2–30秒，≤15MB</small></span>
             </div>
             {uploadFile && selectedUploadRule ? <div className={`selectedUploadMeta ${selectedUploadRule.assetType.toLowerCase()}`}><b>{selectedUploadRule.label}</b><span>{formatFileSize(uploadFile.size)}</span><span>将按 {selectedUploadRule.assetType} 类型登记</span></div> : null}
-            {busy === "upload" ? <div className="assetUploadProgress"><LoaderCircle size={14} className="spin" /><span>正在上传并登记素材，大文件处理期间请勿关闭页面</span></div> : null}
+            {uploadMode === "url" ? <div className={`selectedUploadMeta ${urlAssetType.toLowerCase()}`}><b>{assetTypeLabel(urlAssetType)}</b><span>URL 必须允许方舟公网访问</span><span>将按 {urlAssetType} 类型登记</span></div> : null}
+            {busy === "upload" ? <div className="assetUploadProgress"><LoaderCircle size={14} className="spin" /><span>{uploadMode === "url" ? "正在登记 URL 素材" : "正在上传并登记素材，大文件处理期间请勿关闭页面"}</span></div> : null}
           </form>
         ) : null}
 
