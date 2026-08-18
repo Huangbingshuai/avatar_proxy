@@ -14,7 +14,7 @@ def ark_headers(key: str = ARK_KEY) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
-def test_ark_usage_queries_exact_key_and_returns_only_seedance(tmp_path: Path, settings_factory) -> None:
+def test_ark_usage_queries_key_suffix_and_returns_only_seedance(tmp_path: Path, settings_factory) -> None:
     captured: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -73,7 +73,7 @@ def test_ark_usage_queries_exact_key_and_returns_only_seedance(tmp_path: Path, s
 
     request = captured["request"]
     assert isinstance(request, httpx.Request)
-    assert request.url.host == "open.volcengineapi.com"
+    assert request.url.host == "ark.cn-beijing.volcengineapi.com"
     assert request.url.params["Action"] == "GetInferenceUsage"
     assert request.headers["authorization"].startswith("HMAC-SHA256 ")
     upstream_body = json.loads(request.content)
@@ -83,11 +83,14 @@ def test_ark_usage_queries_exact_key_and_returns_only_seedance(tmp_path: Path, s
         "StartTime": "2026-08-17",
         "EndTime": "2026-08-18",
         "Filters": [
-            {"FieldName": "AuthToken", "Values": [ARK_KEY]},
-            {"FieldName": "ModelName"},
+            {"Key": "ModelEndpoint", "Values": []},
+            {"Key": "ModelName", "Values": []},
+            {"Key": "ModelUnitID", "Values": []},
+            {"Key": "AuthToken", "ValueLike": ARK_KEY[-12:], "Values": []},
+            {"Key": "BillingStatus", "Values": []},
         ],
-        "ShowWindowDetail": False,
     }
+    assert ARK_KEY not in request.content.decode("utf-8")
 
 
 def test_ark_usage_accepts_object_and_encoded_records(tmp_path: Path, settings_factory) -> None:
@@ -116,6 +119,38 @@ def test_ark_usage_accepts_object_and_encoded_records(tmp_path: Path, settings_f
     assert response.status_code == 200
     assert response.json()["summary"]["requestCount"] == 3
     assert len(response.json()["records"]) == 2
+
+
+def test_ark_usage_discards_non_matching_auth_token_records(tmp_path: Path, settings_factory) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "Result": {
+                "Fields": [
+                    {"Metric": "Day"},
+                    {"Metric": "ModelName"},
+                    {"Metric": "AuthToken"},
+                    {"Metric": "TotalTokens"},
+                    {"Metric": "ReqCnt"},
+                ],
+                "Records": [
+                    ["2026-08-18", "doubao-seedance-2-5", ARK_KEY[-12:], "30", "1"],
+                    ["2026-08-18", "doubao-seedance-2-5", "different-token", "999", "9"],
+                ],
+            }
+        })
+
+    app = create_app(settings_factory(tmp_path / "ark-token-defense.db"))
+    with TestClient(app) as client:
+        app.state.volcengine.transport = httpx.MockTransport(handler)
+        response = client.get(
+            "/api/video/ark-usage",
+            headers=ark_headers(),
+            params={"start": "2026-08-18", "end": "2026-08-18"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["totalTokens"] == 30
+    assert response.json()["summary"]["requestCount"] == 1
 
 
 def test_ark_usage_requires_ark_key_and_valid_date_range(tmp_path: Path, settings_factory) -> None:
@@ -175,18 +210,23 @@ def test_ark_usage_returns_zero_for_key_without_usage(tmp_path: Path, settings_f
 
 def test_ark_usage_maps_upstream_failures_without_leaking_key(tmp_path: Path, settings_factory) -> None:
     cases = [
-        (403, "ark_usage_permission_denied", 503),
-        (429, "ark_usage_rate_limited", 503),
-        (500, "ark_usage_query_failed", 502),
+        (403, "AccessDenied", "ark_usage_permission_denied", 503),
+        (429, "RequestLimitExceeded", "ark_usage_rate_limited", 503),
+        (400, "InvalidParameter.Filters", "ark_usage_query_failed", 502),
     ]
-    for upstream_status, code, expected_status in cases:
+    for upstream_status, upstream_code, code, expected_status in cases:
         app = create_app(settings_factory(tmp_path / f"ark-error-{upstream_status}.db"))
         with TestClient(app) as client:
             app.state.volcengine.transport = httpx.MockTransport(
-                lambda _, status=upstream_status: httpx.Response(
+                lambda _, status=upstream_status, error_code=upstream_code: httpx.Response(
                     status,
                     headers={"retry-after": "30"},
-                    json={"ResponseMetadata": {"RequestId": f"request-{status}"}, "message": ARK_KEY},
+                    json={
+                        "ResponseMetadata": {
+                            "RequestId": f"request-{status}",
+                            "Error": {"Code": error_code, "Message": ARK_KEY},
+                        }
+                    },
                 )
             )
             response = client.get(
@@ -197,10 +237,47 @@ def test_ark_usage_maps_upstream_failures_without_leaking_key(tmp_path: Path, se
 
         assert response.status_code == expected_status
         assert response.json()["error"]["code"] == code
+        assert response.json()["error"]["upstreamCode"] == upstream_code
         assert response.json()["error"]["upstreamRequestId"] == f"request-{upstream_status}"
         assert ARK_KEY not in response.text
         if upstream_status == 429:
             assert response.headers["retry-after"] == "30"
+
+
+def test_ark_usage_maps_error_envelope_even_when_upstream_returns_http_200(
+    tmp_path: Path,
+    settings_factory,
+) -> None:
+    app = create_app(settings_factory(tmp_path / "ark-error-envelope.db"))
+    with TestClient(app) as client:
+        app.state.volcengine.transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "ResponseMetadata": {
+                        "RequestId": "error-envelope-request",
+                        "Error": {
+                            "Code": "InvalidParameter.Filters",
+                            "Message": f"invalid filter {ARK_KEY}",
+                        },
+                    }
+                },
+            )
+        )
+        response = client.get(
+            "/api/video/ark-usage",
+            headers=ark_headers(),
+            params={"start": "2026-08-18", "end": "2026-08-18"},
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"] == {
+        "code": "ark_usage_query_failed",
+        "message": "火山方舟拒绝了用量查询",
+        "upstreamCode": "InvalidParameter.Filters",
+        "upstreamRequestId": "error-envelope-request",
+    }
+    assert ARK_KEY not in response.text
 
 
 def test_ark_usage_rejects_missing_server_credentials(tmp_path: Path, settings_factory) -> None:

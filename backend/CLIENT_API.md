@@ -316,7 +316,8 @@ curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day
 安全与统计口径：
 
 - 完整方舟 Key 只在当前请求内用于火山用量过滤，不落库、不写业务日志，响应只显示末 12 位；
-- 服务端使用 IAM AK/SK 签名查询，AK/SK 不会返回给客户；
+- 服务端使用 IAM AK/SK 签名查询，并按照方舟 Key 末 12 位过滤 `AuthToken`；AK/SK 不会返回给客户；
+- 仅能查到与服务端 IAM 身份处于同一火山账号范围、且该 IAM 身份有权读取的用量；
 - 只返回模型名包含 `seedance` 的记录；
 - 聚合用量通常延迟 5～30 分钟，不能用于实时限流；
 - `billingAmountIncluded: false` 表示不含人民币账单金额；

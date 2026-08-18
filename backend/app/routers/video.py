@@ -123,9 +123,13 @@ def normalize_ark_video_usage(content: dict[str, Any], ark_api_key: str, start: 
     result = content["Result"]
     records = _usage_records(result)
     video_records = []
+    key_suffix = ark_api_key[-12:]
     totals: dict[str, int | float] = {value: 0 for value in USAGE_ALIASES.values()}
     extra_totals: dict[str, int | float] = {}
     for record in records:
+        returned_token = str(record.get("AuthToken") or "")
+        if returned_token and not returned_token.endswith(key_suffix):
+            continue
         model_name = str(record.get("ModelName") or record.get("FoundationModelName") or "")
         if not VIDEO_MODEL_PATTERN.search(model_name):
             continue
@@ -158,7 +162,7 @@ def normalize_ark_video_usage(content: dict[str, Any], ark_api_key: str, start: 
     return {
         "source": "volcengine_ark",
         "scope": "ark_api_key",
-        "keySuffix": ark_api_key[-12:],
+        "keySuffix": key_suffix,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "interval": interval,

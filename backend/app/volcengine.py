@@ -20,7 +20,6 @@ REGION = "cn-beijing"
 SERVICE = "ark"
 VERSION = "2024-01-01"
 HOST = "ark.cn-beijing.volcengineapi.com"
-OPEN_API_HOST = "open.volcengineapi.com"
 IAM_SERVICE = "iam"
 IAM_VERSION = "2021-08-01"
 IAM_HOST = "iam.volcengineapi.com"
@@ -218,22 +217,20 @@ class VolcengineClient:
         interval: str,
     ) -> dict[str, Any]:
         """Query account-scoped Ark usage while filtering to one presented Ark API key."""
+        key_suffix = ark_api_key[-12:]
         payload = {
             "QueryInterval": interval,
             "StartTime": start_time,
             "EndTime": end_time,
             "Filters": [
-                {"FieldName": "AuthToken", "Values": [ark_api_key]},
-                {"FieldName": "ModelName"},
+                {"Key": "ModelEndpoint", "Values": []},
+                {"Key": "ModelName", "Values": []},
+                {"Key": "ModelUnitID", "Values": []},
+                {"Key": "AuthToken", "ValueLike": key_suffix, "Values": []},
+                {"Key": "BillingStatus", "Values": []},
             ],
-            "ShowWindowDetail": False,
         }
-        url, body, headers = self._signed_request(
-            "GetInferenceUsage",
-            payload,
-            None,
-            host=OPEN_API_HOST,
-        )
+        url, body, headers = self._signed_request("GetInferenceUsage", payload, None)
         try:
             upstream = await self._http_client().post(url, content=body, headers=headers)
         except httpx.RequestError as error:
@@ -247,15 +244,30 @@ class VolcengineClient:
 
         metadata = content.get("ResponseMetadata") if isinstance(content, dict) else None
         request_id = metadata.get("RequestId") if isinstance(metadata, dict) else None
-        details = {"upstreamRequestId": request_id} if request_id else None
-        if upstream.status_code in {401, 403}:
+        upstream_error = metadata.get("Error") if isinstance(metadata, dict) else None
+        upstream_code = upstream_error.get("Code") if isinstance(upstream_error, dict) else None
+        details = {
+            key: value
+            for key, value in {
+                "upstreamCode": upstream_code,
+                "upstreamRequestId": request_id,
+            }.items()
+            if value
+        } or None
+        permission_codes = {
+            "AccessDenied",
+            "InvalidAccessKey",
+            "InvalidSecretToken",
+            "SignatureDoesNotMatch",
+        }
+        if upstream.status_code in {401, 403} or upstream_code in permission_codes:
             raise ApiError(
                 "服务端火山 IAM 凭证无权查询方舟用量",
                 503,
                 "ark_usage_permission_denied",
                 details=details,
             )
-        if upstream.status_code == 429:
+        if upstream.status_code == 429 or upstream_code in {"LimitExceeded", "RequestLimitExceeded"}:
             retry_after = upstream.headers.get("retry-after")
             headers_out = {"Retry-After": retry_after} if retry_after else None
             raise ApiError(
@@ -265,7 +277,7 @@ class VolcengineClient:
                 details=details,
                 headers=headers_out,
             )
-        if upstream.status_code >= 400:
+        if upstream.status_code >= 400 or upstream_error:
             raise ApiError(
                 "火山方舟拒绝了用量查询",
                 502,
