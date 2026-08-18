@@ -58,6 +58,40 @@ export type UsageStats = {
   daily: UsageDay[];
 };
 
+export type ArkUsageMetric = number;
+
+export type ArkUsageRecord = {
+  date?: string;
+  modelName: string;
+  modelUnitId?: string;
+  endpointId?: string;
+  inputTokens: ArkUsageMetric;
+  outputTokens: ArkUsageMetric;
+  totalTokens: ArkUsageMetric;
+  requestCount: ArkUsageMetric;
+  metrics?: Record<string, ArkUsageMetric>;
+};
+
+export type ArkUsageStats = {
+  source: "volcengine_ark";
+  scope: "ark_api_key";
+  keySuffix: string;
+  start: string;
+  end: string;
+  interval: "Day" | "Hour";
+  dataDelayMinutes: { min: number; max: number };
+  billingAmountIncluded: false;
+  summary: {
+    inputTokens: ArkUsageMetric;
+    outputTokens: ArkUsageMetric;
+    totalTokens: ArkUsageMetric;
+    requestCount: ArkUsageMetric;
+    metrics: Record<string, ArkUsageMetric>;
+  };
+  records: ArkUsageRecord[];
+  upstreamRequestId?: string;
+};
+
 export type ApiSession = {
   authenticated: true;
   apiKeyId: string;
@@ -528,6 +562,16 @@ export function clearVideoHistory(apiKey: string) {
 
 export function getVideoUsage(apiKey: string, days = 14) {
   return apiRequest<UsageStats>(`/api/video/usage?days=${days}`, apiKey);
+}
+
+export function getArkVideoUsage(
+  arkApiKey: string,
+  start: string,
+  end: string,
+  interval: "Day" | "Hour" = "Day",
+) {
+  const parameters = new URLSearchParams({ start, end, interval });
+  return apiRequest<ArkUsageStats>(`/api/video/ark-usage?${parameters.toString()}`, arkApiKey);
 }
 
 export function cancelVideoTask(taskId: string, apiKey: string) {

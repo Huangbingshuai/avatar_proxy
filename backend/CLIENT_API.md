@@ -1,13 +1,13 @@
 # 瑞池多类型素材 API 接入文档
 
-版本：3.0
+版本：3.1
 正式地址：`https://api.richbest.cn`
 
-本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档只描述素材上传与方舟素材库管理接口。
+本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理及 Seedance 聚合用量查询接口。
 
 ## 1. 鉴权
 
-除 `/health` 外，请求都必须携带瑞池签发的业务 API Key：
+除 `/health` 和 `/api/video/ark-usage` 外，请求都必须携带瑞池签发的业务 API Key：
 
 ```http
 Authorization: Bearer vap_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -17,6 +17,8 @@ Accept: application/json
 JSON 请求还需携带 `Content-Type: application/json`。
 
 业务 API Key 已在服务端绑定火山项目。请求中不需要、也不能覆盖 `projectName`。请只在服务端保存 API Key，不要写入网页代码、公开仓库、日志或 URL。
+
+`/api/video/ark-usage` 是独立的火山方舟用量查询入口，其 Bearer Token 必须是客户自己的方舟 API Key，而不是 `vap_live_...` 业务 API Key。
 
 ## 2. 支持的素材规格
 
@@ -265,7 +267,62 @@ curl -X DELETE "$BASE_URL/api/asset/delete?assetId=asset-xxxxxxxx" \
 
 修改后的素材名称最多 64 个字符。删除成功后，本系统会同时清理与该登记记录关联的 TOS 对象；删除操作可能无法恢复。
 
-## 10. 错误处理
+## 10. 使用方舟 API Key 查询 Seedance 用量
+
+```bash
+curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day" \
+  -H "Authorization: Bearer $ARK_API_KEY"
+```
+
+参数：
+
+- `start`、`end`：必填，格式为 `YYYY-MM-DD`，单次跨度不能超过 31 天；
+- `interval`：可选，`Day` 或 `Hour`，默认 `Day`；
+- 方舟 API Key 只允许放在 `Authorization` 请求头，不得放入 URL。
+
+成功响应：
+
+```json
+{
+  "source": "volcengine_ark",
+  "scope": "ark_api_key",
+  "keySuffix": "123456789abc",
+  "start": "2026-08-01",
+  "end": "2026-08-18",
+  "interval": "Day",
+  "dataDelayMinutes": {"min": 5, "max": 30},
+  "billingAmountIncluded": false,
+  "summary": {
+    "inputTokens": 0,
+    "outputTokens": 35800,
+    "totalTokens": 35800,
+    "requestCount": 2,
+    "metrics": {}
+  },
+  "records": [
+    {
+      "date": "2026-08-18",
+      "modelName": "doubao-seedance-2-5",
+      "endpointId": "ep-xxxxxxxx",
+      "requestCount": 2,
+      "inputTokens": 0,
+      "outputTokens": 35800,
+      "totalTokens": 35800
+    }
+  ]
+}
+```
+
+安全与统计口径：
+
+- 完整方舟 Key 只在当前请求内用于火山用量过滤，不落库、不写业务日志，响应只显示末 12 位；
+- 服务端使用 IAM AK/SK 签名查询，AK/SK 不会返回给客户；
+- 只返回模型名包含 `seedance` 的记录；
+- 聚合用量通常延迟 5～30 分钟，不能用于实时限流；
+- `billingAmountIncluded: false` 表示不含人民币账单金额；
+- 零用量只表示查询区间暂无匹配记录，不能单独证明 Key 一定有效。
+
+## 11. 错误处理
 
 本系统校验错误示例：
 
@@ -298,7 +355,7 @@ curl -X DELETE "$BASE_URL/api/asset/delete?assetId=asset-xxxxxxxx" \
 
 方舟返回的错误响应会原样透传，包括 `ResponseMetadata.Error.Code`、`ResponseMetadata.Error.Message` 和 `RequestId`。排查问题时请保留完整响应以及 `RequestId`，但不要提供业务 API Key。
 
-## 11. 接口总览
+## 12. 接口总览
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
@@ -315,3 +372,4 @@ curl -X DELETE "$BASE_URL/api/asset/delete?assetId=asset-xxxxxxxx" \
 | `GET` | `/api/asset/get` | 查询单个素材和状态 |
 | `PUT` | `/api/asset/update` | 修改素材名称 |
 | `DELETE` | `/api/asset/delete` | 删除素材 |
+| `GET` | `/api/video/ark-usage` | 使用客户方舟 API Key 查询 Seedance 聚合用量 |
