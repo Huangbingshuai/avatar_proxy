@@ -133,8 +133,29 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
   const [arkEnd, setArkEnd] = useState(() => dateInputValue(new Date()));
   const [arkInterval, setArkInterval] = useState<"Day" | "Hour">("Day");
   const [arkUsage, setArkUsage] = useState<ArkUsageStats | null>(null);
+  const [arkModelFilter, setArkModelFilter] = useState("all");
   const [arkLoading, setArkLoading] = useState(false);
   const [arkError, setArkError] = useState("");
+
+  const arkModelNames = useMemo(() => Array.from(new Set(
+    (arkUsage?.records ?? []).map((record) => record.modelName).filter(Boolean),
+  )).sort((left, right) => left.localeCompare(right, "zh-CN")), [arkUsage]);
+
+  const visibleArkRecords = useMemo(() => (arkUsage?.records ?? [])
+    .filter((record) => arkModelFilter === "all" || record.modelName === arkModelFilter)
+    .map((record, originalIndex) => ({ record, originalIndex }))
+    .sort((left, right) => {
+      const leftDate = left.record.date || "";
+      const rightDate = right.record.date || "";
+      if (!leftDate && rightDate) return 1;
+      if (leftDate && !rightDate) return -1;
+      const dateOrder = leftDate.localeCompare(rightDate);
+      if (dateOrder !== 0) return dateOrder;
+      const modelOrder = left.record.modelName.localeCompare(right.record.modelName, "zh-CN");
+      if (modelOrder !== 0) return modelOrder;
+      return left.originalIndex - right.originalIndex;
+    })
+    .map(({ record }) => record), [arkModelFilter, arkUsage]);
 
   useEffect(() => {
     if (!apiKeyValid) return undefined;
@@ -163,6 +184,7 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
     const key = arkApiKey.trim();
     setArkError("");
     setArkUsage(null);
+    setArkModelFilter("all");
     if (!key) {
       setArkError("请输入火山方舟 API Key");
       return;
@@ -237,7 +259,13 @@ function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: bool
           <article><span>输出 tokens</span><strong>{compactTokens(arkUsage.summary.outputTokens)}</strong></article>
           <article><span>调用次数</span><strong>{arkUsage.summary.requestCount.toLocaleString("zh-CN")}</strong></article>
         </div>
-        {arkUsage.records.length ? <div className="arkUsageTableWrap"><table className="arkUsageTable"><thead><tr><th>时间</th><th>Seedance 模型</th><th>接入点</th><th>调用次数</th><th>总 tokens</th></tr></thead><tbody>{arkUsage.records.map((record, index) => <tr key={`${record.date || "unknown"}-${record.modelName}-${record.endpointId || index}`}><td>{record.date || "—"}</td><td>{record.modelName}</td><td>{record.endpointId || "—"}</td><td>{record.requestCount.toLocaleString("zh-CN")}</td><td>{record.totalTokens.toLocaleString("zh-CN")}</td></tr>)}</tbody></table></div> : <div className="usageEmptyNote arkUsageEmpty"><BarChart3 size={18} /><span>查询区间内没有匹配到这个 Key 的 Seedance 聚合用量。</span></div>}
+        {arkUsage.records.length ? <>
+          <div className="arkUsageTableToolbar">
+            <label><span>模型名称</span><select value={arkModelFilter} onChange={(event) => setArkModelFilter(event.target.value)}><option value="all">全部模型</option>{arkModelNames.map((modelName) => <option value={modelName} key={modelName}>{modelName}</option>)}</select></label>
+            <span>共 {visibleArkRecords.length} 条 · 时间升序</span>
+          </div>
+          <div className="arkUsageTableWrap"><table className="arkUsageTable"><thead><tr><th>时间</th><th>Seedance 模型</th><th>接入点</th><th>调用次数</th><th>总 tokens</th></tr></thead><tbody>{visibleArkRecords.map((record, index) => <tr key={`${record.date || "unknown"}-${record.modelName}-${record.endpointId || index}`}><td>{record.date || "—"}</td><td>{record.modelName}</td><td>{record.endpointId || "—"}</td><td>{record.requestCount.toLocaleString("zh-CN")}</td><td>{record.totalTokens.toLocaleString("zh-CN")}</td></tr>)}</tbody></table></div>
+        </> : <div className="usageEmptyNote arkUsageEmpty"><BarChart3 size={18} /><span>查询区间内没有匹配到这个 Key 的 Seedance 聚合用量。</span></div>}
       </div> : null}
     </section>
   </section>;

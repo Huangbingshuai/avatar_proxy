@@ -646,7 +646,12 @@ a { color: inherit; text-decoration: none; }
 .arkUsageMetrics article:first-child { border-left: 0; }
 .arkUsageMetrics span { color: var(--muted); font-size: 9px; }
 .arkUsageMetrics strong { font-size: 21px; font-weight: 560; letter-spacing: -.03em; }
-.arkUsageTableWrap { margin-top: 14px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.arkUsageTableToolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin-top: 14px; }
+.arkUsageTableToolbar > label { display: grid; gap: 5px; min-width: min(100%, 260px); color: var(--muted); font-size: 9px; }
+.arkUsageTableToolbar select { width: 100%; height: 36px; padding: 0 34px 0 11px; border: 1px solid var(--line); border-radius: 9px; outline: none; color: var(--text); background: #fff; font: inherit; font-size: 10px; }
+.arkUsageTableToolbar select:focus { border-color: var(--coral); box-shadow: 0 0 0 3px rgba(242, 116, 91, .12); }
+.arkUsageTableToolbar > span { padding-bottom: 9px; color: var(--muted); font-size: 9px; white-space: nowrap; }
+.arkUsageTableWrap { margin-top: 8px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .arkUsageTable { width: 100%; border-collapse: collapse; font-size: 9px; text-align: left; white-space: nowrap; }
 .arkUsageTable th { padding: 10px 13px; color: #767c8d; background: #f7f7fa; font-weight: 650; }
 .arkUsageTable td { padding: 11px 13px; border-top: 1px solid var(--line); color: #3e4350; }
@@ -740,6 +745,9 @@ a { color: inherit; text-decoration: none; }
   .arkUsageSubmit { width: 100%; }
   .arkUsageMetrics { grid-template-columns: 1fr 1fr; }
   .arkUsageMetrics article:nth-child(3) { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+  .arkUsageTableToolbar { align-items: stretch; flex-direction: column; gap: 7px; }
+  .arkUsageTableToolbar > label { min-width: 0; }
+  .arkUsageTableToolbar > span { padding-bottom: 0; }
 }
 
 @media (max-width: 460px) {
