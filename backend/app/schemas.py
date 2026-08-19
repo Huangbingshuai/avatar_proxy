@@ -16,6 +16,24 @@ class ApiModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
 
 
+ADMIN_USERNAME_PATTERN = r"^[A-Za-z0-9._-]+$"
+
+
+class AdminLogin(ApiModel):
+    username: str = Field(min_length=3, max_length=64, pattern=ADMIN_USERNAME_PATTERN)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AdminPasswordChange(ApiModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=14, max_length=128)
+
+
+class AdminUserCreate(ApiModel):
+    username: str = Field(min_length=3, max_length=64, pattern=ADMIN_USERNAME_PATTERN)
+    display_name: str = Field(min_length=1, max_length=64)
+
+
 class ProjectCreate(ApiModel):
     name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
     display_name: str | None = Field(default=None, min_length=1, max_length=64)

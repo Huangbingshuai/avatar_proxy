@@ -16,8 +16,8 @@ test("server-renders the internal Avatar Proxy console", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /<title>Avatar Proxy · 内部控制台<\/title>/i);
-  assert.match(html, /解锁内部控制台/);
-  assert.match(html, /CONSOLE_ADMIN_TOKEN/);
+  assert.match(html, /正在验证会话/);
+  assert.doesNotMatch(html, /CONSOLE_ADMIN_TOKEN|X-Admin-Token/i);
   assert.match(html, /控制台与公网 API/);
   assert.match(html, /http:\/\/(?:localhost|127\.0\.0\.1):8000/);
   assert.doesNotMatch(

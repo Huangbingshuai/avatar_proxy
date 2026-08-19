@@ -5,7 +5,7 @@
 ```text
 内部管理员浏览器
   └─ 内部控制台（当前根目录的 Vinext/React 站点）
-       └─ X-Admin-Token ──> 独立 FastAPI API 服务器
+       └─ HttpOnly 管理会话 + CSRF ──> 独立 FastAPI API 服务器
 
 API 用户浏览器
   └─ 用户视频门户（user-portal/）
@@ -18,7 +18,7 @@ API 用户自己的程序
        └─ Ark API Key ──> Seedance 视频任务
 ```
 
-控制台不保存火山凭证，也不参与用户请求转发。用户只获得我方签发的 `vap_live_...`。
+控制台不保存火山凭证、管理员密码或管理会话令牌，也不参与用户请求转发。用户只获得我方签发的 `vap_live_...`。
 
 ## 目录
 
@@ -45,12 +45,20 @@ python -m venv .venv
 VOLCENGINE_ACCESS_KEY=xxx
 VOLCENGINE_SECRET_KEY=xxx
 SEEDANCE_ARK_API_KEY=xxx
-CONSOLE_ADMIN_TOKEN=xxx
-CORS_ORIGINS=http://localhost:3000
+ADMIN_COOKIE_SECURE=false
+CORS_ORIGINS=http://localhost:3001,http://localhost:3002
 ENABLE_API_DOCS=false
 ```
 
 `VOLCENGINE_ACCESS_KEY/SECRET_KEY` 用于素材库请求签名和创建本地项目时校验火山资源项目，凭证至少需要相应素材接口权限及 `iam:GetProject` 权限；`SEEDANCE_ARK_API_KEY` 用于视频生成，二者不能互相替代。
+
+首次使用时，在 `backend/` 中离线创建首位超级管理员。命令会生成高强度初始密码并仅显示一次，该密码不会写入日志或配置文件：
+
+```powershell
+.\.venv\Scripts\python.exe -m app.admin_cli create --username admin --display-name "系统管理员"
+```
+
+首次登录后必须立即修改初始密码。系统只保留一个由 CLI 初始化的 `super_admin`，可以管理管理员账号；控制台中新建的账号固定为普通 `admin`，可以使用项目、API Key、额度和调试等业务控制台，但不能查看或修改管理员账号。超级管理员密码遗失时，只能在服务器终端执行 `python -m app.admin_cli reset-password --username <用户名>` 恢复。
 
 ## 本地启动内部控制台
 
@@ -64,10 +72,20 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
 ```powershell
 npm install
-npm run dev
+npm run dev -- --host 127.0.0.1 --port 3001
 ```
 
-打开控制台后输入 `CONSOLE_ADMIN_TOKEN`。在“视频调试”页粘贴一枚已生成的业务 API Key，即可创建、轮询和取消 Seedance 任务，不需要进入 Swagger。
+打开 `http://localhost:3001` 后使用管理员用户名和密码登录。本地开发服务器会把相对路径 `/api/*` 同源代理到 `http://127.0.0.1:8000`；如需覆盖目标，可在启动进程中设置 `CONSOLE_API_PROXY_TARGET`。管理请求始终使用同源 `/api/internal/*`，不会把管理会话存入 `localStorage` 或 `sessionStorage`。
+
+在“视频调试”页粘贴一枚已生成的业务 API Key，即可创建、轮询和取消 Seedance 任务，不需要进入 Swagger。`NEXT_PUBLIC_API_BASE_URL` 只用于业务 API 调试和接入示例，不承载管理员认证。
+
+本地登录并完成首次改密后，可运行无业务数据变更的跨层冒烟测试。密码默认交互读取，也可仅在当前进程临时通过 `ADMIN_VERIFY_PASSWORD` 提供：
+
+```powershell
+python deploy/volcengine/verify_admin_auth.py --base-url http://127.0.0.1:3001 --username admin
+```
+
+该脚本只创建并撤销自己的登录会话，验证旧共享令牌被拒绝、Cookie、CSRF、两级角色边界及原业务控制台访问，不创建或修改项目、API Key 和额度。对最终 HTTPS 控制台域名验收时增加 `--expect-no-store`，同时验证网关禁止缓存管理响应。
 
 ## 本地启动用户门户
 

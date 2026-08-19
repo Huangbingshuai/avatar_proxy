@@ -1,13 +1,13 @@
 import hashlib
-import hmac
 import secrets
 import uuid
 from dataclasses import dataclass
 from typing import Annotated, AsyncIterator
 
-from fastapi import Depends, Header, Request
+from fastapi import Cookie, Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from .admin_auth import AdminPrincipal
 from .database import Database
 from .errors import ApiError
 
@@ -33,15 +33,26 @@ def generate_key_id() -> str:
     return str(uuid.uuid4())
 
 
-def require_admin(
+def require_admin_session(
     request: Request,
-    x_admin_token: Annotated[str | None, Header()] = None,
-) -> None:
-    configured = request.app.state.settings.console_admin_token
-    if not configured:
-        raise ApiError("API 服务器尚未配置 CONSOLE_ADMIN_TOKEN", 503, "admin_not_configured")
-    if not x_admin_token or not hmac.compare_digest(x_admin_token, configured):
-        raise ApiError("管理令牌无效", 401, "invalid_admin_token")
+    session_token: Annotated[str | None, Cookie(alias="avatar_admin_session")] = None,
+    csrf_cookie: Annotated[str | None, Cookie(alias="avatar_admin_csrf")] = None,
+    csrf_header: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
+) -> AdminPrincipal:
+    return request.app.state.admin_auth.authenticate_session(
+        session_token,
+        csrf_cookie,
+        csrf_header,
+        require_csrf=request.method.upper() not in {"GET", "HEAD", "OPTIONS"},
+    )
+
+
+def require_admin(
+    principal: Annotated[AdminPrincipal, Depends(require_admin_session)],
+) -> AdminPrincipal:
+    if principal.must_change_password:
+        raise ApiError("首次登录必须先修改密码", 403, "password_change_required")
+    return principal
 
 
 async def require_api_key(
@@ -67,5 +78,6 @@ async def require_api_key(
         yield principal
 
 
-AdminDependency = Annotated[None, Depends(require_admin)]
+AdminSessionDependency = Annotated[AdminPrincipal, Depends(require_admin_session)]
+AdminDependency = Annotated[AdminPrincipal, Depends(require_admin)]
 PrincipalDependency = Annotated[ApiPrincipal, Depends(require_api_key)]

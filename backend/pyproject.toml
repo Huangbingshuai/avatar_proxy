@@ -4,6 +4,7 @@ version = "1.0.0"
 description = "FastAPI gateway for Volcengine Ark private avatar assets"
 requires-python = ">=3.11"
 dependencies = [
+  "argon2-cffi>=25.1,<26",
   "fastapi==0.116.1",
   "httpx==0.28.1",
   "Pillow>=11.3,<13",

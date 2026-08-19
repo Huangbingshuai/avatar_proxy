@@ -10,6 +10,7 @@ from PIL import Image
 from pillow_heif import register_heif_opener
 
 from app.config import Settings
+from app.errors import ApiError
 from app.main import create_app
 from app.volcengine import VolcengineClient
 
@@ -53,12 +54,78 @@ def build_settings(database_path: Path, **overrides: object) -> Settings:
         "seedance_ark_api_key": "test-ark-key",
         "tos_bucket": "test-bucket",
         "tos_public_base_url": "https://cdn.example.com",
-        "console_admin_token": "test-admin",
+        "admin_cookie_secure": False,
+        "admin_argon2_time_cost": 1,
+        "admin_argon2_memory_cost": 8192,
+        "admin_argon2_parallelism": 1,
         "database_path": database_path,
         "cors_origins": "http://localhost:3000",
     }
     values.update(overrides)
     return Settings(**values)
+
+
+@pytest.fixture(autouse=True)
+def migrate_legacy_admin_test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run existing internal-route tests through the real session/CSRF flow.
+
+    The old test suite uses a sentinel X-Admin-Token header in many places. It is
+    converted only in tests; production no longer accepts that header.
+    """
+    original_request = TestClient.request
+
+    def request_with_admin_session(self: TestClient, method: str, url: str, **kwargs: object):
+        headers = dict(kwargs.get("headers") or {})
+        legacy = headers.pop("x-admin-token", None) or headers.pop("X-Admin-Token", None)
+        if legacy == "test-admin":
+            csrf_token = getattr(self, "_test_admin_csrf", None)
+            if csrf_token is None:
+                try:
+                    _, initial_password = self.app.state.admin_auth.create_initial_super_admin(
+                        "test-admin", "Test Admin"
+                    )
+                    login_password = initial_password
+                except ApiError as error:
+                    if error.code != "initial_admin_exists":
+                        raise
+                    login_password = "Test-admin-password!2026"
+                login = original_request(
+                    self,
+                    "POST",
+                    "/api/internal/auth/login",
+                    json={"username": "test-admin", "password": login_password},
+                )
+                if login.status_code != 200:
+                    raise AssertionError(login.text)
+                csrf_token = login.json()["csrfToken"]
+                if login.json()["user"]["mustChangePassword"]:
+                    changed = original_request(
+                        self,
+                        "POST",
+                        "/api/internal/auth/change-password",
+                        headers={"X-CSRF-Token": csrf_token},
+                        json={
+                            "currentPassword": login_password,
+                            "newPassword": "Test-admin-password!2026",
+                        },
+                    )
+                    if changed.status_code != 200:
+                        raise AssertionError(changed.text)
+                    login = original_request(
+                        self,
+                        "POST",
+                        "/api/internal/auth/login",
+                        json={"username": "test-admin", "password": "Test-admin-password!2026"},
+                    )
+                    if login.status_code != 200:
+                        raise AssertionError(login.text)
+                    csrf_token = login.json()["csrfToken"]
+                setattr(self, "_test_admin_csrf", csrf_token)
+            headers["X-CSRF-Token"] = csrf_token
+            kwargs["headers"] = headers
+        return original_request(self, method, url, **kwargs)
+
+    monkeypatch.setattr(TestClient, "request", request_with_admin_session)
 
 
 def create_project(client: TestClient, name: str = "drama_prod") -> None:

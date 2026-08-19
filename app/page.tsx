@@ -11,6 +11,7 @@ import {
   KeyRound,
   LoaderCircle,
   LockKeyhole,
+  LogOut,
   Play,
   Plus,
   RefreshCw,
@@ -20,10 +21,14 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  UserRoundCog,
   Video,
   X,
 } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+
+import AdminPanel from "./admin-panel";
+import { AdminApiError, isPasswordChangeRequired, isSessionError, requestAdminApi, type AdminApi, type AdminUser } from "./admin-api";
 
 type Project = {
   name: string;
@@ -112,15 +117,14 @@ type QuotaUsage = {
   cleanupObjects: CleanupObject[];
 };
 
-type AdminApi = (path: string, init?: RequestInit, token?: string) => Promise<Record<string, unknown>>;
-
-type Tab = "overview" | "projects" | "keys" | "quotas" | "playground" | "integration";
+type Tab = "overview" | "projects" | "keys" | "quotas" | "playground" | "integration" | "admins";
+type AuthStatus = "checking" | "anonymous" | "password_change_required" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const DEFAULT_MODEL = "doubao-seedance-2-0-260128";
 const RUNNING_STATUSES = new Set(["queued", "running"]);
 
-const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
+const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "概览", icon: Gauge },
   { id: "projects", label: "项目", icon: FolderKanban },
   { id: "keys", label: "API Keys", icon: KeyRound },
@@ -154,9 +158,13 @@ function formatTime(value?: string) {
 
 export default function ConsolePage() {
   const [tab, setTab] = useState<Tab>("overview");
-  const [adminToken, setAdminToken] = useState("");
-  const [tokenDraft, setTokenDraft] = useState("");
-  const [locked, setLocked] = useState(true);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("checking");
+  const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
+  const [csrfToken, setCsrfToken] = useState("");
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
@@ -174,45 +182,130 @@ export default function ConsolePage() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
 
-  const adminApi = useCallback(async (path: string, init?: RequestInit, token = adminToken) => {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      ...init,
-      headers: { "content-type": "application/json", "x-admin-token": token, ...init?.headers },
-    });
-    const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(errorMessage(data));
-    return data as Record<string, unknown>;
-  }, [adminToken]);
+  const tabs = useMemo(() => currentUser?.role === "super_admin"
+    ? [...baseTabs, { id: "admins" as Tab, label: "管理员", icon: UserRoundCog }]
+    : baseTabs, [currentUser?.role]);
 
-  const loadAll = useCallback(async (token = adminToken) => {
+  const clearSession = useCallback((message = "") => {
+    setCurrentUser(null);
+    setCsrfToken("");
+    setProjects([]);
+    setApiKeys([]);
+    setOverview(null);
+    setQuotaEvents([]);
+    setQuotaAudits([]);
+    setSecret("");
+    setShowPasswordForm(false);
+    setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    setTab("overview");
+    setAuthMessage(message);
+    setAuthStatus("anonymous");
+  }, []);
+
+  const adminApi = useCallback<AdminApi>(async (path, init) => {
+    try {
+      return await requestAdminApi(path, init, csrfToken);
+    } catch (caught) {
+      if (isSessionError(caught)) clearSession("登录会话已过期，请重新登录");
+      else if (isPasswordChangeRequired(caught)) setAuthStatus("password_change_required");
+      throw caught;
+    }
+  }, [clearSession, csrfToken]);
+
+  const loadAll = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const [projectData, keyData, overviewData, eventData, auditData] = await Promise.all([
-        adminApi("/api/internal/project/list", undefined, token),
-        adminApi("/api/internal/apikey/list", undefined, token),
-        adminApi("/api/internal/overview", undefined, token),
-        adminApi("/api/internal/quota/events?limit=100", undefined, token),
-        adminApi("/api/internal/quota/audits?limit=100", undefined, token),
+        adminApi("/api/internal/project/list"),
+        adminApi("/api/internal/apikey/list"),
+        adminApi("/api/internal/overview"),
+        adminApi("/api/internal/quota/events?limit=100"),
+        adminApi("/api/internal/quota/audits?limit=100"),
       ]);
       setProjects(projectData.projects as Project[]);
       setApiKeys(keyData.apiKeys as ApiKey[]);
       setOverview(overviewData as unknown as Overview);
       setQuotaEvents(eventData.events as QuotaEvent[]);
       setQuotaAudits(auditData.audits as QuotaAudit[]);
-      setLocked(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "控制台加载失败");
-      setLocked(true);
+      if (!isSessionError(caught) && !isPasswordChangeRequired(caught)) setError(caught instanceof Error ? caught.message : "控制台加载失败");
     } finally {
       setLoading(false);
     }
-  }, [adminApi, adminToken]);
+  }, [adminApi]);
 
-  async function unlock(event: FormEvent) {
+  useEffect(() => {
+    let cancelled = false;
+    void requestAdminApi("/api/internal/auth/me").then((data) => {
+      if (cancelled) return;
+      const user = data.user as AdminUser;
+      setCurrentUser(user);
+      setCsrfToken(String(data.csrfToken ?? ""));
+      setAuthStatus(user.mustChangePassword ? "password_change_required" : "authenticated");
+    }).catch((caught) => {
+      if (!cancelled) clearSession(caught instanceof AdminApiError && caught.status !== 401 ? caught.message : "");
+    });
+    return () => { cancelled = true; };
+  }, [clearSession]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") return;
+    const timer = window.setTimeout(() => void loadAll(), 0);
+    return () => window.clearTimeout(timer);
+  }, [authStatus, loadAll]);
+
+  async function login(event: FormEvent) {
     event.preventDefault();
-    setAdminToken(tokenDraft);
-    await loadAll(tokenDraft);
+    setLoading(true);
+    setAuthMessage("");
+    try {
+      const data = await requestAdminApi("/api/internal/auth/login", { method: "POST", body: JSON.stringify(loginForm) });
+      const user = data.user as AdminUser;
+      setCurrentUser(user);
+      setCsrfToken(String(data.csrfToken ?? ""));
+      setLoginForm((current) => ({ username: current.username, password: "" }));
+      setAuthStatus(user.mustChangePassword ? "password_change_required" : "authenticated");
+    } catch (caught) {
+      if (caught instanceof AdminApiError && caught.retryAfter) setAuthMessage(`${caught.message}，请在 ${caught.retryAfter} 秒后重试`);
+      else setAuthMessage(caught instanceof Error ? caught.message : "登录失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function changePassword(event: FormEvent) {
+    event.preventDefault();
+    setAuthMessage("");
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setAuthMessage("两次输入的新密码不一致");
+      return;
+    }
+    setLoading(true);
+    try {
+      await requestAdminApi("/api/internal/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword }),
+      }, csrfToken);
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      setShowPasswordForm(false);
+      clearSession("密码已修改，请使用新密码重新登录");
+    } catch (caught) {
+      if (isSessionError(caught)) clearSession("登录会话已过期，请重新登录");
+      else setAuthMessage(caught instanceof Error ? caught.message : "密码修改失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      await requestAdminApi("/api/internal/auth/logout", { method: "POST" }, csrfToken);
+    } catch {
+      // 本地状态必须立即失效；服务端会话仍受自身过期和撤销规则约束。
+    } finally {
+      clearSession("");
+    }
   }
 
   async function createProject(event: FormEvent) {
@@ -326,17 +419,20 @@ export default function ConsolePage() {
         </nav>
         <div className="sidebarFoot">
           <span className="onlineDot" />
-          <div><b>独立 API 服务</b><small>{API_BASE_URL}</small></div>
+          <div><b>业务 API 服务</b><small>{API_BASE_URL}</small></div>
         </div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
           <div><p className="eyebrow">INTERNAL CONTROL PLANE</p><h1>{tabs.find((item) => item.id === tab)?.label}</h1></div>
-          <div className="topbarActions"><span className="securePill"><ShieldCheck size={15} />服务端凭证已隔离</span><button className="iconButton" onClick={() => void loadAll()} disabled={loading} aria-label="刷新"><RefreshCw size={17} className={loading ? "spin" : ""} /></button></div>
+          <div className="topbarActions">
+            {currentUser && <div className="adminIdentity"><span><b>{currentUser.displayName || currentUser.username}</b><small>{currentUser.role === "super_admin" ? "超级管理员" : "管理员"} · {currentUser.username}</small></span><button className="secondary" onClick={() => { setAuthMessage(""); setShowPasswordForm(true); }}>修改密码</button><button className="iconButton" onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={16} /></button></div>}
+            <span className="securePill"><ShieldCheck size={15} />管理员会话已隔离</span><button className="iconButton" onClick={() => void loadAll()} disabled={loading || authStatus !== "authenticated"} aria-label="刷新"><RefreshCw size={17} className={loading ? "spin" : ""} /></button>
+          </div>
         </header>
 
-        {error && !locked && <div className="errorBanner"><Ban size={17} />{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
+        {error && authStatus === "authenticated" && <div className="errorBanner"><Ban size={17} />{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
 
         {tab === "overview" && <OverviewPanel overview={overview} onOpenPlayground={() => setTab("playground")} />}
         {tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
@@ -344,14 +440,28 @@ export default function ConsolePage() {
         {tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
         {tab === "playground" && <VideoPlayground />}
         {tab === "integration" && <IntegrationPanel />}
+        {tab === "admins" && currentUser?.role === "super_admin" && <AdminPanel currentUser={currentUser} adminApi={adminApi} />}
       </section>
 
-      {locked && <div className="modalBackdrop"><form className="unlockCard" onSubmit={unlock}>
-        <span className="lockMark"><LockKeyhole size={24} /></span><p className="eyebrow">SECURE CONSOLE</p><h2>解锁内部控制台</h2>
-        <p>输入 API 服务器部署时配置的管理令牌。令牌仅保存在当前页面内存中。</p>
-        <label>管理令牌<input type="password" autoComplete="current-password" value={tokenDraft} onChange={(event) => setTokenDraft(event.target.value)} placeholder="CONSOLE_ADMIN_TOKEN" /></label>
-        {error && <div className="formError">{error}</div>}
-        <button className="primary wide" disabled={!tokenDraft || loading}>{loading ? <><LoaderCircle size={17} className="spin" />验证中</> : "进入控制台"}</button>
+      {authStatus === "checking" && <div className="modalBackdrop"><div className="unlockCard authChecking"><LoaderCircle size={27} className="spin" /><h2>正在验证会话</h2><p>请稍候，系统正在确认当前管理员身份。</p></div></div>}
+
+      {authStatus === "anonymous" && <div className="modalBackdrop"><form className="unlockCard" onSubmit={login}>
+        <span className="lockMark"><LockKeyhole size={24} /></span><p className="eyebrow">SECURE CONSOLE</p><h2>登录内部控制台</h2>
+        <p>使用分配给你的管理员账号登录。账号停用或密码重置后，已有会话会立即失效。</p>
+        <label>用户名<input type="text" autoComplete="username" required value={loginForm.username} onChange={(event) => setLoginForm({ ...loginForm, username: event.target.value })} placeholder="请输入管理员用户名" /></label>
+        <label>密码<input type="password" autoComplete="current-password" required value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} placeholder="请输入密码" /></label>
+        {authMessage && <div className="formError" role="alert">{authMessage}</div>}
+        <button className="primary wide" disabled={!loginForm.username.trim() || !loginForm.password || loading}>{loading ? <><LoaderCircle size={17} className="spin" />登录中</> : "登录控制台"}</button>
+      </form></div>}
+
+      {(authStatus === "password_change_required" || showPasswordForm) && currentUser && <div className="modalBackdrop"><form className="unlockCard" onSubmit={changePassword}>
+        <span className="lockMark"><KeyRound size={24} /></span><p className="eyebrow">ACCOUNT SECURITY</p><h2>{authStatus === "password_change_required" ? "首次登录，请修改密码" : "修改管理员密码"}</h2>
+        <p>{authStatus === "password_change_required" ? "初始密码只能用于首次登录。修改成功后请使用新密码重新登录。" : "修改密码后，全部登录会话都会失效，请使用新密码重新登录。"}</p>
+        <label>当前密码<input type="password" autoComplete="current-password" required value={passwordForm.currentPassword} onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })} /></label>
+        <label>新密码<input type="password" autoComplete="new-password" required minLength={14} value={passwordForm.newPassword} onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })} /><small>14～128 个字符，且不能与用户名相同。</small></label>
+        <label>确认新密码<input type="password" autoComplete="new-password" required minLength={14} value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })} /></label>
+        {authMessage && <div className="formError" role="alert">{authMessage}</div>}
+        <div className="passwordActions">{authStatus !== "password_change_required" && <button type="button" className="secondary" onClick={() => { setShowPasswordForm(false); setAuthMessage(""); setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" }); }}>取消</button>}<button className="primary" disabled={loading}>{loading ? <><LoaderCircle size={17} className="spin" />保存中</> : "保存新密码"}</button></div>
       </form></div>}
 
       {showProjectForm && <Modal title="新建项目" onClose={() => { if (!creatingProject) setShowProjectForm(false); }}><form onSubmit={createProject} className="stackForm">
@@ -401,7 +511,7 @@ function OverviewPanel({ overview, onOpenPlayground }: { overview: Overview | nu
   return <div className="content">
     <section className="overviewHero">
       <div><span className="heroTag">CONTROL PLANE</span><h2>控制台与公网 API<br />保持独立部署</h2><p>这里管理项目和业务 API Key。用户使用签发的 Key 直接请求独立 FastAPI 服务。</p><button className="primary" onClick={onOpenPlayground}><Play size={17} />测试视频接口</button></div>
-      <div className="architectureCard"><div><span><ShieldCheck size={18} /></span><div><b>内部控制台</b><small>X-Admin-Token</small></div></div><i /><div><span><Server size={18} /></span><div><b>公网 API 服务器</b><small>Bearer vap_live_...</small></div></div><i /><div><span><Sparkles size={18} /></span><div><b>火山服务</b><small>服务端 AK/SK · Ark Key</small></div></div></div>
+      <div className="architectureCard"><div><span><ShieldCheck size={18} /></span><div><b>内部控制台</b><small>独立管理员会话 · 操作可审计</small></div></div><i /><div><span><Server size={18} /></span><div><b>公网 API 服务器</b><small>Bearer vap_live_...</small></div></div><i /><div><span><Sparkles size={18} /></span><div><b>火山服务</b><small>服务端 AK/SK · Ark Key</small></div></div></div>
     </section>
     <div className="statGrid">
       <Stat label="项目" value={overview?.stats.projects ?? 0} note="映射火山 ProjectName" />

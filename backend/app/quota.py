@@ -1,5 +1,4 @@
 import asyncio
-import json
 import math
 import uuid
 from contextlib import asynccontextmanager
@@ -72,7 +71,15 @@ class QuotaManager:
             row = connection.execute("SELECT * FROM api_key_quotas WHERE api_key_id = ?", (key_id,)).fetchone()
         return {"keyId": key_id, "projectName": key["project_name"], **_quota_row(row, KEY_METRICS)}
 
-    def set_project_quota(self, values: dict[str, Any], source_ip: str | None) -> dict[str, Any]:
+    def set_project_quota(
+        self,
+        values: dict[str, Any],
+        source_ip: str | None,
+        *,
+        actor_id: str | None = None,
+        actor: str = "system",
+        user_agent: str | None = None,
+    ) -> dict[str, Any]:
         project_name = values["project_name"]
         before = self.project_quota(project_name)
         columns = ["enabled", *PROJECT_METRICS]
@@ -86,10 +93,21 @@ class QuotaManager:
                 (project_name, *payload),
             )
         after = self.project_quota(project_name)
-        self._audit("quota.project.update", "project", project_name, before, after, source_ip)
+        self._audit(
+            "quota.project.update", "project", project_name, before, after, source_ip,
+            actor_id=actor_id, actor=actor, user_agent=user_agent,
+        )
         return after
 
-    def set_key_quota(self, values: dict[str, Any], source_ip: str | None) -> dict[str, Any]:
+    def set_key_quota(
+        self,
+        values: dict[str, Any],
+        source_ip: str | None,
+        *,
+        actor_id: str | None = None,
+        actor: str = "system",
+        user_agent: str | None = None,
+    ) -> dict[str, Any]:
         key_id = values["key_id"]
         before = self.key_quota(key_id)
         project = self.project_quota(before["projectName"])
@@ -107,19 +125,28 @@ class QuotaManager:
                 (key_id, *(values.get(metric) for metric in KEY_METRICS)),
             )
         after = self.key_quota(key_id)
-        self._audit("quota.apikey.update", "api_key", key_id, before, after, source_ip)
+        self._audit(
+            "quota.apikey.update", "api_key", key_id, before, after, source_ip,
+            actor_id=actor_id, actor=actor, user_agent=user_agent,
+        )
         return after
 
     def _audit(
         self, action: str, target_type: str, target_id: str,
         before: dict[str, Any], after: dict[str, Any], source_ip: str | None,
+        *, actor_id: str | None, actor: str, user_agent: str | None,
     ) -> None:
-        with self.database.connect() as connection:
-            connection.execute(
-                "INSERT INTO admin_audit_logs (actor, source_ip, action, target_type, target_id, before_json, after_json) "
-                "VALUES ('console-admin', ?, ?, ?, ?, ?, ?)",
-                (source_ip, action, target_type, target_id, json.dumps(before), json.dumps(after)),
-            )
+        self.database.write_admin_audit(
+            actor=actor,
+            actor_id=actor_id,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            before=before,
+            after=after,
+        )
 
     def _configs(self, connection: Any, project_name: str, key_id: str) -> tuple[Any, Any]:
         project = connection.execute(
@@ -327,9 +354,10 @@ class QuotaManager:
     def audits(self, limit: int = 100) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             rows = connection.execute(
-                "SELECT id, actor, source_ip AS sourceIp, action, target_type AS targetType, "
+                "SELECT id, actor, actor_id AS actorId, source_ip AS sourceIp, user_agent AS userAgent, "
+                "action, target_type AS targetType, "
                 "target_id AS targetId, before_json AS beforeJson, after_json AS afterJson, "
-                "created_at AS createdAt FROM admin_audit_logs "
+                "outcome, created_at AS createdAt FROM admin_audit_logs "
                 "WHERE action IN ('quota.project.update','quota.apikey.update') "
                 "ORDER BY id DESC LIMIT ?",
                 (limit,),
