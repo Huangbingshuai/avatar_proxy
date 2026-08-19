@@ -515,7 +515,7 @@ export default function ConsolePage() {
         {currentUser?.role !== "super_admin" && tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
         {currentUser?.role !== "super_admin" && tab === "playground" && <VideoPlayground />}
         {currentUser?.role !== "super_admin" && tab === "integration" && <IntegrationPanel />}
-        {tab === "admins" && currentUser?.role === "super_admin" && <AdminPanel currentUser={currentUser} adminApi={adminApi} />}
+        {tab === "admins" && currentUser?.role === "super_admin" && <AdminPanel currentUser={currentUser} adminApi={adminApi} onRestored={(message) => clearSession(message)} />}
       </section>
 
       {authStatus === "checking" && <div className="modalBackdrop"><div className="unlockCard authChecking"><LoaderCircle size={27} className="spin" /><h2>正在验证会话</h2><p>请稍候，系统正在确认当前管理员身份。</p></div></div>}

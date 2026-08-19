@@ -513,6 +513,7 @@ def test_admin_schema_upgrade_is_idempotent_and_preserves_legacy_audits(tmp_path
         "admin_recovery_codes",
         "admin_security_alerts",
         "admin_backup_runs",
+        "admin_restore_runs",
     } <= tables
     assert "admin_ip_login_throttles" not in tables
     assert {"actor_id", "outcome", "user_agent"} <= columns

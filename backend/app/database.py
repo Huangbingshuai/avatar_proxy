@@ -227,6 +227,18 @@ CREATE TABLE IF NOT EXISTS admin_backup_runs (
     started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS admin_restore_runs (
+    id TEXT PRIMARY KEY,
+    backup_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('success','failed')),
+    actor TEXT NOT NULL,
+    source_ip TEXT,
+    rollback_backup_id TEXT,
+    summary_json TEXT,
+    error TEXT,
+    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE INDEX IF NOT EXISTS idx_quota_events_open ON quota_events(acknowledged, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_asset_records_project_status ON asset_records(project_name, status);
 CREATE INDEX IF NOT EXISTS idx_asset_records_asset_id ON asset_records(project_name, asset_id);
@@ -242,6 +254,8 @@ CREATE INDEX IF NOT EXISTS idx_admin_security_alerts_open
     ON admin_security_alerts(acknowledged_at, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_admin_backup_runs_started
     ON admin_backup_runs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_restore_runs_started
+    ON admin_restore_runs(started_at DESC);
 """
 
 

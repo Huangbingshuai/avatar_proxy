@@ -91,6 +91,10 @@ class AdminAuthService:
         except (InvalidToken, ValueError) as error:
             raise ApiError("TOTP密钥无法解密，请通过服务器CLI重置TOTP", 503, "admin_totp_key_unavailable") from error
 
+    def validate_encrypted_totp_secret(self, encrypted: str) -> None:
+        """Fail closed when a backup contains TOTP data encrypted by another key."""
+        self._decrypt_secret(encrypted)
+
     def _verify_totp_timecode(self, secret: str, code: str, now: int) -> int | None:
         totp = pyotp.TOTP(secret)
         current_timecode = now // totp.interval
@@ -610,6 +614,53 @@ class AdminAuthService:
                 connection=connection,
             )
         raise ApiError("超级管理员密码不正确", 401, "admin_reauthentication_failed")
+
+    def verify_sensitive_totp(
+        self,
+        actor: AdminPrincipal,
+        code: str,
+        source_ip: str | None,
+        user_agent: str | None,
+        action: str,
+    ) -> None:
+        self.require_super_admin(actor)
+        now = int(self.clock())
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT totp_secret_encrypted,totp_enabled_at FROM admin_users WHERE id=?",
+                (actor.id,),
+            ).fetchone()
+        if row is None or not row["totp_enabled_at"] or not row["totp_secret_encrypted"]:
+            raise ApiError("超级管理员尚未启用TOTP二次验证", 409, "admin_totp_not_enabled")
+        secret = self._decrypt_secret(row["totp_secret_encrypted"])
+        accepted = self._verify_totp_timecode(secret, code, now)
+        if accepted is None:
+            with self.database.connect() as connection:
+                self._audit(
+                    actor=actor.username,
+                    actor_id=actor.id,
+                    source_ip=source_ip,
+                    user_agent=user_agent,
+                    action="admin.auth.sensitive_totp",
+                    target_type="sensitive_action",
+                    target_id=action,
+                    after={"result": "failed"},
+                    outcome="failure",
+                    connection=connection,
+                )
+            raise ApiError("动态验证码错误", 401, "invalid_admin_totp")
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT totp_last_timecode FROM admin_users WHERE id=?", (actor.id,)
+            ).fetchone()
+            previous = current["totp_last_timecode"] if current else None
+            if previous is not None and accepted <= int(previous):
+                raise ApiError("该动态验证码已使用，请等待下一组验证码", 401, "admin_totp_replayed")
+            connection.execute(
+                "UPDATE admin_users SET totp_last_timecode=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (accepted, actor.id),
+            )
 
     def begin_totp_setup(self, actor: AdminPrincipal, source_ip: str | None, user_agent: str | None) -> dict[str, str]:
         self.require_super_admin(actor)

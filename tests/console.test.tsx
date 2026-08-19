@@ -39,6 +39,7 @@ function installFetch(data: MockData = {}) {
     { id: "session-current", current: true, createdAt: 1787107200, lastSeenAt: 1787107800, absoluteExpiresAt: 1787150400, sourceIp: "127.0.0.1", userAgent: "Windows Chrome" },
     { id: "session-old", current: false, createdAt: 1787020800, lastSeenAt: 1787024400, absoluteExpiresAt: 1787110800, sourceIp: "10.0.0.8", userAgent: "Macintosh Safari" },
   ];
+  const backupItem = { id: "20260819-080000-000001", databaseFile: "avatar_proxy-20260819-080000-000001.db", auditFile: "admin_audit-20260819-080000-000001.jsonl", databaseBytes: 2048, auditBytes: 1024, createdAt: "2026-08-19T08:00:00Z", valid: true, counts: { projects: 2, apiKeys: 2, adminUsers: 2, adminAudits: 19 } };
   const calls: Array<{ path: string; init?: RequestInit }> = [];
   let authenticated = false;
   let passwordChanged = !data.mustChangePassword;
@@ -80,7 +81,10 @@ function installFetch(data: MockData = {}) {
     if (url.pathname === "/api/internal/admin/security-alerts") return jsonResponse({ alerts: [{ id: 21, eventType: "super_admin_login", severity: "critical", message: "超级管理员账号已登录", actor: "owner", sourceIp: "127.0.0.1", targetType: "admin_session", targetId: "session-current", acknowledgedAt: null, createdAt: "2026-08-19 08:00:00" }] });
     if (url.pathname === "/api/internal/admin/security-alerts/ack") return jsonResponse({ alert: { id: 21, acknowledged_at: "2026-08-19 08:05:00" } });
     if (url.pathname === "/api/internal/admin/backups/status") return jsonResponse({ enabled: true, intervalSeconds: 86400, retention: 30, directory: "data/backups", lastRun: { status: "success", completedAt: "2026-08-19 08:00:00", databaseBytes: 2048, auditBytes: 1024 } });
+    if (url.pathname === "/api/internal/admin/backups") return jsonResponse({ backups: [backupItem], lastRestore: null });
     if (url.pathname === "/api/internal/admin/backups/run") return jsonResponse({ enabled: true, intervalSeconds: 86400, retention: 30, directory: "data/backups", lastRun: { status: "success", completedAt: "2026-08-19 08:10:00", databaseBytes: 2048, auditBytes: 1024 } });
+    if (/\/api\/internal\/admin\/backups\/[^/]+\/validate$/.test(url.pathname)) return jsonResponse({ backup: { ...backupItem, integrity: "ok", sha256: "abc123" } });
+    if (/\/api\/internal\/admin\/backups\/[^/]+\/restore$/.test(url.pathname)) { authenticated = false; return jsonResponse({ restored: true, requiresLogin: true }); }
     if (/\/api\/internal\/admin\/users\/[^/]+\/(enable|disable)$/.test(url.pathname)) {
       const id = url.pathname.split("/").at(-2);
       const status = url.pathname.endsWith("/disable") ? "disabled" : "active";
@@ -249,6 +253,27 @@ describe("内部控制台", () => {
     expect(screen.getAllByRole("button", { name: "重置密码" })[0]).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "撤销" }));
     await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/auth/sessions/session-old" && call.init?.method === "DELETE")).toBe(true));
+  });
+
+  it("服务器备份校验通过后要求密码、TOTP和确认文字才能恢复", async () => {
+    const { calls } = installFetch({ role: "super_admin" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    expect(await screen.findByText("avatar_proxy-20260819-080000-000001.db", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "恢复" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "校验" }));
+    expect(await screen.findByText("校验通过")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "恢复" }));
+    const dialog = screen.getByRole("dialog", { name: "恢复 SQLite 数据库" });
+    await user.type(within(dialog).getByLabelText("超级管理员当前密码"), "correct-password");
+    await user.type(within(dialog).getByLabelText("新一组 TOTP 动态验证码"), "654321");
+    await user.type(within(dialog).getByLabelText("输入“恢复数据库”确认"), "恢复数据库");
+    await user.click(within(dialog).getByRole("button", { name: "确认恢复" }));
+    expect(await screen.findByRole("heading", { name: "登录内部控制台" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("数据库恢复成功");
+    const restoreCall = calls.find((call) => call.path.endsWith("/restore"));
+    expect(JSON.parse(String(restoreCall?.init?.body))).toEqual({ currentPassword: "correct-password", totpCode: "654321", confirmation: "恢复数据库" });
+    expect(new Headers(restoreCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
   });
 
   it("创建管理员后可一次复制完整的登录交付文本", async () => {

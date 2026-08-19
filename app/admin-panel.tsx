@@ -1,6 +1,6 @@
 "use client";
 
-import { Clipboard, DatabaseBackup, KeyRound, LoaderCircle, Plus, RefreshCw, ShieldCheck, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import { ArchiveRestore, CheckCircle2, Clipboard, DatabaseBackup, FileCheck2, KeyRound, LoaderCircle, Plus, RefreshCw, ShieldAlert, ShieldCheck, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { AdminApi, AdminSession, AdminUser } from "./admin-api";
@@ -36,6 +36,23 @@ type BackupStatus = {
   retention: number;
   directory: string;
   lastRun?: { status: string; completedAt?: string | null; databaseBytes?: number | null; auditBytes?: number | null; error?: string | null } | null;
+  lastRestore?: { status: string; backupId: string; completedAt?: string | null; error?: string | null } | null;
+};
+
+type BackupItem = {
+  id: string;
+  databaseFile: string;
+  auditFile?: string | null;
+  databaseBytes?: number | null;
+  auditBytes?: number | null;
+  createdAt?: string | null;
+  integrity?: string | null;
+  sha256?: string | null;
+  valid: boolean;
+  unreadable?: boolean;
+  activeSuperAdmins?: number;
+  missingTables?: string[];
+  counts?: { projects: number; apiKeys: number; adminUsers: number; adminAudits: number };
 };
 
 type SensitiveAction = { kind: "toggle" | "reset" | "delete"; user: AdminUser } | { kind: "backup" };
@@ -56,12 +73,15 @@ function deviceLabel(userAgent?: string | null) {
   return userAgent.slice(0, 70);
 }
 
-export default function AdminPanel({ currentUser, adminApi }: { currentUser: AdminUser; adminApi: AdminApi }) {
+export default function AdminPanel({ currentUser, adminApi, onRestored }: { currentUser: AdminUser; adminApi: AdminApi; onRestored: (message: string) => void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [audits, setAudits] = useState<AdminAudit[]>([]);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [backup, setBackup] = useState<BackupStatus | null>(null);
+  const [backups, setBackups] = useState<BackupItem[]>([]);
+  const [restoreTarget, setRestoreTarget] = useState<BackupItem | null>(null);
+  const [restoreForm, setRestoreForm] = useState({ currentPassword: "", totpCode: "", confirmation: "" });
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
@@ -79,18 +99,20 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
     setLoading(true);
     setError("");
     try {
-      const [userData, sessionData, auditData, alertData, backupData] = await Promise.all([
+      const [userData, sessionData, auditData, alertData, backupData, backupListData] = await Promise.all([
         adminApi("/api/internal/admin/users"),
         adminApi("/api/internal/auth/sessions"),
         adminApi("/api/internal/admin/audits?limit=100"),
         adminApi("/api/internal/admin/security-alerts?limit=100"),
         adminApi("/api/internal/admin/backups/status"),
+        adminApi("/api/internal/admin/backups"),
       ]);
       setUsers((userData.users ?? []) as AdminUser[]);
       setSessions((sessionData.sessions ?? []) as AdminSession[]);
       setAudits((auditData.audits ?? []) as AdminAudit[]);
       setAlerts((alertData.alerts ?? []) as SecurityAlert[]);
       setBackup(backupData as unknown as BackupStatus);
+      setBackups((backupListData.backups ?? []) as BackupItem[]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "管理员安全信息加载失败");
     } finally {
@@ -185,8 +207,45 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
         body: JSON.stringify({ currentPassword }),
       });
       setBackup(data as unknown as BackupStatus);
+      await loadSecurityData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "安全备份失败");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function validateBackup(item: BackupItem) {
+    setBusyId(`validate-${item.id}`);
+    setError("");
+    try {
+      const data = await adminApi(`/api/internal/admin/backups/${encodeURIComponent(item.id)}/validate`, {
+        method: "POST",
+      });
+      const validated = data.backup as BackupItem;
+      setBackups((current) => current.map((backupItem) => backupItem.id === item.id ? validated : backupItem));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "备份校验失败");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function restoreDatabase(event: FormEvent) {
+    event.preventDefault();
+    if (!restoreTarget || restoreTarget.integrity !== "ok" || !restoreTarget.valid) return;
+    setBusyId(`restore-${restoreTarget.id}`);
+    setError("");
+    try {
+      await adminApi(`/api/internal/admin/backups/${encodeURIComponent(restoreTarget.id)}/restore`, {
+        method: "POST",
+        body: JSON.stringify(restoreForm),
+      });
+      setRestoreTarget(null);
+      setRestoreForm({ currentPassword: "", totpCode: "", confirmation: "" });
+      onRestored("数据库恢复成功，全部管理员会话已撤销，请使用备份时间点对应的账号状态重新登录");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "数据库恢复失败");
     } finally {
       setBusyId("");
     }
@@ -289,6 +348,16 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
       <div className="panelHead"><div><h3>SQLite与审计自动备份</h3><p>{backup?.enabled ? `每 ${Math.round((backup.intervalSeconds || 86400) / 3600)} 小时自动执行，保留最近 ${backup.retention} 份。` : "自动备份当前已关闭。"}</p></div><button className="secondary" onClick={() => setSensitiveAction({ kind: "backup" })} disabled={Boolean(busyId)}><DatabaseBackup size={15} />立即备份</button></div>
       <div className="backupSummary"><div><small>最近状态</small><b className={backup?.lastRun?.status === "failed" ? "failed" : ""}>{backup?.lastRun?.status === "success" ? "备份成功" : backup?.lastRun?.status === "failed" ? "备份失败" : "尚未执行"}</b></div><div><small>完成时间</small><b>{formatTime(backup?.lastRun?.completedAt)}</b></div><div><small>数据库 / 审计</small><b>{backup?.lastRun?.databaseBytes ? `${Math.ceil(backup.lastRun.databaseBytes / 1024)} KB` : "—"} / {backup?.lastRun?.auditBytes ? `${Math.ceil(backup.lastRun.auditBytes / 1024)} KB` : "—"}</b></div></div>
       {backup?.lastRun?.error && <div className="formError">{backup.lastRun.error}</div>}
+      <div className="restoreSectionHead"><div><span><ArchiveRestore size={17} /></span><div><b>从服务器备份恢复</b><small>只允许恢复本系统生成并通过完整性校验的备份。</small></div></div>{backup?.lastRestore && <i className={backup.lastRestore.status}>{backup.lastRestore.status === "success" ? `最近恢复成功 · ${formatTime(backup.lastRestore.completedAt)}` : "最近恢复失败"}</i>}</div>
+      <div className="backupList">
+        {backups.slice(0, 10).map((item) => <article className="backupItem" key={item.id}>
+          <span className={`backupFileIcon ${item.integrity === "ok" ? "verified" : ""}`}>{item.integrity === "ok" ? <CheckCircle2 size={18} /> : <DatabaseBackup size={18} />}</span>
+          <div className="backupIdentity"><b>{formatTime(item.createdAt)}</b><small>{item.databaseFile} · {item.databaseBytes ? `${Math.ceil(item.databaseBytes / 1024)} KB` : "未知大小"}</small>{item.counts && <em>项目 {item.counts.projects} · Key {item.counts.apiKeys} · 管理员 {item.counts.adminUsers} · 审计 {item.counts.adminAudits}</em>}</div>
+          <span className={`backupVerifyState ${item.integrity === "ok" ? "ok" : item.unreadable ? "failed" : "pending"}`}>{item.integrity === "ok" ? "校验通过" : item.unreadable ? "不可读取" : "待校验"}</span>
+          <div className="backupActions"><button className="secondary" disabled={Boolean(busyId) || item.unreadable} onClick={() => void validateBackup(item)}>{busyId === `validate-${item.id}` ? <LoaderCircle size={13} className="spin" /> : <FileCheck2 size={13} />}校验</button><button className="dangerButton" disabled={Boolean(busyId) || item.integrity !== "ok" || !item.valid} onClick={() => { setRestoreTarget(item); setRestoreForm({ currentPassword: "", totpCode: "", confirmation: "" }); }}><ArchiveRestore size={13} />恢复</button></div>
+        </article>)}
+        {!loading && backups.length === 0 && <div className="emptyRow">暂无可恢复的服务器备份，请先执行一次备份。</div>}
+      </div>
     </section>
 
     <section className="panel adminSection">
@@ -356,6 +425,18 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
         <div className="note">{sensitiveDescription}</div>
         <label>超级管理员当前密码<input type="password" autoComplete="current-password" required value={reauthPassword} onChange={(event) => setReauthPassword(event.target.value)} /></label>
         <div className="passwordActions"><button type="button" className="secondary" onClick={() => { setSensitiveAction(null); setReauthPassword(""); }}>取消</button><button className="primary" disabled={!reauthPassword}>{sensitiveAction.kind === "delete" ? "确认永久删除" : "验证并继续"}</button></div>
+      </form>
+    </section></div>}
+
+    {restoreTarget && <div className="modalBackdrop"><section className="modal restoreModal" role="dialog" aria-modal="true" aria-labelledby="restore-database-title">
+      <header><div><p className="dangerEyebrow">不可逆高风险操作</p><h2 id="restore-database-title">恢复 SQLite 数据库</h2></div><button onClick={() => { if (!busyId) setRestoreTarget(null); }} aria-label="关闭"><X size={18} /></button></header>
+      <form className="stackForm" onSubmit={restoreDatabase}>
+        <div className="restoreWarning"><ShieldAlert size={21} /><div><b>备份时间之后的全部数据将被覆盖</b><p>系统会先生成当前数据库回滚点、暂停业务请求并校验恢复结果。成功后全部管理员会话失效，账号和密码恢复到备份时间点。</p></div></div>
+        <div className="restoreTargetSummary"><span><small>恢复时间点</small><b>{formatTime(restoreTarget.createdAt)}</b></span><span><small>完整性</small><b>{restoreTarget.integrity === "ok" ? "已通过" : "未校验"}</b></span><span><small>数据量</small><b>{restoreTarget.counts ? `${restoreTarget.counts.projects} 项目 / ${restoreTarget.counts.apiKeys} Key` : "—"}</b></span></div>
+        <label>超级管理员当前密码<input type="password" autoComplete="current-password" required value={restoreForm.currentPassword} onChange={(event) => setRestoreForm({ ...restoreForm, currentPassword: event.target.value })} /></label>
+        <label>新一组 TOTP 动态验证码<input aria-label="新一组 TOTP 动态验证码" type="text" inputMode="numeric" autoComplete="one-time-code" required minLength={6} maxLength={6} pattern="\d{6}" value={restoreForm.totpCode} onChange={(event) => setRestoreForm({ ...restoreForm, totpCode: event.target.value.replace(/\D/g, "").slice(0, 6) })} /><small>登录时使用过的验证码不能重复使用；请等待验证器显示下一组验证码。</small></label>
+        <label>输入“恢复数据库”确认<input required autoComplete="off" value={restoreForm.confirmation} onChange={(event) => setRestoreForm({ ...restoreForm, confirmation: event.target.value })} /></label>
+        <div className="passwordActions"><button type="button" className="secondary" disabled={Boolean(busyId)} onClick={() => setRestoreTarget(null)}>取消</button><button className="dangerButton" disabled={busyId === `restore-${restoreTarget.id}` || !restoreForm.currentPassword || restoreForm.totpCode.length !== 6 || restoreForm.confirmation !== "恢复数据库"}>{busyId === `restore-${restoreTarget.id}` ? <><LoaderCircle size={15} className="spin" />正在恢复</> : <><ArchiveRestore size={15} />确认恢复</>}</button></div>
       </form>
     </section></div>}
 
