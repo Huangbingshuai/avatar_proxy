@@ -199,6 +199,19 @@ def test_role_boundary_disable_and_reset_revoke_sessions(tmp_path: Path) -> None
             headers={"X-CSRF-Token": owner["csrfToken"]},
         )
         assert disabled.status_code == 200
+        disabled_login = owner_client.post(
+            "/api/internal/auth/login",
+            json={"username": "worker", "password": CHANGED_PASSWORD},
+        )
+        wrong_disabled_login = owner_client.post(
+            "/api/internal/auth/login",
+            json={"username": "worker", "password": "wrong-password-value"},
+        )
+        assert disabled_login.status_code == 403
+        assert disabled_login.json()["error"]["code"] == "admin_user_disabled"
+        assert "已禁用" in disabled_login.json()["error"]["message"]
+        assert wrong_disabled_login.status_code == 401
+        assert wrong_disabled_login.json()["error"]["code"] == "invalid_admin_credentials"
         restore_auth_cookies(owner_client, worker_cookies)
         assert owner_client.get("/api/internal/auth/me").status_code == 401
         restore_auth_cookies(owner_client, owner_cookies)
@@ -234,9 +247,12 @@ def test_super_admin_user_lifecycle_and_audit_routes(tmp_path: Path) -> None:
             headers=headers,
             json={"username": "WORKER", "displayName": "Duplicate"},
         )
+        active_delete = client.delete(f"/api/internal/admin/users/{worker_id}", headers=headers)
         disabled = client.put(f"/api/internal/admin/users/{worker_id}/disable", headers=headers)
         enabled = client.put(f"/api/internal/admin/users/{worker_id}/enable", headers=headers)
         reset = client.post(f"/api/internal/admin/users/{worker_id}/reset-password", headers=headers)
+        disabled_again = client.put(f"/api/internal/admin/users/{worker_id}/disable", headers=headers)
+        deleted = client.delete(f"/api/internal/admin/users/{worker_id}", headers=headers)
         users = client.get("/api/internal/admin/users")
         audits = client.get("/api/internal/admin/audits", params={"limit": 200})
         missing_enable = client.put(
@@ -245,18 +261,35 @@ def test_super_admin_user_lifecycle_and_audit_routes(tmp_path: Path) -> None:
         missing_reset = client.post(
             "/api/internal/admin/users/missing/reset-password", headers=headers
         )
+        missing_delete = client.delete("/api/internal/admin/users/missing", headers=headers)
+        self_delete = client.delete(
+            f"/api/internal/admin/users/{owner['user']['id']}", headers=headers
+        )
 
     assert created_response.status_code == 201
     assert created["user"]["role"] == "admin"
     assert duplicate.status_code == 409
+    assert active_delete.status_code == 409
+    assert active_delete.json()["error"]["code"] == "admin_user_must_be_disabled"
     assert disabled.json()["user"]["status"] == "disabled"
     assert enabled.json()["user"]["status"] == "active"
     assert reset.status_code == 200
     assert reset.json()["initialPassword"]
-    assert len(users.json()["users"]) == 2
+    assert disabled_again.status_code == 200
+    assert deleted.status_code == 200
+    assert deleted.json()["username"] == "worker"
+    assert len(users.json()["users"]) == 1
     actions = {item["action"] for item in audits.json()["audits"]}
-    assert {"admin.user.create", "admin.user.disable", "admin.user.enable", "admin.user.reset_password"} <= actions
-    assert missing_enable.status_code == missing_reset.status_code == 404
+    assert {
+        "admin.user.create",
+        "admin.user.disable",
+        "admin.user.enable",
+        "admin.user.reset_password",
+        "admin.user.delete",
+    } <= actions
+    assert missing_enable.status_code == missing_reset.status_code == missing_delete.status_code == 404
+    assert self_delete.status_code == 409
+    assert self_delete.json()["error"]["code"] == "cannot_delete_self"
 
 
 def test_session_list_manual_revoke_and_logout(tmp_path: Path) -> None:

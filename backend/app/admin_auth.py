@@ -278,13 +278,32 @@ class AdminAuthService:
             valid = self.password_hasher.verify(candidate_hash, password)
         except (VerifyMismatchError, VerificationError):
             valid = False
-        if row is None or not valid or row["status"] != "active":
+        if row is None or not valid:
             self._record_login_failure(
                 row["id"] if row is not None else None,
                 username.strip(),
                 source_ip,
                 user_agent,
                 now,
+            )
+        if row["status"] != "active":
+            with self.database.connect() as connection:
+                self._audit(
+                    actor=row["username"],
+                    actor_id=row["id"],
+                    source_ip=source_ip,
+                    user_agent=user_agent,
+                    action="admin.auth.login",
+                    target_type="admin_user",
+                    target_id=row["id"],
+                    after={"result": "disabled"},
+                    outcome="failure",
+                    connection=connection,
+                )
+            raise ApiError(
+                "管理员账号已禁用，请联系超级管理员",
+                403,
+                "admin_user_disabled",
             )
         token = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
@@ -293,7 +312,11 @@ class AdminAuthService:
             connection.execute("BEGIN IMMEDIATE")
             current = connection.execute("SELECT * FROM admin_users WHERE id=?", (row["id"],)).fetchone()
             if current["status"] != "active":
-                raise ApiError("用户名或密码错误", 401, "invalid_admin_credentials")
+                raise ApiError(
+                    "管理员账号已禁用，请联系超级管理员",
+                    403,
+                    "admin_user_disabled",
+                )
             if current["locked_until"] is not None and int(current["locked_until"]) > now:
                 self._raise_locked(int(current["locked_until"]), now)
             password_hash = current["password_hash"]
@@ -510,6 +533,49 @@ class AdminAuthService:
                 connection=connection,
             )
         return self._user_payload(updated), initial_password
+
+    def delete_admin(
+        self,
+        actor: AdminPrincipal,
+        user_id: str,
+        source_ip: str | None,
+        user_agent: str | None,
+    ) -> dict[str, Any]:
+        self.require_super_admin(actor)
+        if actor.id == user_id:
+            raise ApiError("不能删除当前登录账号", 409, "cannot_delete_self")
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM admin_users WHERE id=?", (user_id,)).fetchone()
+            if row is None:
+                raise ApiError("管理员不存在", 404, "admin_user_not_found")
+            if row["role"] == "super_admin":
+                raise ApiError("不能删除唯一的超级管理员", 409, "last_super_admin_protected")
+            if row["status"] != "disabled":
+                raise ApiError(
+                    "请先禁用管理员账号，再执行删除",
+                    409,
+                    "admin_user_must_be_disabled",
+                )
+            deleted = self._user_payload(row)
+            connection.execute("DELETE FROM admin_users WHERE id=?", (user_id,))
+            self._audit(
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                action="admin.user.delete",
+                target_type="admin_user",
+                target_id=user_id,
+                before={
+                    "username": row["username"],
+                    "role": row["role"],
+                    "status": row["status"],
+                },
+                after={"deleted": True},
+                connection=connection,
+            )
+        return deleted
 
     def reset_password_from_cli(self, username: str) -> tuple[dict[str, Any], str]:
         normalized = _normalize_username(username)

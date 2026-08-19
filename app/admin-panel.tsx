@@ -1,6 +1,6 @@
 "use client";
 
-import { Clipboard, KeyRound, LoaderCircle, Plus, RefreshCw, ShieldCheck, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import { Clipboard, KeyRound, LoaderCircle, Plus, RefreshCw, ShieldCheck, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { AdminApi, AdminSession, AdminUser } from "./admin-api";
@@ -124,6 +124,22 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
     }
   }
 
+  async function deleteUser(user: AdminUser) {
+    if (user.status !== "disabled" || user.role === "super_admin") return;
+    if (!window.confirm(`确认永久删除管理员“${user.displayName || user.username}”？删除后无法恢复。`)) return;
+    setBusyId(`delete-${user.id}`);
+    setError("");
+    try {
+      await adminApi(`/api/internal/admin/users/${encodeURIComponent(user.id)}`, { method: "DELETE" });
+      setUsers((current) => current.filter((item) => item.id !== user.id));
+      await loadSecurityData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "管理员删除失败");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   async function revokeSession(session: AdminSession) {
     if (session.current) return;
     setBusyId(`session-${session.id}`);
@@ -157,6 +173,9 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
             <button className={user.status === "active" ? "dangerButton" : "secondary"} onClick={() => void toggleUser(user)} disabled={Boolean(busyId) || user.id === currentUser.id} title={user.id === currentUser.id ? "不能禁用当前登录账号" : undefined}>
               {busyId === user.id ? <LoaderCircle size={13} className="spin" /> : user.status === "active" ? <UserRoundX size={13} /> : <UserRoundCheck size={13} />}{user.status === "active" ? "禁用" : "启用"}
             </button>
+            {user.status === "disabled" && user.role !== "super_admin" && <button className="dangerButton" onClick={() => void deleteUser(user)} disabled={Boolean(busyId)}>
+              {busyId === `delete-${user.id}` ? <LoaderCircle size={13} className="spin" /> : <Trash2 size={13} />}删除
+            </button>}
           </div>
         </div>)}
         {!loading && !users.length && <div className="emptyRow">暂无管理员账号</div>}
