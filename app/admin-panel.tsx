@@ -44,6 +44,9 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
   const [createForm, setCreateForm] = useState({ username: "", displayName: "" });
   const [initialPassword, setInitialPassword] = useState("");
   const [passwordOwner, setPasswordOwner] = useState("");
+  const [credentialUsername, setCredentialUsername] = useState("");
+  const [credentialAction, setCredentialAction] = useState<"created" | "reset">("created");
+  const [credentialsCopied, setCredentialsCopied] = useState(false);
 
   const loadSecurityData = useCallback(async () => {
     setLoading(true);
@@ -81,6 +84,9 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
       const created = data.user as AdminUser;
       setInitialPassword(String(data.initialPassword ?? ""));
       setPasswordOwner(created.displayName || created.username);
+      setCredentialUsername(created.username);
+      setCredentialAction("created");
+      setCredentialsCopied(false);
       setShowCreate(false);
       setCreateForm({ username: "", displayName: "" });
       await loadSecurityData();
@@ -116,6 +122,9 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
       const data = await adminApi(`/api/internal/admin/users/${encodeURIComponent(user.id)}/reset-password`, { method: "POST" });
       setInitialPassword(String(data.initialPassword ?? ""));
       setPasswordOwner(user.displayName || user.username);
+      setCredentialUsername(user.username);
+      setCredentialAction("reset");
+      setCredentialsCopied(false);
       await loadSecurityData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "密码重置失败");
@@ -152,6 +161,34 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
     } finally {
       setBusyId("");
     }
+  }
+
+  const consoleOrigin = initialPassword && typeof window !== "undefined" ? window.location.origin : "";
+  const credentialDeliveryText = [
+    `你好，${passwordOwner}：`,
+    "",
+    credentialAction === "created" ? "你的控制台管理员账号已创建，请使用以下信息登录：" : "你的控制台管理员密码已重置，请使用以下信息登录：",
+    `登录地址：${consoleOrigin || "当前控制台地址"}`,
+    `用户名：${credentialUsername}`,
+    `一次性初始密码：${initialPassword}`,
+    "",
+    "首次登录后系统会要求修改密码。请妥善保管，不要转发给无关人员。",
+  ].join("\n");
+
+  async function copyCredentialDeliveryText() {
+    try {
+      await navigator.clipboard.writeText(credentialDeliveryText);
+      setCredentialsCopied(true);
+    } catch {
+      setError("自动复制失败，请在文本框中手动复制登录信息");
+    }
+  }
+
+  function closeCredentialModal() {
+    setInitialPassword("");
+    setPasswordOwner("");
+    setCredentialUsername("");
+    setCredentialsCopied(false);
   }
 
   return <div className="content adminConsole">
@@ -216,9 +253,13 @@ export default function AdminPanel({ currentUser, adminApi }: { currentUser: Adm
       </form>
     </section></div>}
 
-    {initialPassword && <div className="modalBackdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="initial-password-title">
-      <header><h2 id="initial-password-title">保存一次性初始密码</h2><button onClick={() => { setInitialPassword(""); setPasswordOwner(""); }} aria-label="关闭"><X size={18} /></button></header>
-      <div className="secretBox"><p>以下密码属于“{passwordOwner}”，关闭后不再显示。请通过安全渠道交付。</p><code>{initialPassword}</code><button className="primary wide" onClick={() => void navigator.clipboard.writeText(initialPassword)}><Clipboard size={16} />复制初始密码</button></div>
+    {initialPassword && <div className="modalBackdrop"><section className="modal credentialModal" role="dialog" aria-modal="true" aria-labelledby="initial-password-title">
+      <header><h2 id="initial-password-title">复制管理员登录信息</h2><button onClick={closeCredentialModal} aria-label="关闭"><X size={18} /></button></header>
+      <div className="secretBox">
+        <p>以下内容已包含登录地址、用户名、一次性密码和使用说明，可直接复制后发送给“{passwordOwner}”。关闭后密码不再显示。</p>
+        <textarea className="credentialDeliveryText" readOnly aria-label="可转发的管理员登录信息" value={credentialDeliveryText} onFocus={(event) => event.currentTarget.select()} />
+        <button className="primary wide" onClick={() => void copyCredentialDeliveryText()}><Clipboard size={16} />{credentialsCopied ? "已复制，可直接发送" : "复制完整登录信息"}</button>
+      </div>
     </section></div>}
   </div>;
 }

@@ -65,7 +65,10 @@ function installFetch(data: MockData = {}) {
     if (!passwordChanged) return jsonResponse({ error: { message: "请先修改初始密码", code: "password_change_required" } }, 403);
     if (url.pathname === "/api/internal/auth/logout") { authenticated = false; return jsonResponse({ loggedOut: true }); }
     if (url.pathname === "/api/internal/admin/users") {
-      if (init?.method === "POST") return jsonResponse({ user: { ...users[1], id: "admin-3" }, initialPassword: "Temp-Password-123!" }, 201);
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        return jsonResponse({ user: { ...users[1], id: "admin-3", username: body.username, displayName: body.displayName }, initialPassword: "Temp-Password-123!" }, 201);
+      }
       return jsonResponse({ users });
     }
     if (url.pathname === "/api/internal/admin/audits") return jsonResponse({ audits: [{ id: 19, actor: "owner", sourceIp: "10.0.0.8", userAgent: "Windows Chrome", action: "admin.auth.login", targetType: "admin_user", targetId: "admin-1", outcome: "success", createdAt: "2026-08-19 08:00:00" }] });
@@ -209,6 +212,28 @@ describe("内部控制台", () => {
     expect(screen.getAllByRole("button", { name: "重置密码" })[0]).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "撤销" }));
     await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/auth/sessions/session-old" && call.init?.method === "DELETE")).toBe(true));
+  });
+
+  it("创建管理员后可一次复制完整的登录交付文本", async () => {
+    installFetch({ role: "super_admin" });
+    const user = await login();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText");
+    await user.click(screen.getByRole("button", { name: "管理员" }));
+    await user.click(await screen.findByRole("button", { name: "创建管理员" }));
+    const createDialog = screen.getByRole("dialog", { name: "创建管理员" });
+    await user.type(within(createDialog).getByLabelText("用户名"), "operator.new");
+    await user.type(within(createDialog).getByLabelText("显示名称"), "新运营管理员");
+    await user.click(within(createDialog).getByRole("button", { name: "创建管理员" }));
+
+    const deliveryText = await screen.findByLabelText("可转发的管理员登录信息");
+    expect((deliveryText as HTMLTextAreaElement).value).toContain("登录地址：http://localhost:3000");
+    expect((deliveryText as HTMLTextAreaElement).value).toContain("用户名：operator.new");
+    expect((deliveryText as HTMLTextAreaElement).value).toContain("一次性初始密码：Temp-Password-123!");
+    expect((deliveryText as HTMLTextAreaElement).value).toContain("首次登录后系统会要求修改密码");
+
+    await user.click(screen.getByRole("button", { name: "复制完整登录信息" }));
+    expect(writeText).toHaveBeenCalledWith((deliveryText as HTMLTextAreaElement).value);
+    expect(screen.getByRole("button", { name: "已复制，可直接发送" })).toBeInTheDocument();
   });
 
   it("超级管理员禁用普通管理员后可以永久删除", async () => {
