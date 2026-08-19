@@ -21,7 +21,21 @@ docker compose exec api-server python -m app.admin_cli create \
   --username admin --display-name "系统管理员"
 ```
 
-命令生成高强度一次性初始密码并仅显示一次。首次登录必须修改密码。系统只允许一个由 CLI 初始化的 `super_admin`；后续账号由该超级管理员在控制台中创建，且固定为普通 `admin`。普通管理员只能使用业务管理功能，不能管理管理员账号。超级管理员密码遗失时，在服务器终端使用 `python -m app.admin_cli reset-password --username <用户名>` 恢复。
+命令生成高强度一次性初始密码并仅显示一次。首次登录必须修改密码并绑定 TOTP；恢复码只显示一次。系统只允许一个由 CLI 初始化的 `super_admin`，且该账号只能管理账号、安全告警、会话和备份，不能访问项目、API Key、额度等业务功能。后续账号由超级管理员创建并固定为普通 `admin`，日常业务必须使用普通管理员账号。
+
+生产环境先生成并持久化 TOTP 加密主密钥：
+
+```bash
+docker compose run --rm api-server python -m app.admin_cli generate-totp-key
+```
+
+把输出保存为受保护的 `ADMIN_TOTP_ENCRYPTION_KEY`，不要写入仓库或日志。若不显式配置，程序会在 SQLite 同目录生成 `admin_totp.key`，该文件必须与数据库分别保管并一同纳入灾备。超级管理员密码遗失时执行 `reset-password`；TOTP 设备与恢复码均遗失时执行：
+
+```bash
+docker compose exec api-server python -m app.admin_cli reset-totp --username admin
+```
+
+两种恢复操作都会撤销该超级管理员的全部旧会话，下一次登录必须重新完成安全设置。
 
 ## 2. 启动
 
@@ -51,6 +65,10 @@ curl https://api.example.com/health
 ## 4. 持久化与扩容
 
 默认数据库为挂载在 `/app/data` 的 SQLite，适合单实例部署。不能让多个容器共享同一个 SQLite 文件；需要多实例高可用时，应先把 API Key、项目和日志存储迁移到 PostgreSQL 等共享数据库。
+
+默认每 24 小时通过 SQLite 在线备份 API 生成一份一致性数据库快照和一份管理员审计 JSONL，并在落盘前执行 `PRAGMA integrity_check`，保留最近 30 组。使用 `ADMIN_BACKUP_INTERVAL_SECONDS`、`ADMIN_BACKUP_RETENTION` 和 `ADMIN_BACKUP_DIRECTORY` 调整策略。备份目录必须位于持久卷，并同步到独立磁盘或对象存储；同机备份不能替代异地灾备。控制台中的“立即备份”同样要求超级管理员再次输入当前密码。
+
+恢复演练至少验证：数据库快照完整性、审计 JSONL 可读、显式 `ADMIN_TOTP_ENCRYPTION_KEY` 或 `admin_totp.key` 可用，以及超级管理员能够用 TOTP 登录。不要只恢复数据库而遗漏 TOTP 加密主密钥。
 
 ## 5. 控制台连接
 
@@ -86,7 +104,7 @@ cp /opt/avatar-proxy/data/avatar_proxy.db \
 sqlite3 /opt/avatar-proxy/backups/avatar_proxy-before-admin-auth.db 'PRAGMA integrity_check;'
 ```
 
-应用启动会幂等创建管理员账号、会话和审计所需表，不会自动生成管理员，也不会把旧共享令牌转换为账号。创建首位 `super_admin` 并验证登录、首次改密和原有项目/API Key 数据后，再移除旧环境变量。此次本地验收阶段不执行线上升级。
+应用启动会幂等创建管理员账号、TOTP、恢复码、会话、安全告警、备份状态和审计所需表，不会自动生成管理员，也不会把旧共享令牌转换为账号。创建首位 `super_admin`，完成首次改密与 TOTP 绑定，再由它创建普通管理员；使用普通管理员验证原有项目/API Key 数据后，再移除旧环境变量。此次本地验收阶段不执行线上升级。
 
 完成 HTTPS 和同源代理配置后，从仓库根目录执行安全冒烟：
 

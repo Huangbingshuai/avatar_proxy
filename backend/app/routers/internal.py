@@ -17,7 +17,7 @@ from ..schemas import (
     ProjectQuotaUpdate,
     QuotaEventAck,
 )
-from ..security import AdminDependency, generate_api_key, generate_key_id, hash_api_key
+from ..security import BusinessAdminDependency as AdminDependency, generate_api_key, generate_key_id, hash_api_key
 
 
 router = APIRouter(prefix="/api/internal", tags=["内部控制台"])

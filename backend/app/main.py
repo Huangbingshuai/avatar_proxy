@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .admin_auth import AdminAuthService
+from .backup import BackupManager
 from .config import Settings, get_settings
 from .database import Database
 from .errors import install_error_handlers
@@ -27,17 +28,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = resolved
         app.state.database = database
         app.state.admin_auth = AdminAuthService(database, resolved)
+        app.state.backup = BackupManager(database, resolved)
         app.state.quota = QuotaManager(database)
         app.state.volcengine = volcengine
         app.state.seedance = SeedanceClient(resolved, database)
         app.state.storage = TosStorage(resolved, database, app.state.quota)
         maintenance = asyncio.create_task(app.state.storage.maintenance_loop())
+        backup_maintenance = asyncio.create_task(app.state.backup.maintenance_loop())
         try:
             yield
         finally:
             maintenance.cancel()
+            backup_maintenance.cancel()
             with suppress(asyncio.CancelledError):
                 await maintenance
+            with suppress(asyncio.CancelledError):
+                await backup_maintenance
             await volcengine.aclose()
 
     app = FastAPI(

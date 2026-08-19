@@ -22,6 +22,8 @@ ADMIN_USERNAME_PATTERN = r"^[A-Za-z0-9._-]+$"
 class AdminLogin(ApiModel):
     username: str = Field(min_length=3, max_length=64, pattern=ADMIN_USERNAME_PATTERN)
     password: str = Field(min_length=1, max_length=128)
+    totp_code: str | None = Field(default=None, min_length=6, max_length=6, pattern=r"^\d{6}$")
+    recovery_code: str | None = Field(default=None, min_length=16, max_length=32, pattern=r"^[A-Za-z2-7-]+$")
 
 
 class AdminPasswordChange(ApiModel):
@@ -32,6 +34,19 @@ class AdminPasswordChange(ApiModel):
 class AdminUserCreate(ApiModel):
     username: str = Field(min_length=3, max_length=64, pattern=ADMIN_USERNAME_PATTERN)
     display_name: str = Field(min_length=1, max_length=64)
+    current_password: str = Field(min_length=1, max_length=128)
+
+
+class AdminSensitiveAction(ApiModel):
+    current_password: str = Field(min_length=1, max_length=128)
+
+
+class AdminTotpConfirm(ApiModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class AdminSecurityAlertAck(ApiModel):
+    alert_id: int = Field(ge=1)
 
 
 class ProjectCreate(ApiModel):

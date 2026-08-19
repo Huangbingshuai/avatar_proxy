@@ -13,6 +13,8 @@ type MockData = {
   loginError?: { message: string; code: string; status: number; retryAfter?: number };
   mustChangePassword?: boolean;
   role?: "super_admin" | "admin";
+  totpRequired?: boolean;
+  mfaSetupRequired?: boolean;
   expireOnPath?: string;
 };
 
@@ -31,7 +33,7 @@ function installFetch(data: MockData = {}) {
   ];
   const events = data.events ?? [{ id: 7, projectName: "customer_a", scopeType: "project", metric: "read_qpm", threshold: 90, limitValue: 100, usedValue: 90, acknowledged: false, createdAt: "2026-08-13 00:00:00" }];
   const audits = data.audits ?? [{ id: 8, sourceIp: "10.0.0.8", action: "quota.project.update", targetType: "project", targetId: "customer_a", createdAt: "2026-08-13 00:00:00" }];
-  const currentUser = { id: "admin-1", username: "owner", displayName: "系统管理员", role: data.role ?? "super_admin", status: "active", mustChangePassword: Boolean(data.mustChangePassword), createdAt: "2026-08-10 00:00:00", lastLoginAt: "2026-08-19 08:00:00", lastLoginIp: "127.0.0.1" };
+  const currentUser = { id: "admin-1", username: "owner", displayName: "系统管理员", role: data.role ?? "admin", status: "active", mustChangePassword: Boolean(data.mustChangePassword), totpEnabled: data.role === "super_admin" && !data.mfaSetupRequired, mfaSetupRequired: Boolean(data.mfaSetupRequired), mfaVerified: data.role !== "super_admin" || !data.mfaSetupRequired, createdAt: "2026-08-10 00:00:00", lastLoginAt: "2026-08-19 08:00:00", lastLoginIp: "127.0.0.1" };
   let users = [currentUser, { id: "admin-2", username: "operator", displayName: "运营管理员", role: "admin", status: "active", mustChangePassword: false, createdAt: "2026-08-11 00:00:00", lastLoginAt: "2026-08-18 08:00:00", lastLoginIp: "10.0.0.8" }];
   const sessions = [
     { id: "session-current", current: true, createdAt: 1787107200, lastSeenAt: 1787107800, absoluteExpiresAt: 1787150400, sourceIp: "127.0.0.1", userAgent: "Windows Chrome" },
@@ -49,6 +51,7 @@ function installFetch(data: MockData = {}) {
       if (data.loginError) return jsonResponse({ error: { message: data.loginError.message, code: data.loginError.code } }, data.loginError.status, data.loginError.retryAfter ? { "retry-after": String(data.loginError.retryAfter) } : {});
       const body = JSON.parse(String(init?.body));
       if (body.username !== "owner" || body.password !== "correct-password") return jsonResponse({ error: { message: "用户名或密码错误", code: "invalid_admin_credentials" } }, 401);
+      if (data.totpRequired && !body.totpCode && !body.recoveryCode) return jsonResponse({ error: { message: "请输入动态验证码", code: "admin_totp_required" } }, 401);
       authenticated = true;
       return jsonResponse({ user: currentUser, csrfToken: "csrf-test", session: sessions[0] });
     }
@@ -62,6 +65,8 @@ function installFetch(data: MockData = {}) {
       passwordChanged = true;
       return jsonResponse({ user: { ...currentUser, mustChangePassword: false }, csrfToken: "csrf-test" });
     }
+    if (url.pathname === "/api/internal/auth/totp/setup") return jsonResponse({ secret: "JBSWY3DPEHPK3PXP", qrCodeDataUrl: "data:image/png;base64,AAAA" });
+    if (url.pathname === "/api/internal/auth/totp/confirm") return jsonResponse({ enabled: true, mfaVerified: true, recoveryCodes: ["AAAA-BBBB-CCCC-DDDD", "EEEE-FFFF-GGGG-HHHH"] });
     if (!passwordChanged) return jsonResponse({ error: { message: "请先修改初始密码", code: "password_change_required" } }, 403);
     if (url.pathname === "/api/internal/auth/logout") { authenticated = false; return jsonResponse({ loggedOut: true }); }
     if (url.pathname === "/api/internal/admin/users") {
@@ -72,6 +77,10 @@ function installFetch(data: MockData = {}) {
       return jsonResponse({ users });
     }
     if (url.pathname === "/api/internal/admin/audits") return jsonResponse({ audits: [{ id: 19, actor: "owner", sourceIp: "10.0.0.8", userAgent: "Windows Chrome", action: "admin.auth.login", targetType: "admin_user", targetId: "admin-1", outcome: "success", createdAt: "2026-08-19 08:00:00" }] });
+    if (url.pathname === "/api/internal/admin/security-alerts") return jsonResponse({ alerts: [{ id: 21, eventType: "super_admin_login", severity: "critical", message: "超级管理员账号已登录", actor: "owner", sourceIp: "127.0.0.1", targetType: "admin_session", targetId: "session-current", acknowledgedAt: null, createdAt: "2026-08-19 08:00:00" }] });
+    if (url.pathname === "/api/internal/admin/security-alerts/ack") return jsonResponse({ alert: { id: 21, acknowledged_at: "2026-08-19 08:05:00" } });
+    if (url.pathname === "/api/internal/admin/backups/status") return jsonResponse({ enabled: true, intervalSeconds: 86400, retention: 30, directory: "data/backups", lastRun: { status: "success", completedAt: "2026-08-19 08:00:00", databaseBytes: 2048, auditBytes: 1024 } });
+    if (url.pathname === "/api/internal/admin/backups/run") return jsonResponse({ enabled: true, intervalSeconds: 86400, retention: 30, directory: "data/backups", lastRun: { status: "success", completedAt: "2026-08-19 08:10:00", databaseBytes: 2048, auditBytes: 1024 } });
     if (/\/api\/internal\/admin\/users\/[^/]+\/(enable|disable)$/.test(url.pathname)) {
       const id = url.pathname.split("/").at(-2);
       const status = url.pathname.endsWith("/disable") ? "disabled" : "active";
@@ -176,6 +185,34 @@ describe("内部控制台", () => {
     expect(new Headers(call?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
   });
 
+  it("超级管理员登录必须完成TOTP二次验证", async () => {
+    const { calls } = installFetch({ role: "super_admin", totpRequired: true });
+    const user = await login();
+    expect(await screen.findByRole("heading", { name: "超级管理员二次验证" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("动态验证码或恢复码"), "123456");
+    await user.click(screen.getByRole("button", { name: "验证并登录" }));
+    expect(await screen.findByRole("heading", { name: "超级管理员安全中心" })).toBeInTheDocument();
+    const loginCalls = calls.filter((call) => call.path === "/api/internal/auth/login");
+    expect(JSON.parse(String(loginCalls.at(-1)?.init?.body))).toMatchObject({ totpCode: "123456" });
+    expect(screen.queryByRole("button", { name: "项目" })).not.toBeInTheDocument();
+    expect(screen.getByText("超级管理员账号已登录")).toBeInTheDocument();
+  });
+
+  it("未绑定TOTP的超级管理员必须保存恢复码后才能进入", async () => {
+    installFetch({ role: "super_admin", mfaSetupRequired: true });
+    const user = await login();
+    expect(await screen.findByRole("heading", { name: "绑定TOTP验证器" })).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "TOTP绑定二维码" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("6位动态验证码"), "654321");
+    await user.click(screen.getByRole("button", { name: "确认绑定" }));
+    expect(await screen.findByRole("heading", { name: "保存一次性恢复码" })).toBeInTheDocument();
+    expect(screen.getByText("AAAA-BBBB-CCCC-DDDD", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "进入安全管理" })).toBeDisabled();
+    await user.click(screen.getByLabelText("我已将恢复码保存在安全位置"));
+    await user.click(screen.getByRole("button", { name: "进入安全管理" }));
+    expect(await screen.findByRole("heading", { name: "超级管理员安全中心" })).toBeInTheDocument();
+  });
+
   it("切换项目并展示用量和审计", async () => {
     installFetch();
     const user = await login();
@@ -205,7 +242,7 @@ describe("内部控制台", () => {
   it("超级管理员可管理账号和撤销其他会话", async () => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "管理员" }));
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
     expect(await screen.findByText("运营管理员")).toBeInTheDocument();
     expect(screen.getByText("10.0.0.8")).toBeInTheDocument();
     expect(screen.getByText("admin.auth.login")).toBeInTheDocument();
@@ -218,11 +255,12 @@ describe("内部控制台", () => {
     installFetch({ role: "super_admin" });
     const user = await login();
     const writeText = vi.spyOn(navigator.clipboard, "writeText");
-    await user.click(screen.getByRole("button", { name: "管理员" }));
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
     await user.click(await screen.findByRole("button", { name: "创建管理员" }));
     const createDialog = screen.getByRole("dialog", { name: "创建管理员" });
     await user.type(within(createDialog).getByLabelText("用户名"), "operator.new");
     await user.type(within(createDialog).getByLabelText("显示名称"), "新运营管理员");
+    await user.type(within(createDialog).getByLabelText("确认超级管理员密码"), "correct-password");
     await user.click(within(createDialog).getByRole("button", { name: "创建管理员" }));
 
     const deliveryText = await screen.findByLabelText("可转发的管理员登录信息");
@@ -240,11 +278,17 @@ describe("内部控制台", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "管理员" }));
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
     const operatorRow = (await screen.findByText("运营管理员")).closest(".tableRow")!;
     await user.click(within(operatorRow).getByRole("button", { name: "禁用" }));
+    let confirmation = screen.getByRole("dialog", { name: "再次确认超级管理员身份" });
+    await user.type(within(confirmation).getByLabelText("超级管理员当前密码"), "correct-password");
+    await user.click(within(confirmation).getByRole("button", { name: "验证并继续" }));
     const disabledRow = (await screen.findByText("已禁用")).closest(".tableRow")!;
     await user.click(within(disabledRow).getByRole("button", { name: "删除" }));
+    confirmation = screen.getByRole("dialog", { name: "再次确认超级管理员身份" });
+    await user.type(within(confirmation).getByLabelText("超级管理员当前密码"), "correct-password");
+    await user.click(within(confirmation).getByRole("button", { name: "确认永久删除" }));
     await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/admin/users/admin-2" && call.init?.method === "DELETE")).toBe(true));
     expect(screen.queryByText("运营管理员")).not.toBeInTheDocument();
   });
@@ -252,7 +296,7 @@ describe("内部控制台", () => {
   it("普通管理员看不到账号管理入口", async () => {
     const { calls } = installFetch({ role: "admin" });
     await login();
-    expect(screen.queryByRole("button", { name: "管理员" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "安全管理" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "项目" })).toBeInTheDocument();
     expect(calls.some((call) => call.path === "/api/internal/admin/users")).toBe(false);
   });
