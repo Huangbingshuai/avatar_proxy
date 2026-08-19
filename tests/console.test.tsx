@@ -32,7 +32,7 @@ function installFetch(data: MockData = {}) {
   const events = data.events ?? [{ id: 7, projectName: "customer_a", scopeType: "project", metric: "read_qpm", threshold: 90, limitValue: 100, usedValue: 90, acknowledged: false, createdAt: "2026-08-13 00:00:00" }];
   const audits = data.audits ?? [{ id: 8, sourceIp: "10.0.0.8", action: "quota.project.update", targetType: "project", targetId: "customer_a", createdAt: "2026-08-13 00:00:00" }];
   const currentUser = { id: "admin-1", username: "owner", displayName: "系统管理员", role: data.role ?? "super_admin", status: "active", mustChangePassword: Boolean(data.mustChangePassword), createdAt: "2026-08-10 00:00:00", lastLoginAt: "2026-08-19 08:00:00", lastLoginIp: "127.0.0.1" };
-  const users = [currentUser, { id: "admin-2", username: "operator", displayName: "运营管理员", role: "admin", status: "active", mustChangePassword: false, createdAt: "2026-08-11 00:00:00", lastLoginAt: "2026-08-18 08:00:00", lastLoginIp: "10.0.0.8" }];
+  let users = [currentUser, { id: "admin-2", username: "operator", displayName: "运营管理员", role: "admin", status: "active", mustChangePassword: false, createdAt: "2026-08-11 00:00:00", lastLoginAt: "2026-08-18 08:00:00", lastLoginIp: "10.0.0.8" }];
   const sessions = [
     { id: "session-current", current: true, createdAt: 1787107200, lastSeenAt: 1787107800, absoluteExpiresAt: 1787150400, sourceIp: "127.0.0.1", userAgent: "Windows Chrome" },
     { id: "session-old", current: false, createdAt: 1787020800, lastSeenAt: 1787024400, absoluteExpiresAt: 1787110800, sourceIp: "10.0.0.8", userAgent: "Macintosh Safari" },
@@ -69,8 +69,18 @@ function installFetch(data: MockData = {}) {
       return jsonResponse({ users });
     }
     if (url.pathname === "/api/internal/admin/audits") return jsonResponse({ audits: [{ id: 19, actor: "owner", sourceIp: "10.0.0.8", userAgent: "Windows Chrome", action: "admin.auth.login", targetType: "admin_user", targetId: "admin-1", outcome: "success", createdAt: "2026-08-19 08:00:00" }] });
-    if (/\/api\/internal\/admin\/users\/[^/]+\/(enable|disable)$/.test(url.pathname)) return jsonResponse({ user: users[1] });
+    if (/\/api\/internal\/admin\/users\/[^/]+\/(enable|disable)$/.test(url.pathname)) {
+      const id = url.pathname.split("/").at(-2);
+      const status = url.pathname.endsWith("/disable") ? "disabled" : "active";
+      users = users.map((item) => item.id === id ? { ...item, status } : item);
+      return jsonResponse({ user: users.find((item) => item.id === id) });
+    }
     if (/\/api\/internal\/admin\/users\/[^/]+\/reset-password$/.test(url.pathname)) return jsonResponse({ user: users[1], initialPassword: "Reset-Password-456!" });
+    if (/\/api\/internal\/admin\/users\/[^/]+$/.test(url.pathname) && init?.method === "DELETE") {
+      const id = url.pathname.split("/").at(-1);
+      users = users.filter((item) => item.id !== id);
+      return jsonResponse({ deleted: true, userId: id, username: "operator" });
+    }
     if (url.pathname === "/api/internal/auth/sessions") return jsonResponse({ sessions });
     if (/\/api\/internal\/auth\/sessions\/[^/]+$/.test(url.pathname) && init?.method === "DELETE") return jsonResponse({ revoked: true, sessionId: "session-old" });
     if (url.pathname === "/api/internal/project/list") return jsonResponse({ projects });
@@ -138,6 +148,17 @@ describe("内部控制台", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("300 秒后重试");
   });
 
+  it("已禁用管理员输入正确密码时展示账号禁用提示", async () => {
+    installFetch({ loginError: { message: "管理员账号已禁用，请联系超级管理员", code: "admin_user_disabled", status: 403 } });
+    const user = userEvent.setup();
+    render(<ConsolePage />);
+    await screen.findByRole("heading", { name: "登录内部控制台" });
+    await user.type(screen.getByLabelText("用户名"), "operator");
+    await user.type(screen.getByLabelText("密码"), "correct-password");
+    await user.click(screen.getByRole("button", { name: "登录控制台" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("账号已禁用");
+  });
+
   it("首次登录必须修改密码，并带 CSRF 完成修改", async () => {
     const { calls } = installFetch({ mustChangePassword: true });
     const user = await login();
@@ -188,6 +209,19 @@ describe("内部控制台", () => {
     expect(screen.getAllByRole("button", { name: "重置密码" })[0]).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "撤销" }));
     await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/auth/sessions/session-old" && call.init?.method === "DELETE")).toBe(true));
+  });
+
+  it("超级管理员禁用普通管理员后可以永久删除", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { calls } = installFetch({ role: "super_admin" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "管理员" }));
+    const operatorRow = (await screen.findByText("运营管理员")).closest(".tableRow")!;
+    await user.click(within(operatorRow).getByRole("button", { name: "禁用" }));
+    const disabledRow = (await screen.findByText("已禁用")).closest(".tableRow")!;
+    await user.click(within(disabledRow).getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/admin/users/admin-2" && call.init?.method === "DELETE")).toBe(true));
+    expect(screen.queryByText("运营管理员")).not.toBeInTheDocument();
   });
 
   it("普通管理员看不到账号管理入口", async () => {

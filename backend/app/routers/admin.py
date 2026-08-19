@@ -183,6 +183,17 @@ def enable_admin_user(user_id: str, request: Request, principal: AdminDependency
     return {"user": user}
 
 
+@router.delete("/admin/users/{user_id}")
+def delete_admin_user(user_id: str, request: Request, principal: AdminDependency) -> dict:
+    user = request.app.state.admin_auth.delete_admin(
+        principal,
+        user_id,
+        _request_ip(request),
+        _user_agent(request),
+    )
+    return {"deleted": True, "userId": user_id, "username": user["username"]}
+
+
 @router.post("/admin/users/{user_id}/reset-password")
 def reset_admin_password(user_id: str, request: Request, principal: AdminDependency) -> dict:
     user, initial_password = request.app.state.admin_auth.reset_password(
