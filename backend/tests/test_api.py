@@ -33,7 +33,10 @@ def settings(database_path: Path) -> Settings:
         seedance_ark_api_key="test-ark-key",
         tos_bucket="test-bucket",
         tos_public_base_url="https://cdn.example.com",
-        console_admin_token="test-admin",
+        admin_cookie_secure=False,
+        admin_argon2_time_cost=1,
+        admin_argon2_memory_cost=8192,
+        admin_argon2_parallelism=1,
         database_path=database_path,
         cors_origins="http://localhost:3000",
     )

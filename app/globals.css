@@ -48,6 +48,12 @@ code, pre, .mono { font-family: var(--font-geist-mono), Consolas, monospace; }
 .topbar h1 { margin: 4px 0 0; font-family: Georgia, "Microsoft YaHei", serif; font-size: 26px; font-weight: 700; }
 .eyebrow { margin: 0; color: var(--coral-dark); font-size: 10px; font-weight: 800; letter-spacing: 1.7px; }
 .topbarActions { display: flex; align-items: center; gap: 10px; }
+.adminIdentity { display: flex; align-items: center; gap: 8px; }
+.adminIdentity > span { min-width: 0; text-align: right; }
+.adminIdentity b, .adminIdentity small { display: block; }
+.adminIdentity b { font-size: 12px; }
+.adminIdentity small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.adminIdentity .secondary { min-height: 34px; padding: 0 10px; font-size: 10px; }
 .securePill { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid #d4e4dc; border-radius: 999px; background: #f0f8f4; color: #285f4c; font-size: 12px; font-weight: 700; }
 .iconButton { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: #49504b; }
 .content { padding: 34px 42px 56px; }
@@ -226,6 +232,10 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .unlockCard h2 { margin: 9px 0; font-family: Georgia, "Microsoft YaHei", serif; font-size: 27px; }
 .unlockCard > p:not(.eyebrow) { margin: 0 0 22px; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .unlockCard label { margin-bottom: 15px; text-align: left; }
+.authChecking { display: grid; place-items: center; }
+.authChecking > svg { margin-bottom: 8px; color: var(--coral); }
+.passwordActions { display: flex; justify-content: flex-end; gap: 9px; }
+.passwordActions .primary, .passwordActions .secondary { min-width: 120px; }
 .modal { overflow: hidden; }
 .modal > header { padding: 20px 22px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .modal > header h2 { margin: 0; font-family: Georgia, "Microsoft YaHei", serif; font-size: 20px; }
@@ -244,6 +254,34 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .secretBox p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .secretBox > code { padding: 15px; border: 1px dashed #d89a89; border-radius: 9px; background: var(--coral-soft); color: #8d3e32; overflow-wrap: anywhere; font-size: 12px; }
 .formError { padding: 10px 12px; border-radius: 8px; background: #fff0ed; color: #a53f32; font-size: 11px; }
+.adminConsole { display: grid; gap: 18px; }
+.adminConsole .pageIntro { margin-bottom: 0; }
+.adminInlineError { margin: 0; }
+.adminSection { overflow: hidden; }
+.adminTable .tableRow { min-width: 1050px; grid-template-columns: 1.25fr .75fr .65fr 1fr .8fr 1.55fr; }
+.roleBadge { width: fit-content; padding: 5px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; }
+.roleBadge.super_admin { color: #7d4925; background: #fff0df; }
+.roleBadge.admin { color: #285e4b; background: #e5f3eb; }
+.adminActions { display: flex; justify-content: flex-end; gap: 6px; }
+.adminActions .primary, .adminActions .secondary, .adminActions .dangerButton { min-height: 31px; padding: 0 9px; font-size: 9px; }
+.sessionList { display: grid; }
+.sessionRow { min-height: 70px; padding: 13px 20px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 13px; border-top: 1px solid #efeee9; }
+.sessionRow:first-child { border-top: 0; }
+.sessionIcon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--green); background: var(--green-soft); }
+.sessionRow b, .sessionRow small { display: block; }
+.sessionRow b { font-size: 12px; }
+.sessionRow small { margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.sessionRow > i { color: #43705d; font-size: 9px; font-style: normal; }
+.sessionRow .dangerButton { min-height: 31px; padding: 0 10px; font-size: 9px; }
+.auditList { display: grid; }
+.auditRow { min-height: 62px; padding: 12px 20px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, auto) auto; align-items: center; gap: 14px; border-top: 1px solid #efeee9; }
+.auditRow:first-child { border-top: 0; }
+.auditRow b, .auditRow small { display: block; }
+.auditRow b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.auditRow small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.auditRow > code { overflow: hidden; color: #667169; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.auditOutcome { padding: 5px 8px; border-radius: 999px; color: #8d4a3d; background: #fff0ed; font-size: 9px; }
+.auditOutcome.success { color: #28704e; background: #e3f4eb; }
 .spin { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -268,6 +306,8 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .workspace { width: 100%; }
   .topbar { height: auto; padding: 20px; }
   .securePill { display: none; }
+  .adminIdentity > span { display: none; }
+  .adminIdentity .secondary { display: none; }
   .content { padding: 24px 18px 40px; }
   .errorBanner { margin: 14px 18px 0; }
   .overviewHero { padding: 28px 24px; }

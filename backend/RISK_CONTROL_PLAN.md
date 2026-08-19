@@ -81,7 +81,8 @@ TOS 上传成功后创建 `uploaded_pending` 记录，并在原响应中新增 `
 - `quota_usage_windows`：分钟、每日计数及预占；
 - `asset_records`：素材和 TOS 对象账本；
 - `quota_events`：阈值告警、限流拒绝和确认状态；
-- `admin_audit_logs`：额度配置变更前后值、来源 IP 和时间。
+- `admin_audit_logs`：真实管理员 ID/用户名、操作结果、配置变更前后值、来源 IP、User-Agent 和时间；
+- `admin_users`、`admin_sessions`：两级管理员账号、Argon2id 密码哈希和服务端会话。IP 只用于审计和会话追溯，不参与登录限制、白名单或权限判断。
 
 新增内部管理接口：
 
@@ -95,7 +96,7 @@ GET  /api/internal/quota/events
 POST /api/internal/quota/event/ack
 ```
 
-所有接口继续使用 `X-Admin-Token`。当前没有管理员账号体系，审计操作人记为 `console-admin`。
+所有 `/api/internal/*` 接口使用服务端 Session Cookie 鉴权；POST、PUT、DELETE 额外校验 `X-CSRF-Token`，不再接受 `X-Admin-Token`。系统只保留一个由服务器 CLI 初始化的 `super_admin`，可以管理管理员账号；控制台创建的普通 `admin` 可以使用项目、API Key、额度和调试功能，但不能访问管理员账号及安全审计接口。审计记录真实操作人，来源 IP 仅供追溯。
 
 ## 5. 控制台
 

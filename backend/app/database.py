@@ -154,10 +154,49 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
     after_json TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS admin_users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    username_normalized TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'admin' CHECK(role IN ('super_admin','admin')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
+    must_change_password INTEGER NOT NULL DEFAULT 1,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    failure_window_started_at INTEGER,
+    locked_until INTEGER,
+    last_login_at TEXT,
+    last_login_ip TEXT,
+    password_changed_at TEXT,
+    created_by_id TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(created_by_id) REFERENCES admin_users(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    id TEXT PRIMARY KEY,
+    admin_user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    csrf_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    absolute_expires_at INTEGER NOT NULL,
+    source_ip TEXT,
+    user_agent TEXT,
+    revoked_at INTEGER,
+    revoke_reason TEXT,
+    FOREIGN KEY(admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+);
 CREATE INDEX IF NOT EXISTS idx_quota_events_open ON quota_events(acknowledged, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_asset_records_project_status ON asset_records(project_name, status);
 CREATE INDEX IF NOT EXISTS idx_asset_records_asset_id ON asset_records(project_name, asset_id);
 CREATE INDEX IF NOT EXISTS idx_asset_records_cleanup ON asset_records(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_admin_users_status ON admin_users(status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_single_super
+    ON admin_users(role) WHERE role='super_admin';
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_user_active
+    ON admin_sessions(admin_user_id, revoked_at, absolute_expires_at);
 """
 
 
@@ -180,6 +219,17 @@ class Database:
                 connection.execute("ALTER TABLE asset_records ADD COLUMN content_type TEXT")
             if "media_metadata_json" not in asset_columns:
                 connection.execute("ALTER TABLE asset_records ADD COLUMN media_metadata_json TEXT")
+            audit_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(admin_audit_logs)").fetchall()
+            }
+            if "actor_id" not in audit_columns:
+                connection.execute("ALTER TABLE admin_audit_logs ADD COLUMN actor_id TEXT")
+            if "outcome" not in audit_columns:
+                connection.execute(
+                    "ALTER TABLE admin_audit_logs ADD COLUMN outcome TEXT NOT NULL DEFAULT 'success'"
+                )
+            if "user_agent" not in audit_columns:
+                connection.execute("ALTER TABLE admin_audit_logs ADD COLUMN user_agent TEXT")
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations
@@ -212,6 +262,44 @@ class Database:
             raise
         finally:
             connection.close()
+
+    def write_admin_audit(
+        self,
+        *,
+        actor: str,
+        actor_id: str | None,
+        source_ip: str | None,
+        user_agent: str | None,
+        action: str,
+        target_type: str,
+        target_id: str,
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
+        outcome: str = "success",
+        connection: sqlite3.Connection | None = None,
+    ) -> None:
+        parameters = (
+            actor,
+            actor_id,
+            source_ip,
+            (user_agent or "")[:512] or None,
+            action,
+            target_type,
+            target_id,
+            json.dumps(before, ensure_ascii=False, separators=(",", ":")) if before is not None else None,
+            json.dumps(after, ensure_ascii=False, separators=(",", ":")) if after is not None else None,
+            outcome,
+        )
+        sql = (
+            "INSERT INTO admin_audit_logs "
+            "(actor,actor_id,source_ip,user_agent,action,target_type,target_id,before_json,after_json,outcome) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)"
+        )
+        if connection is not None:
+            connection.execute(sql, parameters)
+            return
+        with self.connect() as owned_connection:
+            owned_connection.execute(sql, parameters)
 
     @staticmethod
     def _dict(row: sqlite3.Row | None) -> dict[str, Any] | None:

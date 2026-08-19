@@ -5,11 +5,12 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .admin_auth import AdminAuthService
 from .config import Settings, get_settings
 from .database import Database
 from .errors import install_error_handlers
 from .quota import QuotaManager
-from .routers import assets, auth, internal, video
+from .routers import admin, assets, auth, internal, video
 from .seedance import SeedanceClient
 from .storage import TosStorage
 from .volcengine import VolcengineClient
@@ -25,6 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         volcengine = VolcengineClient(resolved, database)
         app.state.settings = resolved
         app.state.database = database
+        app.state.admin_auth = AdminAuthService(database, resolved)
         app.state.quota = QuotaManager(database)
         app.state.volcengine = volcengine
         app.state.seedance = SeedanceClient(resolved, database)
@@ -51,12 +53,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=resolved.allowed_origins,
         allow_origin_regex=resolved.cors_origin_regex or None,
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Admin-Token", "X-Ark-Api-Key"],
+        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "X-Ark-Api-Key"],
         expose_headers=["X-Upstream-Service", "Retry-After"],
     )
     install_error_handlers(app)
+    app.include_router(admin.router)
     app.include_router(auth.router)
     app.include_router(internal.router)
     app.include_router(assets.router)

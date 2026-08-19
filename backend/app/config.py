@@ -20,7 +20,15 @@ class Settings(BaseSettings):
     tos_public_base_url: str = ""
     upload_max_bytes: int = Field(default=200 * 1024 * 1024, gt=0, le=512 * 1024 * 1024)
     ffprobe_path: str = "ffprobe"
-    console_admin_token: str = ""
+    admin_cookie_secure: bool = True
+    admin_session_idle_seconds: int = Field(default=30 * 60, ge=60, le=24 * 60 * 60)
+    admin_session_absolute_seconds: int = Field(default=12 * 60 * 60, ge=300, le=7 * 24 * 60 * 60)
+    admin_login_window_seconds: int = Field(default=15 * 60, ge=60, le=24 * 60 * 60)
+    admin_login_lock_seconds: int = Field(default=15 * 60, ge=60, le=24 * 60 * 60)
+    admin_login_max_failures: int = Field(default=5, ge=2, le=20)
+    admin_argon2_time_cost: int = Field(default=3, ge=1, le=10)
+    admin_argon2_memory_cost: int = Field(default=65536, ge=8192, le=262144)
+    admin_argon2_parallelism: int = Field(default=4, ge=1, le=16)
     database_path: Path = Path("./data/avatar_proxy.db")
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,"
