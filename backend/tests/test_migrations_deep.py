@@ -115,6 +115,7 @@ def test_real_legacy_schema_upgrades_idempotently_and_preserves_rows(tmp_path: P
         "admin_recovery_codes",
         "admin_security_alerts",
         "admin_backup_runs",
+        "admin_restore_runs",
     } <= tables
     assert key["project_name"] == "default"
     assert key["status"] == "disabled"

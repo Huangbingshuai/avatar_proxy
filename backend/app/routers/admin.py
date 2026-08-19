@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Query, Request, Response, status
 
 from ..admin_auth import AdminPrincipal
+from ..backup import RESTORE_CONFIRMATION
 from ..errors import ApiError
 from ..schemas import (
     AdminLogin,
+    AdminDatabaseRestore,
     AdminPasswordChange,
     AdminSecurityAlertAck,
     AdminSensitiveAction,
@@ -193,8 +195,23 @@ def backup_status(request: Request, principal: AdminDependency) -> dict:
     return request.app.state.backup.status()
 
 
+@router.get("/admin/backups")
+def list_backups(request: Request, principal: AdminDependency) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    return {
+        "backups": request.app.state.backup.list_backups(),
+        "lastRestore": request.app.state.backup.status().get("lastRestore"),
+    }
+
+
+@router.post("/admin/backups/{backup_id}/validate")
+def validate_backup(backup_id: str, request: Request, principal: AdminDependency) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    return {"backup": request.app.state.backup.validate_backup(backup_id)}
+
+
 @router.post("/admin/backups/run")
-def run_backup(payload: AdminSensitiveAction, request: Request, principal: AdminDependency) -> dict:
+async def run_backup(payload: AdminSensitiveAction, request: Request, principal: AdminDependency) -> dict:
     request.app.state.admin_auth.require_super_admin(principal)
     request.app.state.admin_auth.verify_reauthentication(
         principal,
@@ -203,7 +220,41 @@ def run_backup(payload: AdminSensitiveAction, request: Request, principal: Admin
         _user_agent(request),
         "admin.backup.run",
     )
-    return request.app.state.backup.run_backup()
+    return await request.app.state.backup.run_manual_backup()
+
+
+@router.post("/admin/backups/{backup_id}/restore")
+async def restore_backup(
+    backup_id: str,
+    payload: AdminDatabaseRestore,
+    request: Request,
+    response: Response,
+    principal: AdminDependency,
+) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    if payload.confirmation != RESTORE_CONFIRMATION:
+        raise ApiError("请输入“恢复数据库”确认高风险操作", 422, "admin_restore_confirmation_invalid")
+    request.app.state.admin_auth.verify_reauthentication(
+        principal,
+        payload.current_password,
+        _request_ip(request),
+        _user_agent(request),
+        "admin.database.restore",
+    )
+    request.app.state.admin_auth.verify_sensitive_totp(
+        principal,
+        payload.totp_code,
+        _request_ip(request),
+        _user_agent(request),
+        "admin.database.restore",
+    )
+    result = await request.app.state.backup.restore_backup(
+        backup_id,
+        actor=principal.username,
+        source_ip=_request_ip(request),
+    )
+    _clear_auth_cookies(response, request)
+    return result
 
 
 @router.post("/admin/users", status_code=status.HTTP_201_CREATED)

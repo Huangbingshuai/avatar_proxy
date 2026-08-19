@@ -83,7 +83,7 @@ TOS 上传成功后创建 `uploaded_pending` 记录，并在原响应中新增 `
 - `quota_events`：阈值告警、限流拒绝和确认状态；
 - `admin_audit_logs`：真实管理员 ID/用户名、操作结果、配置变更前后值、来源 IP、User-Agent 和时间；
 - `admin_users`、`admin_sessions`、`admin_recovery_codes`：两级管理员账号、Argon2id 密码哈希、加密 TOTP 密钥、单次恢复码哈希和服务端会话。IP 只用于审计和会话追溯，不参与登录限制、白名单或权限判断。
-- `admin_security_alerts`、`admin_backup_runs`：醒目安全告警，以及 SQLite/管理员审计自动备份执行记录。
+- `admin_security_alerts`、`admin_backup_runs`、`admin_restore_runs`：醒目安全告警，以及 SQLite/管理员审计自动备份和数据库恢复执行记录。
 
 新增内部管理接口：
 
@@ -98,6 +98,8 @@ POST /api/internal/quota/event/ack
 ```
 
 所有 `/api/internal/*` 接口使用服务端 Session Cookie 鉴权；POST、PUT、DELETE 额外校验 `X-CSRF-Token`，不再接受 `X-Admin-Token`。系统只保留一个由服务器 CLI 初始化的 `super_admin`，强制使用 TOTP，且只能管理管理员账号、会话、告警和备份；删除、重置、启停账号和手工备份必须再次校验超管密码。控制台创建的普通 `admin` 负责项目、API Key、额度和调试功能，但不能访问安全管理。超级管理员登录、密码修改和管理员删除产生安全告警；审计记录真实操作人，来源 IP 仅供追溯。SQLite 与管理员审计 JSONL 按配置定期生成一致性备份。
+
+数据库恢复只允许选择服务器生成的备份，不接收前端上传文件。恢复前必须通过 SQLite 完整性、所需表、唯一启用超管和 TOTP 加密主密钥兼容性校验，并再次验证超管密码、未复用的 TOTP 和确认短语。恢复期间单实例进入维护模式并排空在途操作，先创建回滚快照；失败自动回滚，成功撤销全部会话，整个过程写入审计和 Critical 告警。多实例恢复不在第一期自动化范围内。
 
 ## 5. 控制台
 

@@ -285,6 +285,41 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .backupSummary small { color: var(--muted); font-size: 9px; }
 .backupSummary b { margin-top: 5px; color: #355246; font-size: 12px; }
 .backupSummary b.failed { color: #b84739; }
+.restoreSectionHead { padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid #efeee9; background: #fffaf7; }
+.restoreSectionHead > div { display: flex; align-items: center; gap: 10px; }
+.restoreSectionHead > div > span { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 11px; color: #a54839; background: #fff0ec; }
+.restoreSectionHead b, .restoreSectionHead small { display: block; }
+.restoreSectionHead b { color: #593a32; font-size: 12px; }
+.restoreSectionHead small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.restoreSectionHead > i { color: var(--muted); font-size: 9px; font-style: normal; }
+.restoreSectionHead > i.success { color: #2f7357; }
+.restoreSectionHead > i.failed { color: #b84739; }
+.backupList { display: grid; border-top: 1px solid #efeee9; }
+.backupItem { min-height: 68px; padding: 11px 20px; display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 12px; border-bottom: 1px solid #efeee9; background: #fff; }
+.backupItem:last-child { border-bottom: 0; }
+.backupFileIcon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #8d6d62; background: #f6f1ed; }
+.backupFileIcon.verified { color: #2f7357; background: #e7f4ed; }
+.backupIdentity b, .backupIdentity small, .backupIdentity em { display: block; }
+.backupIdentity b { color: #3f4c45; font-size: 11px; }
+.backupIdentity small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.backupIdentity em { margin-top: 4px; color: #557064; font-size: 9px; font-style: normal; }
+.backupVerifyState { padding: 5px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; }
+.backupVerifyState.pending { color: #7b675a; background: #f3eee9; }
+.backupVerifyState.ok { color: #2f7357; background: #e3f4eb; }
+.backupVerifyState.failed { color: #ad493a; background: #fff0ed; }
+.backupActions { display: flex; gap: 6px; }
+.backupActions button { min-height: 31px; padding: 0 9px; font-size: 9px; }
+.restoreModal { width: min(620px, 100%); }
+.dangerEyebrow { margin: 0 0 4px; color: #c5483a; font-size: 9px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.restoreWarning { padding: 14px; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 11px; border: 1px solid #efb1a5; border-radius: 14px; color: #833d32; background: #fff0ec; }
+.restoreWarning > svg { margin-top: 2px; }
+.restoreWarning b { font-size: 12px; }
+.restoreWarning p { margin: 4px 0 0; font-size: 10px; line-height: 1.65; }
+.restoreTargetSummary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.restoreTargetSummary span { padding: 11px; border-radius: 11px; background: #f6f5ef; }
+.restoreTargetSummary small, .restoreTargetSummary b { display: block; }
+.restoreTargetSummary small { color: var(--muted); font-size: 8px; }
+.restoreTargetSummary b { margin-top: 5px; color: #425249; font-size: 10px; }
 .adminSection { overflow: hidden; }
 .adminTable .tableRow { min-width: 1050px; grid-template-columns: 1.25fr .75fr .65fr 1fr .8fr 1.55fr; }
 .roleBadge { width: fit-content; padding: 5px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; }
@@ -345,4 +380,8 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .quotaMeters, .quotaFieldGrid { grid-template-columns: 1fr; }
   .quotaSelector { grid-template-columns: 1fr; }
   .quotaSelector > div { text-align: left; }
+  .backupSummary, .restoreTargetSummary { grid-template-columns: 1fr; }
+  .restoreSectionHead { align-items: flex-start; flex-direction: column; }
+  .backupItem { grid-template-columns: auto minmax(0,1fr); }
+  .backupVerifyState, .backupActions { grid-column: 2; }
 }

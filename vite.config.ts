@@ -45,6 +45,7 @@ export default defineConfig(async () => {
 
   return {
     server: {
+      host: process.env.CONSOLE_DEV_HOST ?? "127.0.0.1",
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
       proxy: {
         "/api": {

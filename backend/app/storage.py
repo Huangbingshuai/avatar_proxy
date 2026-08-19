@@ -20,6 +20,7 @@ from pillow_heif import register_heif_opener
 from .config import Settings
 from .database import Database
 from .errors import ApiError
+from .maintenance import MaintenanceGate
 from .quota import QuotaManager
 from .security import ApiPrincipal
 
@@ -269,10 +270,17 @@ def _copy_upload_to_path(source: Any, destination: Path, maximum: int) -> int:
 
 
 class TosStorage:
-    def __init__(self, settings: Settings, database: Database, quota: QuotaManager) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        database: Database,
+        quota: QuotaManager,
+        maintenance_gate: MaintenanceGate | None = None,
+    ) -> None:
         self.settings = settings
         self.database = database
         self.quota = quota
+        self.maintenance_gate = maintenance_gate
 
     def _client(self) -> tos.TosClientV2:
         settings = self.settings
@@ -456,7 +464,11 @@ class TosStorage:
     async def maintenance_loop(self) -> None:
         while True:
             try:
-                await self.cleanup_once()
+                if self.maintenance_gate:
+                    async with self.maintenance_gate.background_activity():
+                        await self.cleanup_once()
+                else:
+                    await self.cleanup_once()
             except asyncio.CancelledError:
                 raise
             except Exception:

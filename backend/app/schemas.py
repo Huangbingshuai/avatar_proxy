@@ -49,6 +49,12 @@ class AdminSecurityAlertAck(ApiModel):
     alert_id: int = Field(ge=1)
 
 
+class AdminDatabaseRestore(ApiModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    totp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    confirmation: str = Field(min_length=1, max_length=32)
+
+
 class ProjectCreate(ApiModel):
     name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
     display_name: str | None = Field(default=None, min_length=1, max_length=64)
