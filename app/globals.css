@@ -253,6 +253,9 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .modalActions button:disabled { cursor: not-allowed; opacity: .62; }
 .secretBox p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .secretBox > code { padding: 15px; border: 1px dashed #d89a89; border-radius: 9px; background: var(--coral-soft); color: #8d3e32; overflow-wrap: anywhere; font-size: 12px; }
+.credentialModal { width: min(560px, 100%); }
+.credentialDeliveryText { width: 100%; min-height: 210px; padding: 16px; resize: vertical; border: 1px dashed #d89a89; border-radius: 12px; outline: none; background: var(--coral-soft); color: #5d382f; font: 12px/1.75 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; }
+.credentialDeliveryText:focus { border-color: var(--coral); box-shadow: 0 0 0 3px rgba(240, 112, 91, .12); }
 .formError { padding: 10px 12px; border-radius: 8px; background: #fff0ed; color: #a53f32; font-size: 11px; }
 .adminConsole { display: grid; gap: 18px; }
 .adminConsole .pageIntro { margin-bottom: 0; }
