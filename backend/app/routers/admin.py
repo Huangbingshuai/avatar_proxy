@@ -2,7 +2,14 @@ from fastapi import APIRouter, Query, Request, Response, status
 
 from ..admin_auth import AdminPrincipal
 from ..errors import ApiError
-from ..schemas import AdminLogin, AdminPasswordChange, AdminUserCreate
+from ..schemas import (
+    AdminLogin,
+    AdminPasswordChange,
+    AdminSecurityAlertAck,
+    AdminSensitiveAction,
+    AdminTotpConfirm,
+    AdminUserCreate,
+)
 from ..security import AdminDependency, AdminSessionDependency
 
 
@@ -69,6 +76,8 @@ def login(payload: AdminLogin, request: Request, response: Response) -> dict:
         payload.password,
         _request_ip(request),
         _user_agent(request),
+        payload.totp_code,
+        payload.recovery_code,
     )
     _set_auth_cookies(response, request, session_token, csrf_token)
     return {"user": user, "session": session, "csrfToken": csrf_token}
@@ -110,6 +119,21 @@ def change_password(
     return {"changed": True, "requiresLogin": True}
 
 
+@router.post("/auth/totp/setup")
+def setup_totp(request: Request, principal: AdminSessionDependency) -> dict:
+    return request.app.state.admin_auth.begin_totp_setup(
+        principal, _request_ip(request), _user_agent(request)
+    )
+
+
+@router.post("/auth/totp/confirm")
+def confirm_totp(payload: AdminTotpConfirm, request: Request, principal: AdminSessionDependency) -> dict:
+    recovery_codes = request.app.state.admin_auth.confirm_totp_setup(
+        principal, payload.code, _request_ip(request), _user_agent(request)
+    )
+    return {"enabled": True, "mfaVerified": True, "recoveryCodes": recovery_codes}
+
+
 @router.get("/auth/sessions")
 def sessions(request: Request, principal: AdminDependency) -> dict:
     return {"sessions": request.app.state.admin_auth.list_sessions(principal)}
@@ -147,12 +171,48 @@ def list_admin_audits(
     return {"audits": request.app.state.admin_auth.list_audits(principal, limit)}
 
 
+@router.get("/admin/security-alerts")
+def list_security_alerts(
+    request: Request,
+    principal: AdminDependency,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict:
+    return {"alerts": request.app.state.admin_auth.list_security_alerts(principal, limit)}
+
+
+@router.post("/admin/security-alerts/ack")
+def acknowledge_security_alert(
+    payload: AdminSecurityAlertAck, request: Request, principal: AdminDependency
+) -> dict:
+    return {"alert": request.app.state.admin_auth.acknowledge_security_alert(principal, payload.alert_id)}
+
+
+@router.get("/admin/backups/status")
+def backup_status(request: Request, principal: AdminDependency) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    return request.app.state.backup.status()
+
+
+@router.post("/admin/backups/run")
+def run_backup(payload: AdminSensitiveAction, request: Request, principal: AdminDependency) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    request.app.state.admin_auth.verify_reauthentication(
+        principal,
+        payload.current_password,
+        _request_ip(request),
+        _user_agent(request),
+        "admin.backup.run",
+    )
+    return request.app.state.backup.run_backup()
+
+
 @router.post("/admin/users", status_code=status.HTTP_201_CREATED)
 def create_admin_user(payload: AdminUserCreate, request: Request, principal: AdminDependency) -> dict:
     user, initial_password = request.app.state.admin_auth.create_admin(
         principal,
         payload.username,
         payload.display_name,
+        payload.current_password,
         _request_ip(request),
         _user_agent(request),
     )
@@ -160,11 +220,14 @@ def create_admin_user(payload: AdminUserCreate, request: Request, principal: Adm
 
 
 @router.put("/admin/users/{user_id}/disable")
-def disable_admin_user(user_id: str, request: Request, principal: AdminDependency) -> dict:
+def disable_admin_user(
+    user_id: str, payload: AdminSensitiveAction, request: Request, principal: AdminDependency
+) -> dict:
     user = request.app.state.admin_auth.set_user_enabled(
         principal,
         user_id,
         enabled=False,
+        current_password=payload.current_password,
         source_ip=_request_ip(request),
         user_agent=_user_agent(request),
     )
@@ -172,11 +235,14 @@ def disable_admin_user(user_id: str, request: Request, principal: AdminDependenc
 
 
 @router.put("/admin/users/{user_id}/enable")
-def enable_admin_user(user_id: str, request: Request, principal: AdminDependency) -> dict:
+def enable_admin_user(
+    user_id: str, payload: AdminSensitiveAction, request: Request, principal: AdminDependency
+) -> dict:
     user = request.app.state.admin_auth.set_user_enabled(
         principal,
         user_id,
         enabled=True,
+        current_password=payload.current_password,
         source_ip=_request_ip(request),
         user_agent=_user_agent(request),
     )
@@ -184,10 +250,13 @@ def enable_admin_user(user_id: str, request: Request, principal: AdminDependency
 
 
 @router.delete("/admin/users/{user_id}")
-def delete_admin_user(user_id: str, request: Request, principal: AdminDependency) -> dict:
+def delete_admin_user(
+    user_id: str, payload: AdminSensitiveAction, request: Request, principal: AdminDependency
+) -> dict:
     user = request.app.state.admin_auth.delete_admin(
         principal,
         user_id,
+        payload.current_password,
         _request_ip(request),
         _user_agent(request),
     )
@@ -195,10 +264,13 @@ def delete_admin_user(user_id: str, request: Request, principal: AdminDependency
 
 
 @router.post("/admin/users/{user_id}/reset-password")
-def reset_admin_password(user_id: str, request: Request, principal: AdminDependency) -> dict:
+def reset_admin_password(
+    user_id: str, payload: AdminSensitiveAction, request: Request, principal: AdminDependency
+) -> dict:
     user, initial_password = request.app.state.admin_auth.reset_password(
         principal,
         user_id,
+        payload.current_password,
         _request_ip(request),
         _user_agent(request),
     )

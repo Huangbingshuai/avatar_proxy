@@ -110,6 +110,11 @@ def test_real_legacy_schema_upgrades_idempotently_and_preserves_rows(tmp_path: P
         "asset_records",
         "quota_events",
         "admin_audit_logs",
+        "admin_users",
+        "admin_sessions",
+        "admin_recovery_codes",
+        "admin_security_alerts",
+        "admin_backup_runs",
     } <= tables
     assert key["project_name"] == "default"
     assert key["status"] == "disabled"

@@ -58,7 +58,11 @@ ENABLE_API_DOCS=false
 .\.venv\Scripts\python.exe -m app.admin_cli create --username admin --display-name "系统管理员"
 ```
 
-首次登录后必须立即修改初始密码。系统只保留一个由 CLI 初始化的 `super_admin`，可以管理管理员账号；控制台中新建的账号固定为普通 `admin`，可以使用项目、API Key、额度和调试等业务控制台，但不能查看或修改管理员账号。超级管理员密码遗失时，只能在服务器终端执行 `python -m app.admin_cli reset-password --username <用户名>` 恢复。
+首次登录后必须立即修改初始密码并绑定 TOTP 验证器，系统随后一次性显示 10 枚恢复码。TOTP 密钥加密后保存，恢复码只保存哈希且每枚只能使用一次。系统只保留一个由 CLI 初始化的 `super_admin`：它只能管理管理员账号、安全告警、会话和备份，不能访问项目、API Key、额度、素材或视频调试等日常业务；控制台中新建的账号固定为普通 `admin`，由普通管理员完成日常业务操作。
+
+删除管理员、重置密码、启停管理员和手工备份都要求超级管理员再次输入自己的当前密码。超级管理员登录、任何管理员修改密码以及管理员删除会产生醒目的安全告警，并写入审计。超级管理员密码遗失时使用 `python -m app.admin_cli reset-password --username <用户名>`；TOTP 设备和恢复码同时遗失时使用 `python -m app.admin_cli reset-totp --username <用户名>`，两种恢复都会撤销该账号全部旧会话。
+
+SQLite 和管理员审计日志默认每日自动备份一次，保留最近 30 组一致性快照；可通过 `ADMIN_BACKUP_*` 调整周期、数量和目录。若没有显式配置 `ADMIN_TOTP_ENCRYPTION_KEY`，还必须把 SQLite 同目录的 `admin_totp.key` 纳入服务器备份，否则数据库恢复后无法解密已经绑定的 TOTP 密钥。
 
 ## 本地启动内部控制台
 

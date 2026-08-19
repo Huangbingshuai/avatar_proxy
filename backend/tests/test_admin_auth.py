@@ -1,7 +1,10 @@
 import sqlite3
+import time
 from pathlib import Path
 
+import pyotp
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 import app.admin_cli as admin_cli
@@ -28,6 +31,19 @@ def login(client: TestClient, username: str, password: str) -> dict:
         "/api/internal/auth/login",
         json={"username": username, "password": password},
     )
+    if response.status_code == 401 and response.json()["error"]["code"] == "admin_totp_required":
+        with client.app.state.database.connect() as connection:
+            row = connection.execute(
+                "SELECT totp_secret_encrypted,totp_last_timecode FROM admin_users WHERE username_normalized=?",
+                (username.lower(),),
+            ).fetchone()
+        secret = client.app.state.admin_auth._decrypt_secret(row["totp_secret_encrypted"])
+        next_time = max(int(time.time()), (int(row["totp_last_timecode"] or 0) + 1) * 30)
+        client.app.state.admin_auth.clock = lambda: next_time
+        response = client.post(
+            "/api/internal/auth/login",
+            json={"username": username, "password": password, "totpCode": pyotp.TOTP(secret).at(next_time)},
+        )
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -51,7 +67,23 @@ def change_initial_password(client: TestClient, body: dict, password: str = CHAN
         json={"currentPassword": INITIAL_PASSWORD, "newPassword": password},
     )
     assert response.status_code == 200, response.text
-    return login(client, body["user"]["username"], password)
+    fresh = login(client, body["user"]["username"], password)
+    setup = client.post(
+        "/api/internal/auth/totp/setup",
+        headers={"X-CSRF-Token": fresh["csrfToken"]},
+    )
+    assert setup.status_code == 200, setup.text
+    secret = setup.json()["secret"]
+    now = int(client.app.state.admin_auth.clock())
+    confirmed = client.post(
+        "/api/internal/auth/totp/confirm",
+        headers={"X-CSRF-Token": fresh["csrfToken"]},
+        json={"code": pyotp.TOTP(secret).at(now)},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    me = client.get("/api/internal/auth/me")
+    assert me.status_code == 200, me.text
+    return me.json()
 
 
 def test_login_uses_hashed_credentials_and_secure_cookie_contract(tmp_path: Path) -> None:
@@ -108,7 +140,20 @@ def test_first_login_requires_password_change_and_revokes_old_session(tmp_path: 
 
         fresh = login(client, "owner", CHANGED_PASSWORD)
         assert fresh["user"]["mustChangePassword"] is False
-        assert client.get("/api/internal/project/list").status_code == 200
+        setup = client.post(
+            "/api/internal/auth/totp/setup",
+            headers={"X-CSRF-Token": fresh["csrfToken"]},
+        ).json()
+        confirmed = client.post(
+            "/api/internal/auth/totp/confirm",
+            headers={"X-CSRF-Token": fresh["csrfToken"]},
+            json={"code": pyotp.TOTP(setup["secret"]).at(int(app.state.admin_auth.clock()))},
+        )
+        assert confirmed.status_code == 200
+        business = client.get("/api/internal/project/list")
+        assert business.status_code == 403
+        assert business.json()["error"]["code"] == "super_admin_security_only"
+        assert client.get("/api/internal/admin/users").status_code == 200
 
 
 def test_csrf_is_required_and_legacy_admin_token_is_rejected(tmp_path: Path) -> None:
@@ -119,17 +164,17 @@ def test_csrf_is_required_and_legacy_admin_token_is_rejected(tmp_path: Path) -> 
 
         missing = client.post(
             "/api/internal/admin/users",
-            json={"username": "worker", "displayName": "Worker"},
+            json={"username": "worker", "displayName": "Worker", "currentPassword": CHANGED_PASSWORD},
         )
         wrong = client.post(
             "/api/internal/admin/users",
             headers={"X-CSRF-Token": "wrong"},
-            json={"username": "worker", "displayName": "Worker"},
+            json={"username": "worker", "displayName": "Worker", "currentPassword": CHANGED_PASSWORD},
         )
         valid = client.post(
             "/api/internal/admin/users",
             headers={"X-CSRF-Token": body["csrfToken"]},
-            json={"username": "worker", "displayName": "Worker"},
+            json={"username": "worker", "displayName": "Worker", "currentPassword": CHANGED_PASSWORD},
         )
 
     assert missing.status_code == wrong.status_code == 403
@@ -173,7 +218,7 @@ def test_role_boundary_disable_and_reset_revoke_sessions(tmp_path: Path) -> None
         created = owner_client.post(
             "/api/internal/admin/users",
             headers={"X-CSRF-Token": owner["csrfToken"]},
-            json={"username": "worker", "displayName": "Worker"},
+            json={"username": "worker", "displayName": "Worker", "currentPassword": CHANGED_PASSWORD},
         ).json()
         worker_id = created["user"]["id"]
 
@@ -197,6 +242,7 @@ def test_role_boundary_disable_and_reset_revoke_sessions(tmp_path: Path) -> None
         disabled = owner_client.put(
             f"/api/internal/admin/users/{worker_id}/disable",
             headers={"X-CSRF-Token": owner["csrfToken"]},
+            json={"currentPassword": CHANGED_PASSWORD},
         )
         assert disabled.status_code == 200
         disabled_login = owner_client.post(
@@ -219,10 +265,12 @@ def test_role_boundary_disable_and_reset_revoke_sessions(tmp_path: Path) -> None
         self_reset = owner_client.post(
             f"/api/internal/admin/users/{owner['user']['id']}/reset-password",
             headers={"X-CSRF-Token": owner["csrfToken"]},
+            json={"currentPassword": CHANGED_PASSWORD},
         )
         self_disable = owner_client.put(
             f"/api/internal/admin/users/{owner['user']['id']}/disable",
             headers={"X-CSRF-Token": owner["csrfToken"]},
+            json={"currentPassword": CHANGED_PASSWORD},
         )
     assert self_reset.status_code == self_disable.status_code == 409
     assert self_reset.json()["error"]["code"] == "cannot_reset_self"
@@ -238,32 +286,33 @@ def test_super_admin_user_lifecycle_and_audit_routes(tmp_path: Path) -> None:
         created_response = client.post(
             "/api/internal/admin/users",
             headers=headers,
-            json={"username": "worker", "displayName": "Worker"},
+            json={"username": "worker", "displayName": "Worker", "currentPassword": CHANGED_PASSWORD},
         )
         created = created_response.json()
         worker_id = created["user"]["id"]
         duplicate = client.post(
             "/api/internal/admin/users",
             headers=headers,
-            json={"username": "WORKER", "displayName": "Duplicate"},
+            json={"username": "WORKER", "displayName": "Duplicate", "currentPassword": CHANGED_PASSWORD},
         )
-        active_delete = client.delete(f"/api/internal/admin/users/{worker_id}", headers=headers)
-        disabled = client.put(f"/api/internal/admin/users/{worker_id}/disable", headers=headers)
-        enabled = client.put(f"/api/internal/admin/users/{worker_id}/enable", headers=headers)
-        reset = client.post(f"/api/internal/admin/users/{worker_id}/reset-password", headers=headers)
-        disabled_again = client.put(f"/api/internal/admin/users/{worker_id}/disable", headers=headers)
-        deleted = client.delete(f"/api/internal/admin/users/{worker_id}", headers=headers)
+        sensitive = {"currentPassword": CHANGED_PASSWORD}
+        active_delete = client.request("DELETE", f"/api/internal/admin/users/{worker_id}", headers=headers, json=sensitive)
+        disabled = client.put(f"/api/internal/admin/users/{worker_id}/disable", headers=headers, json=sensitive)
+        enabled = client.put(f"/api/internal/admin/users/{worker_id}/enable", headers=headers, json=sensitive)
+        reset = client.post(f"/api/internal/admin/users/{worker_id}/reset-password", headers=headers, json=sensitive)
+        disabled_again = client.put(f"/api/internal/admin/users/{worker_id}/disable", headers=headers, json=sensitive)
+        deleted = client.request("DELETE", f"/api/internal/admin/users/{worker_id}", headers=headers, json=sensitive)
         users = client.get("/api/internal/admin/users")
         audits = client.get("/api/internal/admin/audits", params={"limit": 200})
         missing_enable = client.put(
-            "/api/internal/admin/users/missing/enable", headers=headers
+            "/api/internal/admin/users/missing/enable", headers=headers, json=sensitive
         )
         missing_reset = client.post(
-            "/api/internal/admin/users/missing/reset-password", headers=headers
+            "/api/internal/admin/users/missing/reset-password", headers=headers, json=sensitive
         )
-        missing_delete = client.delete("/api/internal/admin/users/missing", headers=headers)
-        self_delete = client.delete(
-            f"/api/internal/admin/users/{owner['user']['id']}", headers=headers
+        missing_delete = client.request("DELETE", "/api/internal/admin/users/missing", headers=headers, json=sensitive)
+        self_delete = client.request(
+            "DELETE", f"/api/internal/admin/users/{owner['user']['id']}", headers=headers, json=sensitive
         )
 
     assert created_response.status_code == 201
@@ -458,11 +507,31 @@ def test_admin_schema_upgrade_is_idempotent_and_preserves_legacy_audits(tmp_path
             row["name"] for row in upgraded.execute("PRAGMA table_info(admin_audit_logs)").fetchall()
         }
         legacy = upgraded.execute("SELECT * FROM admin_audit_logs WHERE target_id='legacy'").fetchone()
-    assert {"admin_users", "admin_sessions"} <= tables
+    assert {
+        "admin_users",
+        "admin_sessions",
+        "admin_recovery_codes",
+        "admin_security_alerts",
+        "admin_backup_runs",
+    } <= tables
     assert "admin_ip_login_throttles" not in tables
     assert {"actor_id", "outcome", "user_agent"} <= columns
     assert legacy["actor"] == "console-admin"
     assert legacy["outcome"] == "success"
+    with database.connect() as upgraded:
+        user_columns = {
+            row["name"] for row in upgraded.execute("PRAGMA table_info(admin_users)").fetchall()
+        }
+        session_columns = {
+            row["name"] for row in upgraded.execute("PRAGMA table_info(admin_sessions)").fetchall()
+        }
+    assert {
+        "totp_secret_encrypted",
+        "totp_pending_secret_encrypted",
+        "totp_enabled_at",
+        "totp_last_timecode",
+    } <= user_columns
+    assert "mfa_verified" in session_columns
 
 
 def test_cli_bootstrap_is_unique_and_cli_reset_recovers_super_admin(tmp_path: Path) -> None:
@@ -501,6 +570,13 @@ def test_admin_cli_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cap
     assert "一次性初始密码" in capsys.readouterr().out
     assert admin_cli.main(["reset-password", "--username", "missing"]) == 1
     assert "不存在" in capsys.readouterr().err
+    assert admin_cli.main(["reset-totp", "--username", "owner"]) == 0
+    assert "TOTP二次验证已清除" in capsys.readouterr().out
+    assert admin_cli.main(["reset-totp", "--username", "missing"]) == 1
+    assert "不存在" in capsys.readouterr().err
+    assert admin_cli.main(["generate-totp-key"]) == 0
+    generated_key = capsys.readouterr().out.strip().encode("ascii")
+    Fernet(generated_key)
     assert admin_cli.main(["create", "--username", "x", "--display-name", "X"]) == 2
     assert "用户名" in capsys.readouterr().err
 

@@ -52,6 +52,18 @@ def require_admin(
 ) -> AdminPrincipal:
     if principal.must_change_password:
         raise ApiError("首次登录必须先修改密码", 403, "password_change_required")
+    if principal.role == "super_admin" and not principal.mfa_verified:
+        code = "totp_setup_required" if not principal.totp_enabled else "admin_totp_required"
+        message = "超级管理员必须先绑定TOTP二次验证" if not principal.totp_enabled else "超级管理员TOTP验证未完成"
+        raise ApiError(message, 403, code)
+    return principal
+
+
+def require_business_admin(
+    principal: Annotated[AdminPrincipal, Depends(require_admin)],
+) -> AdminPrincipal:
+    if principal.role == "super_admin":
+        raise ApiError("超级管理员仅用于账号与安全管理，请使用普通管理员处理日常业务", 403, "super_admin_security_only")
     return principal
 
 
@@ -80,4 +92,5 @@ async def require_api_key(
 
 AdminSessionDependency = Annotated[AdminPrincipal, Depends(require_admin_session)]
 AdminDependency = Annotated[AdminPrincipal, Depends(require_admin)]
+BusinessAdminDependency = Annotated[AdminPrincipal, Depends(require_business_admin)]
 PrincipalDependency = Annotated[ApiPrincipal, Depends(require_api_key)]

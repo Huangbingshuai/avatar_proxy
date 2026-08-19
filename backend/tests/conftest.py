@@ -58,6 +58,7 @@ def build_settings(database_path: Path, **overrides: object) -> Settings:
         "admin_argon2_time_cost": 1,
         "admin_argon2_memory_cost": 8192,
         "admin_argon2_parallelism": 1,
+        "admin_backup_enabled": False,
         "database_path": database_path,
         "cors_origins": "http://localhost:3000",
     }
@@ -84,6 +85,12 @@ def migrate_legacy_admin_test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
                     _, initial_password = self.app.state.admin_auth.create_initial_super_admin(
                         "test-admin", "Test Admin"
                     )
+                    # Legacy internal-route tests represent a daily business operator,
+                    # not the security-only super administrator.
+                    with self.app.state.database.connect() as connection:
+                        connection.execute(
+                            "UPDATE admin_users SET role='admin' WHERE username_normalized='test-admin'"
+                        )
                     login_password = initial_password
                 except ApiError as error:
                     if error.code != "initial_admin_exists":

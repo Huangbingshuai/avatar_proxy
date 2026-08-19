@@ -5,6 +5,9 @@ export type AdminUser = {
   role: "super_admin" | "admin";
   status: "active" | "disabled";
   mustChangePassword: boolean;
+  totpEnabled?: boolean;
+  mfaSetupRequired?: boolean;
+  mfaVerified?: boolean;
   createdAt: string;
   createdBy?: string | null;
   lastLoginAt?: string | null;
@@ -72,7 +75,12 @@ export async function requestAdminApi(path: string, init: RequestInit = {}, csrf
 }
 
 export function isSessionError(error: unknown) {
-  return error instanceof AdminApiError && error.status === 401;
+  return error instanceof AdminApiError && error.status === 401 && new Set([
+    "admin_session_required",
+    "invalid_admin_session",
+    "admin_session_expired",
+    "admin_user_disabled",
+  ]).has(error.code);
 }
 
 export function isPasswordChangeRequired(error: unknown) {

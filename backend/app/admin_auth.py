@@ -1,5 +1,8 @@
+import base64
 import hashlib
 import hmac
+import io
+import os
 import secrets
 import sqlite3
 import time
@@ -9,6 +12,9 @@ from typing import Any, Callable
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
+from cryptography.fernet import Fernet, InvalidToken
+import pyotp
+import qrcode
 
 from .config import Settings
 from .database import Database
@@ -24,6 +30,8 @@ class AdminPrincipal:
     session_id: str
     csrf_token: str
     must_change_password: bool
+    mfa_verified: bool
+    totp_enabled: bool
 
 
 def _sha256(value: str) -> str:
@@ -52,6 +60,45 @@ class AdminAuthService:
             parallelism=settings.admin_argon2_parallelism,
         )
         self._dummy_hash = self.password_hasher.hash(secrets.token_urlsafe(24))
+        self._fernet = self._load_fernet()
+
+    def _load_fernet(self) -> Fernet:
+        configured = self.settings.admin_totp_encryption_key
+        if configured is not None:
+            key = configured.get_secret_value().encode("ascii")
+        else:
+            key_path = self.database.path.parent / "admin_totp.key"
+            key_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                key = key_path.read_bytes().strip()
+            else:
+                key = Fernet.generate_key()
+                with os.fdopen(descriptor, "wb") as output:
+                    output.write(key + b"\n")
+        try:
+            return Fernet(key)
+        except (TypeError, ValueError) as error:
+            raise RuntimeError("ADMIN_TOTP_ENCRYPTION_KEY 不是有效的 Fernet 密钥") from error
+
+    def _encrypt_secret(self, secret: str) -> str:
+        return self._fernet.encrypt(secret.encode("ascii")).decode("ascii")
+
+    def _decrypt_secret(self, encrypted: str) -> str:
+        try:
+            return self._fernet.decrypt(encrypted.encode("ascii")).decode("ascii")
+        except (InvalidToken, ValueError) as error:
+            raise ApiError("TOTP密钥无法解密，请通过服务器CLI重置TOTP", 503, "admin_totp_key_unavailable") from error
+
+    def _verify_totp_timecode(self, secret: str, code: str, now: int) -> int | None:
+        totp = pyotp.TOTP(secret)
+        current_timecode = now // totp.interval
+        for offset in range(-self.settings.admin_totp_valid_window, self.settings.admin_totp_valid_window + 1):
+            candidate = current_timecode + offset
+            if candidate >= 0 and hmac.compare_digest(totp.at(candidate * totp.interval), code.strip()):
+                return candidate
+        return None
 
     @staticmethod
     def generate_initial_password() -> str:
@@ -78,6 +125,8 @@ class AdminAuthService:
             "lastLoginAt": row["last_login_at"],
             "lastLoginIp": row["last_login_ip"],
             "passwordChangedAt": row["password_changed_at"],
+            "totpEnabled": bool(row["totp_enabled_at"]),
+            "mfaSetupRequired": row["role"] == "super_admin" and not bool(row["totp_enabled_at"]),
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
         }
@@ -92,6 +141,7 @@ class AdminAuthService:
             "absoluteExpiresAt": int(row["absolute_expires_at"]),
             "sourceIp": row["source_ip"],
             "userAgent": row["user_agent"],
+            "mfaVerified": bool(row["mfa_verified"]),
         }
 
     def _audit(
@@ -121,6 +171,39 @@ class AdminAuthService:
             after=after,
             outcome=outcome,
             connection=connection,
+        )
+
+    def _alert(
+        self,
+        *,
+        event_type: str,
+        severity: str,
+        message: str,
+        actor: str,
+        actor_id: str | None,
+        source_ip: str | None,
+        target_type: str,
+        target_id: str,
+        details: dict[str, Any] | None = None,
+        connection: sqlite3.Connection,
+    ) -> None:
+        import json
+
+        connection.execute(
+            "INSERT INTO admin_security_alerts "
+            "(event_type,severity,message,actor_id,actor,source_ip,target_type,target_id,details_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                event_type,
+                severity,
+                message,
+                actor_id,
+                actor,
+                source_ip,
+                target_type,
+                target_id,
+                json.dumps(details, ensure_ascii=False, separators=(",", ":")) if details else None,
+            ),
         )
 
     def create_initial_super_admin(
@@ -163,10 +246,12 @@ class AdminAuthService:
         actor: AdminPrincipal,
         username: str,
         display_name: str,
+        current_password: str,
         source_ip: str | None,
         user_agent: str | None,
     ) -> tuple[dict[str, Any], str]:
         self.require_super_admin(actor)
+        self.verify_reauthentication(actor, current_password, source_ip, user_agent, "admin.user.create")
         normalized = _normalize_username(username)
         initial_password = self.generate_initial_password()
         self.validate_password(initial_password, normalized)
@@ -223,6 +308,9 @@ class AdminAuthService:
         source_ip: str | None,
         user_agent: str | None,
         now: int,
+        *,
+        message: str = "用户名或密码错误",
+        code: str = "invalid_admin_credentials",
     ) -> None:
         locked_until: int | None = None
         with self.database.connect() as connection:
@@ -256,7 +344,7 @@ class AdminAuthService:
             )
         if locked_until:
             self._raise_locked(locked_until, now)
-        raise ApiError("用户名或密码错误", 401, "invalid_admin_credentials")
+        raise ApiError(message, 401, code)
 
     def login(
         self,
@@ -264,6 +352,8 @@ class AdminAuthService:
         password: str,
         source_ip: str | None,
         user_agent: str | None,
+        totp_code: str | None = None,
+        recovery_code: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], str, str]:
         now = int(self.clock())
         normalized = _normalize_username(username)
@@ -305,6 +395,38 @@ class AdminAuthService:
                 403,
                 "admin_user_disabled",
             )
+        mfa_verified = row["role"] != "super_admin"
+        accepted_timecode: int | None = None
+        recovery_code_id: str | None = None
+        if row["role"] == "super_admin" and row["totp_enabled_at"]:
+            if not totp_code and not recovery_code:
+                raise ApiError("请输入验证器动态验证码或恢复码", 401, "admin_totp_required")
+            if recovery_code:
+                normalized_recovery = recovery_code.strip().upper()
+                with self.database.connect() as connection:
+                    recovery_row = connection.execute(
+                        "SELECT id FROM admin_recovery_codes "
+                        "WHERE admin_user_id=? AND code_hash=? AND used_at IS NULL",
+                        (row["id"], _sha256(normalized_recovery)),
+                    ).fetchone()
+                recovery_code_id = recovery_row["id"] if recovery_row else None
+                mfa_verified = recovery_code_id is not None
+            elif totp_code:
+                secret = self._decrypt_secret(row["totp_secret_encrypted"])
+                accepted = self._verify_totp_timecode(secret, totp_code, now)
+                if accepted is not None:
+                    accepted_timecode = accepted
+                    mfa_verified = True
+            if not mfa_verified:
+                self._record_login_failure(
+                    row["id"],
+                    username.strip(),
+                    source_ip,
+                    user_agent,
+                    now,
+                    message="动态验证码或恢复码错误",
+                    code="invalid_admin_totp",
+                )
         token = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         session_id = str(uuid.uuid4())
@@ -319,6 +441,22 @@ class AdminAuthService:
                 )
             if current["locked_until"] is not None and int(current["locked_until"]) > now:
                 self._raise_locked(int(current["locked_until"]), now)
+            if accepted_timecode is not None:
+                previous = current["totp_last_timecode"]
+                if previous is not None and accepted_timecode <= int(previous):
+                    raise ApiError("动态验证码已使用，请等待新验证码", 401, "admin_totp_replayed")
+                connection.execute(
+                    "UPDATE admin_users SET totp_last_timecode=? WHERE id=?",
+                    (accepted_timecode, current["id"]),
+                )
+            if recovery_code_id is not None:
+                cursor = connection.execute(
+                    "UPDATE admin_recovery_codes SET used_at=CURRENT_TIMESTAMP "
+                    "WHERE id=? AND admin_user_id=? AND used_at IS NULL",
+                    (recovery_code_id, current["id"]),
+                )
+                if cursor.rowcount != 1:
+                    raise ApiError("恢复码已使用，请使用其他恢复码", 401, "admin_recovery_code_used")
             password_hash = current["password_hash"]
             if self.password_hasher.check_needs_rehash(password_hash):
                 password_hash = self.password_hasher.hash(password)
@@ -330,8 +468,8 @@ class AdminAuthService:
             )
             connection.execute(
                 "INSERT INTO admin_sessions "
-                "(id,admin_user_id,token_hash,csrf_hash,created_at,last_seen_at,absolute_expires_at,source_ip,user_agent) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "(id,admin_user_id,token_hash,csrf_hash,created_at,last_seen_at,absolute_expires_at,source_ip,user_agent,mfa_verified) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     session_id,
                     current["id"],
@@ -342,6 +480,7 @@ class AdminAuthService:
                     now + self.settings.admin_session_absolute_seconds,
                     source_ip,
                     (user_agent or "")[:512] or None,
+                    int(mfa_verified),
                 ),
             )
             self._audit(
@@ -355,6 +494,19 @@ class AdminAuthService:
                 after={"result": "success"},
                 connection=connection,
             )
+            if current["role"] == "super_admin":
+                self._alert(
+                    event_type="super_admin_login",
+                    severity="critical",
+                    message="超级管理员账号已登录",
+                    actor=current["username"],
+                    actor_id=current["id"],
+                    source_ip=source_ip,
+                    target_type="admin_session",
+                    target_id=session_id,
+                    details={"mfaVerified": mfa_verified, "usedRecoveryCode": recovery_code_id is not None},
+                    connection=connection,
+                )
             updated = connection.execute("SELECT * FROM admin_users WHERE id=?", (current["id"],)).fetchone()
             session = connection.execute("SELECT * FROM admin_sessions WHERE id=?", (session_id,)).fetchone()
         return self._user_payload(updated), self._session_payload(session, session_id), token, csrf_token
@@ -373,7 +525,7 @@ class AdminAuthService:
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT s.*,u.username,u.display_name,u.role,u.status,u.must_change_password "
+                "SELECT s.*,u.username,u.display_name,u.role,u.status,u.must_change_password,u.totp_enabled_at "
                 "FROM admin_sessions s JOIN admin_users u ON u.id=s.admin_user_id "
                 "WHERE s.token_hash=?",
                 (_sha256(token),),
@@ -405,6 +557,8 @@ class AdminAuthService:
             session_id=row["id"],
             csrf_token=csrf_cookie,
             must_change_password=bool(row["must_change_password"]),
+            mfa_verified=bool(row["mfa_verified"]),
+            totp_enabled=bool(row["totp_enabled_at"]),
         )
 
     @staticmethod
@@ -416,12 +570,205 @@ class AdminAuthService:
             "role": principal.role,
             "status": "active",
             "mustChangePassword": principal.must_change_password,
+            "totpEnabled": principal.totp_enabled,
+            "mfaSetupRequired": principal.role == "super_admin" and not principal.totp_enabled,
+            "mfaVerified": principal.mfa_verified,
         }
 
     @staticmethod
     def require_super_admin(principal: AdminPrincipal) -> None:
         if principal.role != "super_admin":
             raise ApiError("只有超级管理员可以管理管理员账号", 403, "super_admin_required")
+
+    def verify_reauthentication(
+        self,
+        actor: AdminPrincipal,
+        current_password: str,
+        source_ip: str | None,
+        user_agent: str | None,
+        action: str,
+    ) -> None:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT password_hash FROM admin_users WHERE id=?", (actor.id,)).fetchone()
+        try:
+            valid = row is not None and self.password_hasher.verify(row["password_hash"], current_password)
+        except (VerifyMismatchError, VerificationError):
+            valid = False
+        if valid:
+            return
+        with self.database.connect() as connection:
+            self._audit(
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                action="admin.auth.reauthenticate",
+                target_type="sensitive_action",
+                target_id=action,
+                after={"result": "failed"},
+                outcome="failure",
+                connection=connection,
+            )
+        raise ApiError("超级管理员密码不正确", 401, "admin_reauthentication_failed")
+
+    def begin_totp_setup(self, actor: AdminPrincipal, source_ip: str | None, user_agent: str | None) -> dict[str, str]:
+        self.require_super_admin(actor)
+        if actor.must_change_password:
+            raise ApiError("首次登录必须先修改密码", 403, "password_change_required")
+        secret = pyotp.random_base32()
+        encrypted = self._encrypt_secret(secret)
+        totp = pyotp.TOTP(secret, name=actor.username, issuer=self.settings.admin_totp_issuer)
+        provisioning_uri = totp.provisioning_uri()
+        image = qrcode.make(provisioning_uri)
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        qr_data_url = "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT totp_enabled_at FROM admin_users WHERE id=?", (actor.id,)).fetchone()
+            if row is None:
+                raise ApiError("管理员不存在", 404, "admin_user_not_found")
+            if row["totp_enabled_at"]:
+                raise ApiError("TOTP二次验证已经启用", 409, "admin_totp_already_enabled")
+            connection.execute(
+                "UPDATE admin_users SET totp_pending_secret_encrypted=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (encrypted, actor.id),
+            )
+            self._audit(
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                action="admin.auth.totp_setup_started",
+                target_type="admin_user",
+                target_id=actor.id,
+                after={"issuer": self.settings.admin_totp_issuer},
+                connection=connection,
+            )
+        return {"secret": secret, "provisioningUri": provisioning_uri, "qrCodeDataUrl": qr_data_url}
+
+    @staticmethod
+    def _new_recovery_code() -> str:
+        compact = base64.b32encode(secrets.token_bytes(10)).decode("ascii").rstrip("=")
+        return "-".join(compact[index : index + 4] for index in range(0, len(compact), 4))
+
+    def confirm_totp_setup(
+        self,
+        actor: AdminPrincipal,
+        code: str,
+        source_ip: str | None,
+        user_agent: str | None,
+    ) -> list[str]:
+        self.require_super_admin(actor)
+        if actor.must_change_password:
+            raise ApiError("首次登录必须先修改密码", 403, "password_change_required")
+        now = int(self.clock())
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT totp_pending_secret_encrypted,totp_enabled_at FROM admin_users WHERE id=?",
+                (actor.id,),
+            ).fetchone()
+        if row is None:
+            raise ApiError("管理员不存在", 404, "admin_user_not_found")
+        if row["totp_enabled_at"]:
+            raise ApiError("TOTP二次验证已经启用", 409, "admin_totp_already_enabled")
+        if not row["totp_pending_secret_encrypted"]:
+            raise ApiError("请先开始TOTP绑定", 409, "admin_totp_setup_not_started")
+        secret = self._decrypt_secret(row["totp_pending_secret_encrypted"])
+        accepted = self._verify_totp_timecode(secret, code, now)
+        if accepted is None:
+            raise ApiError("动态验证码错误，请确认手机和服务器时间准确", 422, "invalid_admin_totp")
+        recovery_codes = [self._new_recovery_code() for _ in range(10)]
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT totp_pending_secret_encrypted,totp_enabled_at FROM admin_users WHERE id=?",
+                (actor.id,),
+            ).fetchone()
+            if current is None:
+                raise ApiError("管理员不存在", 404, "admin_user_not_found")
+            if current["totp_enabled_at"]:
+                raise ApiError("TOTP二次验证已经启用", 409, "admin_totp_already_enabled")
+            if not current["totp_pending_secret_encrypted"]:
+                raise ApiError("请先开始TOTP绑定", 409, "admin_totp_setup_not_started")
+            if not hmac.compare_digest(
+                str(current["totp_pending_secret_encrypted"]),
+                str(row["totp_pending_secret_encrypted"]),
+            ):
+                raise ApiError("TOTP绑定信息已更新，请使用最新二维码", 409, "admin_totp_setup_changed")
+            cursor = connection.execute(
+                "UPDATE admin_users SET totp_secret_encrypted=totp_pending_secret_encrypted,"
+                "totp_pending_secret_encrypted=NULL,totp_enabled_at=CURRENT_TIMESTAMP,totp_last_timecode=?,"
+                "updated_at=CURRENT_TIMESTAMP WHERE id=? AND totp_enabled_at IS NULL",
+                (int(accepted), actor.id),
+            )
+            if cursor.rowcount != 1:
+                raise ApiError("TOTP二次验证已经启用", 409, "admin_totp_already_enabled")
+            connection.execute("DELETE FROM admin_recovery_codes WHERE admin_user_id=?", (actor.id,))
+            connection.executemany(
+                "INSERT INTO admin_recovery_codes(id,admin_user_id,code_hash) VALUES (?,?,?)",
+                [(str(uuid.uuid4()), actor.id, _sha256(value.upper())) for value in recovery_codes],
+            )
+            connection.execute("UPDATE admin_sessions SET mfa_verified=1 WHERE id=?", (actor.session_id,))
+            self._audit(
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                action="admin.auth.totp_enabled",
+                target_type="admin_user",
+                target_id=actor.id,
+                after={"recoveryCodeCount": len(recovery_codes)},
+                connection=connection,
+            )
+            self._alert(
+                event_type="totp_enabled",
+                severity="warning",
+                message="超级管理员已启用TOTP二次验证",
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                target_type="admin_user",
+                target_id=actor.id,
+                connection=connection,
+            )
+        return recovery_codes
+
+    def list_security_alerts(self, actor: AdminPrincipal, limit: int = 100) -> list[dict[str, Any]]:
+        self.require_super_admin(actor)
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT id,event_type AS eventType,severity,message,actor,source_ip AS sourceIp,"
+                "target_type AS targetType,target_id AS targetId,details_json AS detailsJson,"
+                "acknowledged_at AS acknowledgedAt,acknowledged_by AS acknowledgedBy,created_at AS createdAt "
+                "FROM admin_security_alerts ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def acknowledge_security_alert(self, actor: AdminPrincipal, alert_id: int) -> dict[str, Any]:
+        self.require_super_admin(actor)
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "UPDATE admin_security_alerts SET acknowledged_at=COALESCE(acknowledged_at,CURRENT_TIMESTAMP),"
+                "acknowledged_by=COALESCE(acknowledged_by,?) WHERE id=?",
+                (actor.username, alert_id),
+            )
+            if cursor.rowcount != 1:
+                raise ApiError("安全告警不存在", 404, "admin_security_alert_not_found")
+            row = connection.execute("SELECT * FROM admin_security_alerts WHERE id=?", (alert_id,)).fetchone()
+            self._audit(
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=None,
+                user_agent=None,
+                action="admin.security_alert.acknowledge",
+                target_type="admin_security_alert",
+                target_id=str(alert_id),
+                connection=connection,
+            )
+        return dict(row)
 
     def list_users(self, actor: AdminPrincipal) -> list[dict[str, Any]]:
         self.require_super_admin(actor)
@@ -447,10 +794,18 @@ class AdminAuthService:
         user_id: str,
         *,
         enabled: bool,
+        current_password: str,
         source_ip: str | None,
         user_agent: str | None,
     ) -> dict[str, Any]:
         self.require_super_admin(actor)
+        self.verify_reauthentication(
+            actor,
+            current_password,
+            source_ip,
+            user_agent,
+            "admin.user.enable" if enabled else "admin.user.disable",
+        )
         if not enabled and actor.id == user_id:
             raise ApiError("不能禁用当前登录账号", 409, "cannot_disable_self")
         with self.database.connect() as connection:
@@ -491,10 +846,12 @@ class AdminAuthService:
         self,
         actor: AdminPrincipal,
         user_id: str,
+        current_password: str,
         source_ip: str | None,
         user_agent: str | None,
     ) -> tuple[dict[str, Any], str]:
         self.require_super_admin(actor)
+        self.verify_reauthentication(actor, current_password, source_ip, user_agent, "admin.user.reset_password")
         if actor.id == user_id:
             raise ApiError(
                 "超级管理员不能通过管理接口重置自身密码，请使用修改密码或服务器 CLI",
@@ -532,16 +889,30 @@ class AdminAuthService:
                 after={"mustChangePassword": True},
                 connection=connection,
             )
+            self._alert(
+                event_type="admin_password_reset",
+                severity="critical",
+                message=f"管理员账号 {row['username']} 的密码已被超级管理员重置",
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                target_type="admin_user",
+                target_id=user_id,
+                details={"username": row["username"]},
+                connection=connection,
+            )
         return self._user_payload(updated), initial_password
 
     def delete_admin(
         self,
         actor: AdminPrincipal,
         user_id: str,
+        current_password: str,
         source_ip: str | None,
         user_agent: str | None,
     ) -> dict[str, Any]:
         self.require_super_admin(actor)
+        self.verify_reauthentication(actor, current_password, source_ip, user_agent, "admin.user.delete")
         if actor.id == user_id:
             raise ApiError("不能删除当前登录账号", 409, "cannot_delete_self")
         with self.database.connect() as connection:
@@ -573,6 +944,18 @@ class AdminAuthService:
                     "status": row["status"],
                 },
                 after={"deleted": True},
+                connection=connection,
+            )
+            self._alert(
+                event_type="admin_deleted",
+                severity="critical",
+                message=f"管理员账号 {row['username']} 已被永久删除",
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                target_type="admin_user",
+                target_id=user_id,
+                details={"username": row["username"]},
                 connection=connection,
             )
         return deleted
@@ -614,6 +997,43 @@ class AdminAuthService:
             )
         return self._user_payload(updated), initial_password
 
+    def reset_totp_from_cli(self, username: str) -> dict[str, Any]:
+        normalized = _normalize_username(username)
+        now = int(self.clock())
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM admin_users WHERE username_normalized=?", (normalized,)
+            ).fetchone()
+            if row is None:
+                raise ApiError("管理员不存在", 404, "admin_user_not_found")
+            if row["role"] != "super_admin":
+                raise ApiError("只有超级管理员使用TOTP二次验证", 409, "admin_totp_not_applicable")
+            connection.execute(
+                "UPDATE admin_users SET totp_secret_encrypted=NULL,totp_pending_secret_encrypted=NULL,"
+                "totp_enabled_at=NULL,totp_last_timecode=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (row["id"],),
+            )
+            connection.execute("DELETE FROM admin_recovery_codes WHERE admin_user_id=?", (row["id"],))
+            connection.execute(
+                "UPDATE admin_sessions SET revoked_at=?,revoke_reason='totp_reset_cli' "
+                "WHERE admin_user_id=? AND revoked_at IS NULL",
+                (now, row["id"]),
+            )
+            self._audit(
+                actor="admin-cli",
+                actor_id=None,
+                source_ip=None,
+                user_agent="admin-cli",
+                action="admin.auth.totp_reset",
+                target_type="admin_user",
+                target_id=row["id"],
+                after={"totpEnabled": False},
+                connection=connection,
+            )
+            updated = connection.execute("SELECT * FROM admin_users WHERE id=?", (row["id"],)).fetchone()
+        return self._user_payload(updated)
+
     def change_password(
         self,
         actor: AdminPrincipal,
@@ -651,6 +1071,17 @@ class AdminAuthService:
                 target_type="admin_user",
                 target_id=actor.id,
                 after={"mustChangePassword": False},
+                connection=connection,
+            )
+            self._alert(
+                event_type="admin_password_changed",
+                severity="critical" if actor.role == "super_admin" else "warning",
+                message=f"管理员账号 {actor.username} 已修改密码",
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                target_type="admin_user",
+                target_id=actor.id,
                 connection=connection,
             )
 

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     admin_argon2_time_cost: int = Field(default=3, ge=1, le=10)
     admin_argon2_memory_cost: int = Field(default=65536, ge=8192, le=262144)
     admin_argon2_parallelism: int = Field(default=4, ge=1, le=16)
+    admin_totp_issuer: str = Field(default="Avatar Proxy", min_length=1, max_length=64)
+    admin_totp_encryption_key: SecretStr | None = None
+    admin_totp_valid_window: int = Field(default=1, ge=0, le=2)
+    admin_backup_enabled: bool = True
+    admin_backup_interval_seconds: int = Field(default=24 * 60 * 60, ge=60, le=7 * 24 * 60 * 60)
+    admin_backup_retention: int = Field(default=30, ge=2, le=365)
+    admin_backup_directory: Path | None = None
     database_path: Path = Path("./data/avatar_proxy.db")
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,"

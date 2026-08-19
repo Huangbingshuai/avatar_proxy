@@ -169,6 +169,10 @@ CREATE TABLE IF NOT EXISTS admin_users (
     last_login_at TEXT,
     last_login_ip TEXT,
     password_changed_at TEXT,
+    totp_secret_encrypted TEXT,
+    totp_pending_secret_encrypted TEXT,
+    totp_enabled_at TEXT,
+    totp_last_timecode INTEGER,
     created_by_id TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -184,9 +188,44 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
     absolute_expires_at INTEGER NOT NULL,
     source_ip TEXT,
     user_agent TEXT,
+    mfa_verified INTEGER NOT NULL DEFAULT 0,
     revoked_at INTEGER,
     revoke_reason TEXT,
     FOREIGN KEY(admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS admin_recovery_codes (
+    id TEXT PRIMARY KEY,
+    admin_user_id TEXT NOT NULL,
+    code_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    used_at TEXT,
+    FOREIGN KEY(admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS admin_security_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK(severity IN ('info','warning','critical')),
+    message TEXT NOT NULL,
+    actor_id TEXT,
+    actor TEXT NOT NULL,
+    source_ip TEXT,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    details_json TEXT,
+    acknowledged_at TEXT,
+    acknowledged_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS admin_backup_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status TEXT NOT NULL CHECK(status IN ('running','success','failed')),
+    database_file TEXT,
+    audit_file TEXT,
+    database_bytes INTEGER,
+    audit_bytes INTEGER,
+    error TEXT,
+    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_quota_events_open ON quota_events(acknowledged, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_asset_records_project_status ON asset_records(project_name, status);
@@ -197,6 +236,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_single_super
     ON admin_users(role) WHERE role='super_admin';
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_user_active
     ON admin_sessions(admin_user_id, revoked_at, absolute_expires_at);
+CREATE INDEX IF NOT EXISTS idx_admin_recovery_codes_user
+    ON admin_recovery_codes(admin_user_id, used_at);
+CREATE INDEX IF NOT EXISTS idx_admin_security_alerts_open
+    ON admin_security_alerts(acknowledged_at, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_backup_runs_started
+    ON admin_backup_runs(started_at DESC);
 """
 
 
@@ -230,6 +275,24 @@ class Database:
                 )
             if "user_agent" not in audit_columns:
                 connection.execute("ALTER TABLE admin_audit_logs ADD COLUMN user_agent TEXT")
+            user_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(admin_users)").fetchall()
+            }
+            for column, definition in {
+                "totp_secret_encrypted": "TEXT",
+                "totp_pending_secret_encrypted": "TEXT",
+                "totp_enabled_at": "TEXT",
+                "totp_last_timecode": "INTEGER",
+            }.items():
+                if column not in user_columns:
+                    connection.execute(f"ALTER TABLE admin_users ADD COLUMN {column} {definition}")
+            session_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(admin_sessions)").fetchall()
+            }
+            if "mfa_verified" not in session_columns:
+                connection.execute(
+                    "ALTER TABLE admin_sessions ADD COLUMN mfa_verified INTEGER NOT NULL DEFAULT 0"
+                )
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations

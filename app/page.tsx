@@ -20,12 +20,13 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Smartphone,
   Trash2,
   UserRoundCog,
   Video,
   X,
 } from "lucide-react";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminPanel from "./admin-panel";
 import { AdminApiError, isPasswordChangeRequired, isSessionError, requestAdminApi, type AdminApi, type AdminUser } from "./admin-api";
@@ -118,7 +119,7 @@ type QuotaUsage = {
 };
 
 type Tab = "overview" | "projects" | "keys" | "quotas" | "playground" | "integration" | "admins";
-type AuthStatus = "checking" | "anonymous" | "password_change_required" | "authenticated";
+type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const DEFAULT_MODEL = "doubao-seedance-2-0-260128";
@@ -165,6 +166,11 @@ export default function ConsolePage() {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [mfaInput, setMfaInput] = useState("");
+  const [totpSetup, setTotpSetup] = useState<{ secret: string; qrCodeDataUrl: string } | null>(null);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [recoverySaved, setRecoverySaved] = useState(false);
+  const totpSetupRequested = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
@@ -183,7 +189,7 @@ export default function ConsolePage() {
   const [deletingProject, setDeletingProject] = useState(false);
 
   const tabs = useMemo(() => currentUser?.role === "super_admin"
-    ? [...baseTabs, { id: "admins" as Tab, label: "管理员", icon: UserRoundCog }]
+    ? [{ id: "admins" as Tab, label: "安全管理", icon: UserRoundCog }]
     : baseTabs, [currentUser?.role]);
 
   const clearSession = useCallback((message = "") => {
@@ -197,6 +203,12 @@ export default function ConsolePage() {
     setSecret("");
     setShowPasswordForm(false);
     setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    setMfaInput("");
+    setTotpSetup(null);
+    setRecoveryCodes([]);
+    setRecoverySaved(false);
+    totpSetupRequested.current = false;
+    setLoginForm((current) => ({ username: current.username, password: "" }));
     setTab("overview");
     setAuthMessage(message);
     setAuthStatus("anonymous");
@@ -213,6 +225,10 @@ export default function ConsolePage() {
   }, [clearSession, csrfToken]);
 
   const loadAll = useCallback(async () => {
+    if (currentUser?.role === "super_admin") {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -233,21 +249,29 @@ export default function ConsolePage() {
     } finally {
       setLoading(false);
     }
-  }, [adminApi]);
+  }, [adminApi, currentUser?.role]);
+
+  const applyAuthenticatedUser = useCallback((user: AdminUser) => {
+    setCurrentUser(user);
+    if (user.role === "super_admin") setTab("admins");
+    else setTab("overview");
+    if (user.mustChangePassword) setAuthStatus("password_change_required");
+    else if (user.mfaSetupRequired) setAuthStatus("totp_setup_required");
+    else setAuthStatus("authenticated");
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     void requestAdminApi("/api/internal/auth/me").then((data) => {
       if (cancelled) return;
       const user = data.user as AdminUser;
-      setCurrentUser(user);
+      applyAuthenticatedUser(user);
       setCsrfToken(String(data.csrfToken ?? ""));
-      setAuthStatus(user.mustChangePassword ? "password_change_required" : "authenticated");
     }).catch((caught) => {
       if (!cancelled) clearSession(caught instanceof AdminApiError && caught.status !== 401 ? caught.message : "");
     });
     return () => { cancelled = true; };
-  }, [clearSession]);
+  }, [applyAuthenticatedUser, clearSession]);
 
   useEffect(() => {
     if (authStatus !== "authenticated") return;
@@ -255,20 +279,71 @@ export default function ConsolePage() {
     return () => window.clearTimeout(timer);
   }, [authStatus, loadAll]);
 
+  useEffect(() => {
+    if (authStatus !== "totp_setup_required" || !csrfToken || totpSetup) return;
+    let cancelled = false;
+    if (totpSetupRequested.current) return;
+    const timer = window.setTimeout(() => {
+      totpSetupRequested.current = true;
+      setLoading(true);
+      void requestAdminApi("/api/internal/auth/totp/setup", { method: "POST" }, csrfToken)
+        .then((data) => {
+          if (!cancelled) setTotpSetup({ secret: String(data.secret ?? ""), qrCodeDataUrl: String(data.qrCodeDataUrl ?? "") });
+        })
+        .catch((caught) => {
+          if (!cancelled) setAuthMessage(caught instanceof Error ? caught.message : "TOTP绑定初始化失败");
+        })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }, 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [authStatus, csrfToken, totpSetup]);
+
   async function login(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
     setAuthMessage("");
     try {
-      const data = await requestAdminApi("/api/internal/auth/login", { method: "POST", body: JSON.stringify(loginForm) });
+      const secondFactor = mfaInput.trim();
+      const data = await requestAdminApi("/api/internal/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          ...loginForm,
+          ...(secondFactor ? /^\d{6}$/.test(secondFactor) ? { totpCode: secondFactor } : { recoveryCode: secondFactor } : {}),
+        }),
+      });
       const user = data.user as AdminUser;
-      setCurrentUser(user);
       setCsrfToken(String(data.csrfToken ?? ""));
+      setMfaInput("");
       setLoginForm((current) => ({ username: current.username, password: "" }));
-      setAuthStatus(user.mustChangePassword ? "password_change_required" : "authenticated");
+      applyAuthenticatedUser(user);
     } catch (caught) {
-      if (caught instanceof AdminApiError && caught.retryAfter) setAuthMessage(`${caught.message}，请在 ${caught.retryAfter} 秒后重试`);
+      if (caught instanceof AdminApiError && caught.code === "admin_totp_required") {
+        setAuthStatus("totp_required");
+        setAuthMessage("请输入验证器中的6位动态验证码，也可以使用一次性恢复码");
+      } else if (caught instanceof AdminApiError && caught.retryAfter) setAuthMessage(`${caught.message}，请在 ${caught.retryAfter} 秒后重试`);
       else setAuthMessage(caught instanceof Error ? caught.message : "登录失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmTotp(event: FormEvent) {
+    event.preventDefault();
+    setLoading(true);
+    setAuthMessage("");
+    try {
+      const data = await requestAdminApi(
+        "/api/internal/auth/totp/confirm",
+        { method: "POST", body: JSON.stringify({ code: mfaInput.trim() }) },
+        csrfToken,
+      );
+      setRecoveryCodes((data.recoveryCodes ?? []) as string[]);
+      setMfaInput("");
+      setRecoverySaved(false);
+      setCurrentUser((current) => current ? { ...current, totpEnabled: true, mfaSetupRequired: false, mfaVerified: true } : current);
+      setAuthStatus("recovery_codes");
+    } catch (caught) {
+      setAuthMessage(caught instanceof Error ? caught.message : "TOTP绑定失败");
     } finally {
       setLoading(false);
     }
@@ -428,18 +503,18 @@ export default function ConsolePage() {
           <div><p className="eyebrow">INTERNAL CONTROL PLANE</p><h1>{tabs.find((item) => item.id === tab)?.label}</h1></div>
           <div className="topbarActions">
             {currentUser && <div className="adminIdentity"><span><b>{currentUser.displayName || currentUser.username}</b><small>{currentUser.role === "super_admin" ? "超级管理员" : "管理员"} · {currentUser.username}</small></span><button className="secondary" onClick={() => { setAuthMessage(""); setShowPasswordForm(true); }}>修改密码</button><button className="iconButton" onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={16} /></button></div>}
-            <span className="securePill"><ShieldCheck size={15} />管理员会话已隔离</span><button className="iconButton" onClick={() => void loadAll()} disabled={loading || authStatus !== "authenticated"} aria-label="刷新"><RefreshCw size={17} className={loading ? "spin" : ""} /></button>
+            <span className="securePill"><ShieldCheck size={15} />{currentUser?.role === "super_admin" ? "TOTP安全会话" : "管理员会话已隔离"}</span>{currentUser?.role !== "super_admin" && <button className="iconButton" onClick={() => void loadAll()} disabled={loading || authStatus !== "authenticated"} aria-label="刷新"><RefreshCw size={17} className={loading ? "spin" : ""} /></button>}
           </div>
         </header>
 
         {error && authStatus === "authenticated" && <div className="errorBanner"><Ban size={17} />{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
 
-        {tab === "overview" && <OverviewPanel overview={overview} onOpenPlayground={() => setTab("playground")} />}
-        {tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
-        {tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
-        {tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
-        {tab === "playground" && <VideoPlayground />}
-        {tab === "integration" && <IntegrationPanel />}
+        {currentUser?.role !== "super_admin" && tab === "overview" && <OverviewPanel overview={overview} onOpenPlayground={() => setTab("playground")} />}
+        {currentUser?.role !== "super_admin" && tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
+        {currentUser?.role !== "super_admin" && tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
+        {currentUser?.role !== "super_admin" && tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
+        {currentUser?.role !== "super_admin" && tab === "playground" && <VideoPlayground />}
+        {currentUser?.role !== "super_admin" && tab === "integration" && <IntegrationPanel />}
         {tab === "admins" && currentUser?.role === "super_admin" && <AdminPanel currentUser={currentUser} adminApi={adminApi} />}
       </section>
 
@@ -453,6 +528,33 @@ export default function ConsolePage() {
         {authMessage && <div className="formError" role="alert">{authMessage}</div>}
         <button className="primary wide" disabled={!loginForm.username.trim() || !loginForm.password || loading}>{loading ? <><LoaderCircle size={17} className="spin" />登录中</> : "登录控制台"}</button>
       </form></div>}
+
+      {authStatus === "totp_required" && <div className="modalBackdrop"><form className="unlockCard" onSubmit={login}>
+        <span className="lockMark"><Smartphone size={24} /></span><p className="eyebrow">TOTP VERIFICATION</p><h2>超级管理员二次验证</h2>
+        <p>输入验证器中的6位动态验证码。手机不可用时，可以输入一个尚未使用的恢复码。</p>
+        <label>动态验证码或恢复码<input type="text" autoComplete="one-time-code" required value={mfaInput} onChange={(event) => setMfaInput(event.target.value.trim())} placeholder="6位验证码或恢复码" /></label>
+        {authMessage && <div className="formError" role="alert">{authMessage}</div>}
+        <div className="passwordActions"><button type="button" className="secondary" onClick={() => clearSession("")}>返回</button><button className="primary" disabled={!mfaInput || loading}>{loading ? <><LoaderCircle size={17} className="spin" />验证中</> : "验证并登录"}</button></div>
+      </form></div>}
+
+      {authStatus === "totp_setup_required" && currentUser && <div className="modalBackdrop"><form className="unlockCard totpSetupCard" onSubmit={confirmTotp}>
+        <span className="lockMark"><Smartphone size={24} /></span><p className="eyebrow">REQUIRED SECURITY SETUP</p><h2>绑定TOTP验证器</h2>
+        <p>超级管理员必须完成二次验证绑定后才能使用安全管理功能。使用验证器扫描二维码，再输入当前6位验证码。</p>
+        {totpSetup?.qrCodeDataUrl ? <span className="totpQr" role="img" aria-label="TOTP绑定二维码" style={{ backgroundImage: `url(${totpSetup.qrCodeDataUrl})` }} /> : <LoaderCircle size={28} className="spin totpLoading" />}
+        {totpSetup?.secret && <div className="totpManual"><small>无法扫码时手动输入密钥</small><code>{totpSetup.secret}</code><button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(totpSetup.secret)}><Clipboard size={14} />复制密钥</button></div>}
+        <label>6位动态验证码<input type="text" inputMode="numeric" autoComplete="one-time-code" required minLength={6} maxLength={6} pattern="\d{6}" value={mfaInput} onChange={(event) => setMfaInput(event.target.value.replace(/\D/g, "").slice(0, 6))} /></label>
+        {authMessage && <div className="formError" role="alert">{authMessage}</div>}
+        <div className="passwordActions"><button type="button" className="secondary" onClick={() => void logout()}>退出</button><button className="primary" disabled={mfaInput.length !== 6 || loading}>{loading ? <><LoaderCircle size={17} className="spin" />绑定中</> : "确认绑定"}</button></div>
+      </form></div>}
+
+      {authStatus === "recovery_codes" && recoveryCodes.length > 0 && <div className="modalBackdrop"><section className="unlockCard recoveryCard" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
+        <span className="lockMark"><ShieldCheck size={24} /></span><p className="eyebrow">ONE-TIME RECOVERY CODES</p><h2 id="recovery-title">保存一次性恢复码</h2>
+        <p>手机丢失时可用恢复码登录。每个只能使用一次，关闭后系统不会再次显示。</p>
+        <pre>{recoveryCodes.join("\n")}</pre>
+        <button className="secondary wide" onClick={() => void navigator.clipboard.writeText(recoveryCodes.join("\n"))}><Clipboard size={15} />复制全部恢复码</button>
+        <label className="recoveryConfirm"><input type="checkbox" checked={recoverySaved} onChange={(event) => setRecoverySaved(event.target.checked)} /><span>我已将恢复码保存在安全位置</span></label>
+        <button className="primary wide" disabled={!recoverySaved} onClick={() => { setRecoveryCodes([]); setAuthStatus("authenticated"); }}>进入安全管理</button>
+      </section></div>}
 
       {(authStatus === "password_change_required" || showPasswordForm) && currentUser && <div className="modalBackdrop"><form className="unlockCard" onSubmit={changePassword}>
         <span className="lockMark"><KeyRound size={24} /></span><p className="eyebrow">ACCOUNT SECURITY</p><h2>{authStatus === "password_change_required" ? "首次登录，请修改密码" : "修改管理员密码"}</h2>
