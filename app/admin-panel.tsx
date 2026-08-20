@@ -59,7 +59,16 @@ type SensitiveAction = { kind: "toggle" | "reset" | "delete"; user: AdminUser } 
 
 function formatTime(value?: string | number | null) {
   if (!value) return "从未";
-  const date = typeof value === "number" ? new Date(value * 1000) : new Date(value.endsWith("Z") ? value : `${value}Z`);
+  let date: Date;
+  if (typeof value === "number") {
+    date = new Date(value * 1000);
+  } else {
+    const normalized = value.trim();
+    if (!normalized) return "从未";
+    const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+    date = new Date(hasExplicitTimezone ? normalized : `${normalized.replace(" ", "T")}Z`);
+  }
+  if (!Number.isFinite(date.getTime())) return "时间未知";
   return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 

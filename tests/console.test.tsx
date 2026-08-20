@@ -16,6 +16,7 @@ type MockData = {
   totpRequired?: boolean;
   mfaSetupRequired?: boolean;
   expireOnPath?: string;
+  backupCreatedAt?: string | null;
 };
 
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -39,7 +40,7 @@ function installFetch(data: MockData = {}) {
     { id: "session-current", current: true, createdAt: 1787107200, lastSeenAt: 1787107800, absoluteExpiresAt: 1787150400, sourceIp: "127.0.0.1", userAgent: "Windows Chrome" },
     { id: "session-old", current: false, createdAt: 1787020800, lastSeenAt: 1787024400, absoluteExpiresAt: 1787110800, sourceIp: "10.0.0.8", userAgent: "Macintosh Safari" },
   ];
-  const backupItem = { id: "20260819-080000-000001", databaseFile: "avatar_proxy-20260819-080000-000001.db", auditFile: "admin_audit-20260819-080000-000001.jsonl", databaseBytes: 2048, auditBytes: 1024, createdAt: "2026-08-19T08:00:00Z", valid: true, counts: { projects: 2, apiKeys: 2, adminUsers: 2, adminAudits: 19 } };
+  const backupItem = { id: "20260819-080000-000001", databaseFile: "avatar_proxy-20260819-080000-000001.db", auditFile: "admin_audit-20260819-080000-000001.jsonl", databaseBytes: 2048, auditBytes: 1024, createdAt: data.backupCreatedAt ?? "2026-08-19T08:00:00Z", valid: true, counts: { projects: 2, apiKeys: 2, adminUsers: 2, adminAudits: 19 } };
   const calls: Array<{ path: string; init?: RequestInit }> = [];
   let authenticated = false;
   let passwordChanged = !data.mustChangePassword;
@@ -274,6 +275,22 @@ describe("内部控制台", () => {
     const restoreCall = calls.find((call) => call.path.endsWith("/restore"));
     expect(JSON.parse(String(restoreCall?.init?.body))).toEqual({ currentPassword: "correct-password", totpCode: "654321", confirmation: "恢复数据库" });
     expect(new Headers(restoreCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+  });
+
+  it("备份时间带时区偏移时可正常显示", async () => {
+    installFetch({ role: "super_admin", backupCreatedAt: "2026-08-19T08:00:00+00:00" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    expect(await screen.findByText("avatar_proxy-20260819-080000-000001.db", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText("时间未知")).not.toBeInTheDocument();
+  });
+
+  it("备份时间异常时显示占位文案而不使页面崩溃", async () => {
+    installFetch({ role: "super_admin", backupCreatedAt: "not-a-date" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    expect(await screen.findByText("时间未知")).toBeInTheDocument();
+    expect(screen.getByText("avatar_proxy-20260819-080000-000001.db", { exact: false })).toBeInTheDocument();
   });
 
   it("创建管理员后可一次复制完整的登录交付文本", async () => {
