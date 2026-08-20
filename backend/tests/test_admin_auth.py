@@ -529,6 +529,8 @@ def test_admin_schema_upgrade_is_idempotent_and_preserves_legacy_audits(tmp_path
     assert {
         "totp_secret_encrypted",
         "totp_pending_secret_encrypted",
+        "totp_pending_session_id",
+        "totp_pending_expires_at",
         "totp_enabled_at",
         "totp_last_timecode",
     } <= user_columns

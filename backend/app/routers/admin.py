@@ -10,6 +10,8 @@ from ..schemas import (
     AdminSecurityAlertAck,
     AdminSensitiveAction,
     AdminTotpConfirm,
+    AdminTotpRotationConfirm,
+    AdminTotpRotationStart,
     AdminUserCreate,
 )
 from ..security import AdminDependency, AdminSessionDependency
@@ -134,6 +136,29 @@ def confirm_totp(payload: AdminTotpConfirm, request: Request, principal: AdminSe
         principal, payload.code, _request_ip(request), _user_agent(request)
     )
     return {"enabled": True, "mfaVerified": True, "recoveryCodes": recovery_codes}
+
+
+@router.post("/auth/totp/rotate/setup")
+def setup_totp_rotation(
+    payload: AdminTotpRotationStart, request: Request, principal: AdminDependency
+) -> dict:
+    return request.app.state.admin_auth.begin_totp_rotation(
+        principal,
+        payload.current_password,
+        payload.current_totp_code,
+        _request_ip(request),
+        _user_agent(request),
+    )
+
+
+@router.post("/auth/totp/rotate/confirm")
+def confirm_totp_rotation(
+    payload: AdminTotpRotationConfirm, request: Request, principal: AdminDependency
+) -> dict:
+    result = request.app.state.admin_auth.confirm_totp_rotation(
+        principal, payload.code, _request_ip(request), _user_agent(request)
+    )
+    return {"enabled": True, "mfaVerified": True, **result}
 
 
 @router.get("/auth/sessions")

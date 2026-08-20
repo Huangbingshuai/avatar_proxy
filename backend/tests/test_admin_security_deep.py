@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -116,6 +117,174 @@ def test_totp_enrollment_encryption_login_replay_and_recovery_codes(tmp_path: Pa
             },
         )
         assert reused.status_code == 401
+
+
+def test_super_admin_can_rotate_totp_and_old_credentials_stop_working(tmp_path: Path) -> None:
+    app = create_app(build_settings(tmp_path / "admin.db"))
+    with TestClient(app) as client:
+        session, old_secret, old_recovery_codes = enroll_super(client, app)
+        headers = {"X-CSRF-Token": session["csrfToken"]}
+        with app.state.database.connect() as connection:
+            user = connection.execute("SELECT id FROM admin_users WHERE username='owner'").fetchone()
+            connection.execute(
+                "INSERT INTO admin_sessions "
+                "(id,admin_user_id,token_hash,csrf_hash,created_at,last_seen_at,absolute_expires_at,mfa_verified) "
+                "VALUES ('other-session',?,'other-token-hash','other-csrf-hash',?,?,?,1)",
+                (user["id"], BASE_TIME, BASE_TIME, BASE_TIME + 3600),
+            )
+
+        app.state.admin_auth.clock = lambda: BASE_TIME + 30
+        started = client.post(
+            "/api/internal/auth/totp/rotate/setup",
+            headers=headers,
+            json={
+                "currentPassword": CHANGED_PASSWORD,
+                "currentTotpCode": pyotp.TOTP(old_secret).at(BASE_TIME + 30),
+            },
+        )
+        assert started.status_code == 200, started.text
+        new_secret = started.json()["secret"]
+        assert new_secret != old_secret
+        confirmed = client.post(
+            "/api/internal/auth/totp/rotate/confirm",
+            headers=headers,
+            json={"code": pyotp.TOTP(new_secret).at(BASE_TIME + 30)},
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        new_recovery_codes = confirmed.json()["recoveryCodes"]
+        assert len(new_recovery_codes) == 10
+        assert confirmed.json()["otherSessionsRevoked"] == 1
+
+        with app.state.database.connect() as connection:
+            updated = connection.execute("SELECT * FROM admin_users WHERE id=?", (user["id"],)).fetchone()
+            other_session = connection.execute(
+                "SELECT revoked_at,revoke_reason FROM admin_sessions WHERE id='other-session'"
+            ).fetchone()
+            recovery_hashes = {
+                row["code_hash"]
+                for row in connection.execute(
+                    "SELECT code_hash FROM admin_recovery_codes WHERE admin_user_id=?", (user["id"],)
+                ).fetchall()
+            }
+            audit = connection.execute(
+                "SELECT action FROM admin_audit_logs WHERE action='admin.auth.totp_rotated'"
+            ).fetchone()
+            alert = connection.execute(
+                "SELECT event_type,severity FROM admin_security_alerts "
+                "WHERE event_type='totp_rotated' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            database_dump = " ".join(connection.iterdump())
+        assert app.state.admin_auth._decrypt_secret(updated["totp_secret_encrypted"]) == new_secret
+        assert updated["totp_pending_secret_encrypted"] is None
+        assert updated["totp_pending_session_id"] is None
+        assert updated["totp_pending_expires_at"] is None
+        assert dict(other_session) == {"revoked_at": BASE_TIME + 30, "revoke_reason": "totp_rotated"}
+        assert all(hashlib.sha256(code.upper().encode()).hexdigest() not in recovery_hashes for code in old_recovery_codes)
+        assert all(hashlib.sha256(code.upper().encode()).hexdigest() in recovery_hashes for code in new_recovery_codes)
+        assert old_secret not in database_dump
+        assert new_secret not in database_dump
+        assert all(code not in database_dump for code in new_recovery_codes)
+        assert audit is not None
+        assert dict(alert) == {"event_type": "totp_rotated", "severity": "critical"}
+
+        client.post("/api/internal/auth/logout", headers=headers)
+        app.state.admin_auth.clock = lambda: BASE_TIME + 60
+        old_login = client.post(
+            "/api/internal/auth/login",
+            json={
+                "username": "owner",
+                "password": CHANGED_PASSWORD,
+                "totpCode": pyotp.TOTP(old_secret).at(BASE_TIME + 60),
+            },
+        )
+        assert old_login.status_code == 401
+        old_recovery = client.post(
+            "/api/internal/auth/login",
+            json={
+                "username": "owner",
+                "password": CHANGED_PASSWORD,
+                "recoveryCode": old_recovery_codes[0],
+            },
+        )
+        assert old_recovery.status_code == 401
+        new_login = client.post(
+            "/api/internal/auth/login",
+            json={
+                "username": "owner",
+                "password": CHANGED_PASSWORD,
+                "totpCode": pyotp.TOTP(new_secret).at(BASE_TIME + 60),
+            },
+        )
+        assert new_login.status_code == 200
+
+
+def test_totp_rotation_requires_old_credentials_and_expires_without_replacing_secret(tmp_path: Path) -> None:
+    app = create_app(build_settings(tmp_path / "admin.db"))
+    with TestClient(app) as client:
+        session, old_secret, _ = enroll_super(client, app)
+        headers = {"X-CSRF-Token": session["csrfToken"]}
+        app.state.admin_auth.clock = lambda: BASE_TIME + 30
+        wrong_password = client.post(
+            "/api/internal/auth/totp/rotate/setup",
+            headers=headers,
+            json={
+                "currentPassword": "wrong-password",
+                "currentTotpCode": pyotp.TOTP(old_secret).at(BASE_TIME + 30),
+            },
+        )
+        assert wrong_password.status_code == 401
+        wrong_totp = client.post(
+            "/api/internal/auth/totp/rotate/setup",
+            headers=headers,
+            json={"currentPassword": CHANGED_PASSWORD, "currentTotpCode": "000000"},
+        )
+        assert wrong_totp.status_code == 401
+        with app.state.database.connect() as connection:
+            unchanged = connection.execute("SELECT * FROM admin_users WHERE username='owner'").fetchone()
+        assert unchanged["totp_pending_secret_encrypted"] is None
+        assert app.state.admin_auth._decrypt_secret(unchanged["totp_secret_encrypted"]) == old_secret
+        started = client.post(
+            "/api/internal/auth/totp/rotate/setup",
+            headers=headers,
+            json={
+                "currentPassword": CHANGED_PASSWORD,
+                "currentTotpCode": pyotp.TOTP(old_secret).at(BASE_TIME + 30),
+            },
+        )
+        new_secret = started.json()["secret"]
+        with app.state.database.connect() as connection:
+            pending = connection.execute("SELECT * FROM admin_users WHERE username='owner'").fetchone()
+            original_session_id = pending["totp_pending_session_id"]
+            connection.execute(
+                "UPDATE admin_users SET totp_pending_session_id='another-session' WHERE id=?",
+                (pending["id"],),
+            )
+        mismatch = client.post(
+            "/api/internal/auth/totp/rotate/confirm",
+            headers=headers,
+            json={"code": pyotp.TOTP(new_secret).at(BASE_TIME + 30)},
+        )
+        assert mismatch.status_code == 409
+        assert mismatch.json()["error"]["code"] == "admin_totp_rotation_session_mismatch"
+        with app.state.database.connect() as connection:
+            connection.execute(
+                "UPDATE admin_users SET totp_pending_session_id=? WHERE username='owner'",
+                (original_session_id,),
+            )
+        app.state.admin_auth.clock = lambda: BASE_TIME + 30 + 601
+        expired = client.post(
+            "/api/internal/auth/totp/rotate/confirm",
+            headers=headers,
+            json={"code": pyotp.TOTP(new_secret).at(BASE_TIME + 30 + 601)},
+        )
+        assert expired.status_code == 410
+        assert expired.json()["error"]["code"] == "admin_totp_rotation_expired"
+        with app.state.database.connect() as connection:
+            user = connection.execute("SELECT * FROM admin_users WHERE username='owner'").fetchone()
+        assert app.state.admin_auth._decrypt_secret(user["totp_secret_encrypted"]) == old_secret
+        assert user["totp_pending_secret_encrypted"] is None
+        assert user["totp_pending_session_id"] is None
+        assert user["totp_pending_expires_at"] is None
 
 
 def test_super_admin_is_security_only_sensitive_actions_reauthenticate_and_alert(tmp_path: Path) -> None:

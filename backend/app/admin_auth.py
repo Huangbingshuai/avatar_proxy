@@ -21,6 +21,9 @@ from .database import Database
 from .errors import ApiError
 
 
+TOTP_ROTATION_TTL_SECONDS = 600
+
+
 @dataclass(frozen=True)
 class AdminPrincipal:
     id: str
@@ -682,7 +685,8 @@ class AdminAuthService:
             if row["totp_enabled_at"]:
                 raise ApiError("TOTP二次验证已经启用", 409, "admin_totp_already_enabled")
             connection.execute(
-                "UPDATE admin_users SET totp_pending_secret_encrypted=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "UPDATE admin_users SET totp_pending_secret_encrypted=?,totp_pending_session_id=NULL,"
+                "totp_pending_expires_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                 (encrypted, actor.id),
             )
             self._audit(
@@ -749,7 +753,8 @@ class AdminAuthService:
                 raise ApiError("TOTP绑定信息已更新，请使用最新二维码", 409, "admin_totp_setup_changed")
             cursor = connection.execute(
                 "UPDATE admin_users SET totp_secret_encrypted=totp_pending_secret_encrypted,"
-                "totp_pending_secret_encrypted=NULL,totp_enabled_at=CURRENT_TIMESTAMP,totp_last_timecode=?,"
+                "totp_pending_secret_encrypted=NULL,totp_pending_session_id=NULL,"
+                "totp_pending_expires_at=NULL,totp_enabled_at=CURRENT_TIMESTAMP,totp_last_timecode=?,"
                 "updated_at=CURRENT_TIMESTAMP WHERE id=? AND totp_enabled_at IS NULL",
                 (int(accepted), actor.id),
             )
@@ -784,6 +789,166 @@ class AdminAuthService:
                 connection=connection,
             )
         return recovery_codes
+
+    def begin_totp_rotation(
+        self,
+        actor: AdminPrincipal,
+        current_password: str,
+        current_totp_code: str,
+        source_ip: str | None,
+        user_agent: str | None,
+    ) -> dict[str, Any]:
+        self.require_super_admin(actor)
+        self.verify_reauthentication(
+            actor, current_password, source_ip, user_agent, "admin.auth.totp_rotate"
+        )
+        self.verify_sensitive_totp(
+            actor, current_totp_code, source_ip, user_agent, "admin.auth.totp_rotate"
+        )
+        now = int(self.clock())
+        expires_at = now + TOTP_ROTATION_TTL_SECONDS
+        secret = pyotp.random_base32()
+        encrypted = self._encrypt_secret(secret)
+        totp = pyotp.TOTP(secret, name=actor.username, issuer=self.settings.admin_totp_issuer)
+        provisioning_uri = totp.provisioning_uri()
+        image = qrcode.make(provisioning_uri)
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        qr_data_url = "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT totp_secret_encrypted,totp_enabled_at FROM admin_users WHERE id=?",
+                (actor.id,),
+            ).fetchone()
+            if row is None:
+                raise ApiError("管理员不存在", 404, "admin_user_not_found")
+            if not row["totp_enabled_at"] or not row["totp_secret_encrypted"]:
+                raise ApiError("超级管理员尚未启用TOTP二次验证", 409, "admin_totp_not_enabled")
+            connection.execute(
+                "UPDATE admin_users SET totp_pending_secret_encrypted=?,totp_pending_session_id=?,"
+                "totp_pending_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (encrypted, actor.session_id, expires_at, actor.id),
+            )
+            self._audit(
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                action="admin.auth.totp_rotation_started",
+                target_type="admin_user",
+                target_id=actor.id,
+                after={"expiresAt": expires_at},
+                connection=connection,
+            )
+        return {
+            "secret": secret,
+            "provisioningUri": provisioning_uri,
+            "qrCodeDataUrl": qr_data_url,
+            "expiresAt": expires_at,
+        }
+
+    def confirm_totp_rotation(
+        self,
+        actor: AdminPrincipal,
+        code: str,
+        source_ip: str | None,
+        user_agent: str | None,
+    ) -> dict[str, Any]:
+        self.require_super_admin(actor)
+        now = int(self.clock())
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT totp_pending_secret_encrypted,totp_pending_session_id,"
+                "totp_pending_expires_at,totp_enabled_at FROM admin_users WHERE id=?",
+                (actor.id,),
+            ).fetchone()
+        if row is None:
+            raise ApiError("管理员不存在", 404, "admin_user_not_found")
+        if not row["totp_enabled_at"]:
+            raise ApiError("超级管理员尚未启用TOTP二次验证", 409, "admin_totp_not_enabled")
+        if not row["totp_pending_secret_encrypted"]:
+            raise ApiError("请先验证旧验证器并开始更换", 409, "admin_totp_rotation_not_started")
+        if row["totp_pending_session_id"] != actor.session_id:
+            raise ApiError("请在发起更换的登录会话中继续操作", 409, "admin_totp_rotation_session_mismatch")
+        expires_at = int(row["totp_pending_expires_at"] or 0)
+        if expires_at <= now:
+            with self.database.connect() as connection:
+                connection.execute(
+                    "UPDATE admin_users SET totp_pending_secret_encrypted=NULL,"
+                    "totp_pending_session_id=NULL,totp_pending_expires_at=NULL,"
+                    "updated_at=CURRENT_TIMESTAMP WHERE id=? AND totp_pending_session_id=?",
+                    (actor.id, actor.session_id),
+                )
+            raise ApiError("更换二维码已过期，请重新开始", 410, "admin_totp_rotation_expired")
+        pending_secret = str(row["totp_pending_secret_encrypted"])
+        secret = self._decrypt_secret(pending_secret)
+        accepted = self._verify_totp_timecode(secret, code, now)
+        if accepted is None:
+            raise ApiError("新验证器动态验证码错误", 422, "invalid_new_admin_totp")
+
+        recovery_codes = [self._new_recovery_code() for _ in range(10)]
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT totp_pending_secret_encrypted,totp_pending_session_id,"
+                "totp_pending_expires_at FROM admin_users WHERE id=?",
+                (actor.id,),
+            ).fetchone()
+            if current is None:
+                raise ApiError("管理员不存在", 404, "admin_user_not_found")
+            if (
+                current["totp_pending_session_id"] != actor.session_id
+                or not current["totp_pending_secret_encrypted"]
+                or not hmac.compare_digest(str(current["totp_pending_secret_encrypted"]), pending_secret)
+            ):
+                raise ApiError("TOTP更换信息已更新，请重新开始", 409, "admin_totp_rotation_changed")
+            if int(current["totp_pending_expires_at"] or 0) <= now:
+                raise ApiError("更换二维码已过期，请重新开始", 410, "admin_totp_rotation_expired")
+            connection.execute(
+                "UPDATE admin_users SET totp_secret_encrypted=totp_pending_secret_encrypted,"
+                "totp_pending_secret_encrypted=NULL,totp_pending_session_id=NULL,"
+                "totp_pending_expires_at=NULL,totp_enabled_at=CURRENT_TIMESTAMP,"
+                "totp_last_timecode=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (int(accepted), actor.id),
+            )
+            connection.execute("DELETE FROM admin_recovery_codes WHERE admin_user_id=?", (actor.id,))
+            connection.executemany(
+                "INSERT INTO admin_recovery_codes(id,admin_user_id,code_hash) VALUES (?,?,?)",
+                [(str(uuid.uuid4()), actor.id, _sha256(value.upper())) for value in recovery_codes],
+            )
+            revoked = connection.execute(
+                "UPDATE admin_sessions SET revoked_at=?,revoke_reason='totp_rotated' "
+                "WHERE admin_user_id=? AND id<>? AND revoked_at IS NULL",
+                (now, actor.id, actor.session_id),
+            ).rowcount
+            connection.execute(
+                "UPDATE admin_sessions SET mfa_verified=1 WHERE id=?", (actor.session_id,)
+            )
+            self._audit(
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                action="admin.auth.totp_rotated",
+                target_type="admin_user",
+                target_id=actor.id,
+                after={"recoveryCodeCount": len(recovery_codes), "sessionsRevoked": revoked},
+                connection=connection,
+            )
+            self._alert(
+                event_type="totp_rotated",
+                severity="critical",
+                message="超级管理员已更换TOTP验证器",
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                target_type="admin_user",
+                target_id=actor.id,
+                details={"sessionsRevoked": revoked},
+                connection=connection,
+            )
+        return {"recoveryCodes": recovery_codes, "otherSessionsRevoked": int(revoked)}
 
     def list_security_alerts(self, actor: AdminPrincipal, limit: int = 100) -> list[dict[str, Any]]:
         self.require_super_admin(actor)
@@ -1062,7 +1227,8 @@ class AdminAuthService:
                 raise ApiError("只有超级管理员使用TOTP二次验证", 409, "admin_totp_not_applicable")
             connection.execute(
                 "UPDATE admin_users SET totp_secret_encrypted=NULL,totp_pending_secret_encrypted=NULL,"
-                "totp_enabled_at=NULL,totp_last_timecode=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "totp_pending_session_id=NULL,totp_pending_expires_at=NULL,totp_enabled_at=NULL,"
+                "totp_last_timecode=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                 (row["id"],),
             )
             connection.execute("DELETE FROM admin_recovery_codes WHERE admin_user_id=?", (row["id"],))

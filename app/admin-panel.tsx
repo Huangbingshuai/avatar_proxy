@@ -1,6 +1,6 @@
 "use client";
 
-import { ArchiveRestore, CheckCircle2, Clipboard, DatabaseBackup, FileCheck2, KeyRound, LoaderCircle, Plus, RefreshCw, ShieldAlert, ShieldCheck, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import { ArchiveRestore, CheckCircle2, Clipboard, DatabaseBackup, FileCheck2, KeyRound, LoaderCircle, Plus, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Smartphone, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { AdminApi, AdminSession, AdminUser } from "./admin-api";
@@ -56,6 +56,8 @@ type BackupItem = {
 };
 
 type SensitiveAction = { kind: "toggle" | "reset" | "delete"; user: AdminUser } | { kind: "backup" };
+type TotpRotationStage = "verify" | "scan" | "recovery" | null;
+type TotpRotationSetup = { secret: string; qrCodeDataUrl: string; expiresAt: number };
 
 function formatTime(value?: string | number | null) {
   if (!value) return "从未";
@@ -103,6 +105,12 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
   const [credentialsCopied, setCredentialsCopied] = useState(false);
   const [sensitiveAction, setSensitiveAction] = useState<SensitiveAction | null>(null);
   const [reauthPassword, setReauthPassword] = useState("");
+  const [totpRotationStage, setTotpRotationStage] = useState<TotpRotationStage>(null);
+  const [totpRotationForm, setTotpRotationForm] = useState({ currentPassword: "", currentTotpCode: "", newTotpCode: "" });
+  const [totpRotationSetup, setTotpRotationSetup] = useState<TotpRotationSetup | null>(null);
+  const [totpRecoveryCodes, setTotpRecoveryCodes] = useState<string[]>([]);
+  const [totpRecoverySaved, setTotpRecoverySaved] = useState(false);
+  const [totpRecoveryCopied, setTotpRecoveryCopied] = useState(false);
 
   const loadSecurityData = useCallback(async () => {
     setLoading(true);
@@ -303,6 +311,68 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
     }
   }
 
+  function closeTotpRotation() {
+    setTotpRotationStage(null);
+    setTotpRotationForm({ currentPassword: "", currentTotpCode: "", newTotpCode: "" });
+    setTotpRotationSetup(null);
+    setTotpRecoveryCodes([]);
+    setTotpRecoverySaved(false);
+    setTotpRecoveryCopied(false);
+  }
+
+  async function beginTotpRotation(event: FormEvent) {
+    event.preventDefault();
+    setBusyId("totp-rotate-setup");
+    setError("");
+    try {
+      const data = await adminApi("/api/internal/auth/totp/rotate/setup", {
+        method: "POST",
+        body: JSON.stringify({
+          currentPassword: totpRotationForm.currentPassword,
+          currentTotpCode: totpRotationForm.currentTotpCode,
+        }),
+      });
+      setTotpRotationSetup(data as unknown as TotpRotationSetup);
+      setTotpRotationForm({ currentPassword: "", currentTotpCode: "", newTotpCode: "" });
+      setTotpRotationStage("scan");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "旧验证器身份校验失败");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function confirmTotpRotation(event: FormEvent) {
+    event.preventDefault();
+    if (!totpRotationSetup) return;
+    setBusyId("totp-rotate-confirm");
+    setError("");
+    try {
+      const data = await adminApi("/api/internal/auth/totp/rotate/confirm", {
+        method: "POST",
+        body: JSON.stringify({ code: totpRotationForm.newTotpCode }),
+      });
+      setTotpRecoveryCodes((data.recoveryCodes ?? []) as string[]);
+      setTotpRotationSetup(null);
+      setTotpRotationForm({ currentPassword: "", currentTotpCode: "", newTotpCode: "" });
+      setTotpRotationStage("recovery");
+      await loadSecurityData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "新验证器绑定失败");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function copyTotpRecoveryCodes() {
+    try {
+      await navigator.clipboard.writeText(totpRecoveryCodes.join("\n"));
+      setTotpRecoveryCopied(true);
+    } catch {
+      setError("自动复制失败，请手动保存新的恢复码");
+    }
+  }
+
   const consoleOrigin = initialPassword && typeof window !== "undefined" ? window.location.origin : "";
   const credentialDeliveryText = [
     `你好，${passwordOwner}：`,
@@ -352,6 +422,11 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
         <button className="secondary" onClick={() => void acknowledgeAlert(alert)} disabled={Boolean(busyId)}>{busyId === `alert-${alert.id}` ? <LoaderCircle size={13} className="spin" /> : "确认告警"}</button>
       </article>)}
     </section>}
+
+    <section className="panel adminSection totpSecurityPanel">
+      <div className="totpSecurityIdentity"><span><Smartphone size={20} /></span><div><small>SUPER ADMIN MFA</small><h3>TOTP验证器</h3><p>当前验证器已启用。更换时旧验证器会持续有效，直到新验证码确认成功。</p></div></div>
+      <div className="totpSecurityAction"><span><ShieldCheck size={14} />保护中</span><button className="secondary" onClick={() => { setError(""); setTotpRotationStage("verify"); }} disabled={Boolean(busyId)}><ScanLine size={15} />更换验证器</button></div>
+    </section>
 
     <section className="panel adminSection backupPanel">
       <div className="panelHead"><div><h3>SQLite与审计自动备份</h3><p>{backup?.enabled ? `每 ${Math.round((backup.intervalSeconds || 86400) / 3600)} 小时自动执行，保留最近 ${backup.retention} 份。` : "自动备份当前已关闭。"}</p></div><button className="secondary" onClick={() => setSensitiveAction({ kind: "backup" })} disabled={Boolean(busyId)}><DatabaseBackup size={15} />立即备份</button></div>
@@ -447,6 +522,31 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
         <label>输入“恢复数据库”确认<input required autoComplete="off" value={restoreForm.confirmation} onChange={(event) => setRestoreForm({ ...restoreForm, confirmation: event.target.value })} /></label>
         <div className="passwordActions"><button type="button" className="secondary" disabled={Boolean(busyId)} onClick={() => setRestoreTarget(null)}>取消</button><button className="dangerButton" disabled={busyId === `restore-${restoreTarget.id}` || !restoreForm.currentPassword || restoreForm.totpCode.length !== 6 || restoreForm.confirmation !== "恢复数据库"}>{busyId === `restore-${restoreTarget.id}` ? <><LoaderCircle size={15} className="spin" />正在恢复</> : <><ArchiveRestore size={15} />确认恢复</>}</button></div>
       </form>
+    </section></div>}
+
+    {totpRotationStage && <div className="modalBackdrop"><section className="modal totpRotationModal" role="dialog" aria-modal="true" aria-labelledby="totp-rotation-title">
+      <header><div><p className="securityEyebrow">TOTP安全换绑</p><h2 id="totp-rotation-title">{totpRotationStage === "verify" ? "验证当前身份" : totpRotationStage === "scan" ? "扫描新的二维码" : "保存新的恢复码"}</h2></div>{totpRotationStage !== "recovery" && <button onClick={closeTotpRotation} disabled={Boolean(busyId)} aria-label="关闭"><X size={18} /></button>}</header>
+      {totpRotationStage === "verify" && <form className="stackForm" onSubmit={beginTotpRotation}>
+        <div className="totpRotationNotice"><ShieldAlert size={19} /><p>先验证当前密码和旧验证器。生成新二维码不会立即停用旧验证器，关闭窗口也不会影响登录。</p></div>
+        <label>超级管理员当前密码<input type="password" autoComplete="current-password" required value={totpRotationForm.currentPassword} onChange={(event) => setTotpRotationForm({ ...totpRotationForm, currentPassword: event.target.value })} /></label>
+        <label>当前验证器动态验证码<input aria-label="当前验证器动态验证码" type="text" inputMode="numeric" autoComplete="one-time-code" required minLength={6} maxLength={6} pattern="\d{6}" value={totpRotationForm.currentTotpCode} onChange={(event) => setTotpRotationForm({ ...totpRotationForm, currentTotpCode: event.target.value.replace(/\D/g, "").slice(0, 6) })} /><small>必须使用一组尚未提交过的6位验证码。</small></label>
+        <div className="passwordActions"><button type="button" className="secondary" onClick={closeTotpRotation}>取消</button><button className="primary" disabled={busyId === "totp-rotate-setup" || !totpRotationForm.currentPassword || totpRotationForm.currentTotpCode.length !== 6}>{busyId === "totp-rotate-setup" ? <><LoaderCircle size={15} className="spin" />正在验证</> : "验证并生成新二维码"}</button></div>
+      </form>}
+      {totpRotationStage === "scan" && totpRotationSetup && <form className="stackForm totpRotationScan" onSubmit={confirmTotpRotation}>
+        <div className="totpRotationSteps"><span className="done">1</span><i /><span>2</span><i /><span>3</span></div>
+        <p className="totpRotationHint">用新的验证器App扫描二维码，然后输入新设备显示的6位验证码。二维码将在 {formatTime(totpRotationSetup.expiresAt)} 失效。</p>
+        <span className="totpRotationQr" role="img" aria-label="新的TOTP绑定二维码" style={{ backgroundImage: `url(${totpRotationSetup.qrCodeDataUrl})` }} />
+        <div className="totpManual"><small>无法扫码时，手动输入以下密钥</small><code>{totpRotationSetup.secret}</code><button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(totpRotationSetup.secret)}><Clipboard size={14} />复制密钥</button></div>
+        <label>新验证器动态验证码<input aria-label="新验证器动态验证码" type="text" inputMode="numeric" autoComplete="one-time-code" required minLength={6} maxLength={6} pattern="\d{6}" value={totpRotationForm.newTotpCode} onChange={(event) => setTotpRotationForm({ ...totpRotationForm, newTotpCode: event.target.value.replace(/\D/g, "").slice(0, 6) })} /></label>
+        <div className="passwordActions"><button type="button" className="secondary" onClick={closeTotpRotation}>暂不更换</button><button className="primary" disabled={busyId === "totp-rotate-confirm" || totpRotationForm.newTotpCode.length !== 6}>{busyId === "totp-rotate-confirm" ? <><LoaderCircle size={15} className="spin" />正在换绑</> : "确认更换"}</button></div>
+      </form>}
+      {totpRotationStage === "recovery" && <div className="stackForm totpRotationRecovery">
+        <div className="totpRotationSuccess"><CheckCircle2 size={22} /><div><b>新验证器已生效</b><p>旧验证器、旧恢复码及其他登录会话已经失效。</p></div></div>
+        <pre>{totpRecoveryCodes.join("\n")}</pre>
+        <button type="button" className="secondary wide" onClick={() => void copyTotpRecoveryCodes()}><Clipboard size={15} />{totpRecoveryCopied ? "已复制新的恢复码" : "复制全部恢复码"}</button>
+        <label className="recoveryConfirm"><input type="checkbox" checked={totpRecoverySaved} onChange={(event) => setTotpRecoverySaved(event.target.checked)} /><span>我已将新的恢复码保存在安全位置</span></label>
+        <button type="button" className="primary wide" disabled={!totpRecoverySaved} onClick={closeTotpRotation}>完成更换</button>
+      </div>}
     </section></div>}
 
     {initialPassword && <div className="modalBackdrop"><section className="modal credentialModal" role="dialog" aria-modal="true" aria-labelledby="initial-password-title">

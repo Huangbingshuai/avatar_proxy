@@ -69,6 +69,8 @@ function installFetch(data: MockData = {}) {
     }
     if (url.pathname === "/api/internal/auth/totp/setup") return jsonResponse({ secret: "JBSWY3DPEHPK3PXP", qrCodeDataUrl: "data:image/png;base64,AAAA" });
     if (url.pathname === "/api/internal/auth/totp/confirm") return jsonResponse({ enabled: true, mfaVerified: true, recoveryCodes: ["AAAA-BBBB-CCCC-DDDD", "EEEE-FFFF-GGGG-HHHH"] });
+    if (url.pathname === "/api/internal/auth/totp/rotate/setup") return jsonResponse({ secret: "NEWSECRETFORROTATION", qrCodeDataUrl: "data:image/png;base64,BBBB", expiresAt: 1_800_000_600 });
+    if (url.pathname === "/api/internal/auth/totp/rotate/confirm") return jsonResponse({ enabled: true, mfaVerified: true, recoveryCodes: ["NEW1-AAAA-BBBB-CCCC", "NEW2-DDDD-EEEE-FFFF"], otherSessionsRevoked: 1 });
     if (!passwordChanged) return jsonResponse({ error: { message: "请先修改初始密码", code: "password_change_required" } }, 403);
     if (url.pathname === "/api/internal/auth/logout") { authenticated = false; return jsonResponse({ loggedOut: true }); }
     if (url.pathname === "/api/internal/admin/users") {
@@ -216,6 +218,34 @@ describe("内部控制台", () => {
     await user.click(screen.getByLabelText("我已将恢复码保存在安全位置"));
     await user.click(screen.getByRole("button", { name: "进入安全管理" }));
     expect(await screen.findByRole("heading", { name: "超级管理员安全中心" })).toBeInTheDocument();
+  });
+
+  it("超级管理员可以在前端安全更换TOTP验证器", async () => {
+    const { calls } = installFetch({ role: "super_admin" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(await screen.findByRole("button", { name: "更换验证器" }));
+    expect(screen.getByRole("heading", { name: "验证当前身份" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("超级管理员当前密码"), "correct-password");
+    await user.type(screen.getByLabelText("当前验证器动态验证码"), "123456");
+    await user.click(screen.getByRole("button", { name: "验证并生成新二维码" }));
+    expect(await screen.findByRole("heading", { name: "扫描新的二维码" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "新的TOTP绑定二维码" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("新验证器动态验证码"), "654321");
+    await user.click(screen.getByRole("button", { name: "确认更换" }));
+    expect(await screen.findByRole("heading", { name: "保存新的恢复码" })).toBeInTheDocument();
+    expect(screen.getByText("NEW1-AAAA-BBBB-CCCC", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完成更换" })).toBeDisabled();
+    await user.click(screen.getByLabelText("我已将新的恢复码保存在安全位置"));
+    await user.click(screen.getByRole("button", { name: "完成更换" }));
+    expect(screen.queryByRole("heading", { name: "保存新的恢复码" })).not.toBeInTheDocument();
+
+    const start = calls.find((call) => call.path === "/api/internal/auth/totp/rotate/setup");
+    const confirm = calls.find((call) => call.path === "/api/internal/auth/totp/rotate/confirm");
+    expect(JSON.parse(String(start?.init?.body))).toEqual({ currentPassword: "correct-password", currentTotpCode: "123456" });
+    expect(JSON.parse(String(confirm?.init?.body))).toEqual({ code: "654321" });
+    expect(new Headers(start?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+    expect(new Headers(confirm?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
   });
 
   it("切换项目并展示用量和审计", async () => {

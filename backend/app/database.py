@@ -171,6 +171,8 @@ CREATE TABLE IF NOT EXISTS admin_users (
     password_changed_at TEXT,
     totp_secret_encrypted TEXT,
     totp_pending_secret_encrypted TEXT,
+    totp_pending_session_id TEXT,
+    totp_pending_expires_at INTEGER,
     totp_enabled_at TEXT,
     totp_last_timecode INTEGER,
     created_by_id TEXT,
@@ -295,6 +297,8 @@ class Database:
             for column, definition in {
                 "totp_secret_encrypted": "TEXT",
                 "totp_pending_secret_encrypted": "TEXT",
+                "totp_pending_session_id": "TEXT",
+                "totp_pending_expires_at": "INTEGER",
                 "totp_enabled_at": "TEXT",
                 "totp_last_timecode": "INTEGER",
             }.items():
