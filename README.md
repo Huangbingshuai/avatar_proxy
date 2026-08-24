@@ -95,6 +95,8 @@ python deploy/volcengine/verify_admin_auth.py --base-url http://127.0.0.1:3001 -
 
 该脚本只创建并撤销自己的登录会话，验证旧共享令牌被拒绝、Cookie、CSRF、两级角色边界及原业务控制台访问，不创建或修改项目、API Key 和额度。对最终 HTTPS 控制台域名验收时增加 `--expect-no-store`，同时验证网关禁止缓存管理响应。
 
+火山生产环境的控制台使用 `https://api.richbest.cn/`，客户接口仍位于同一域名的 `/api/*`。旧的 `http://101.96.224.33:8088/` 根路径只负责跳转到 HTTPS，`/video/` 工具路径保持不变。
+
 ## 本地启动用户门户
 
 ```powershell

@@ -55,12 +55,12 @@ curl https://api.example.com/health
 
 使用 Nginx、Caddy 或云负载均衡器终止 HTTPS，再转发到容器的 `8000` 端口。用户业务接口为 `/api/asset-*` 和 `/api/video/*`。
 
-`/api/internal/*` 使用服务端 Session、`HttpOnly` Cookie 和 CSRF 校验。控制台必须通过 HTTPS 提供，并把 `/api/internal/*` 同源反向代理到 API 容器；不要让控制台跨域调用公开 API 域名上的管理接口。
+`/api/internal/*` 使用服务端 Session、`HttpOnly` Cookie 和 CSRF 校验。控制台必须通过 HTTPS 提供，并把 `/api/internal/*` 同源反向代理到 API 容器；当前火山部署由 `https://api.richbest.cn/` 同时提供控制台页面和客户 `/api/*`，管理 Cookie 仅作用于 `/api/internal`。
 
 仓库内的火山部署配置遵循以下边界：
 
 - `edge` 是控制台的同源代理，并对所有管理响应强制 `Cache-Control: no-store`；
-- 独立客户 API 域名拒绝 `/api/internal/*`，避免管理入口经公开 API 域名暴露；
+- `api.richbest.cn` 的 `/api/internal/*` 仅接受管理员 Session 和 CSRF，响应强制禁止缓存；
 - IP 地址只记录到登录、会话和审计信息，不用于登录限制、白名单或账号权限判断；
 - Cookie 的 `Secure` 属性在生产必须开启。本地纯 HTTP 验收时才临时设置 `ADMIN_COOKIE_SECURE=false`。
 
