@@ -64,6 +64,25 @@ class AdminDatabaseRestore(ApiModel):
     confirmation: str = Field(min_length=1, max_length=32)
 
 
+class AdminSystemMonitorSettingsUpdate(ApiModel):
+    enabled: bool
+    warning_percent: float = Field(ge=1, le=99)
+    critical_percent: float = Field(ge=1, le=99)
+    emergency_percent: float = Field(ge=1, le=100)
+    recovery_percent: float = Field(ge=0, le=98)
+    current_password: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> "AdminSystemMonitorSettingsUpdate":
+        if not (
+            self.recovery_percent < self.warning_percent
+            < self.critical_percent
+            < self.emergency_percent
+        ):
+            raise ValueError("恢复、预警、严重和紧急阈值必须依次递增")
+        return self
+
+
 class ProjectCreate(ApiModel):
     name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
     display_name: str | None = Field(default=None, min_length=1, max_length=64)

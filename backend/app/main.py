@@ -16,6 +16,7 @@ from .quota import QuotaManager
 from .routers import admin, assets, auth, internal, video
 from .seedance import SeedanceClient
 from .storage import TosStorage
+from .system_monitor import DiskMonitor
 from .volcengine import VolcengineClient
 
 
@@ -43,17 +44,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.storage = TosStorage(
             resolved, database, app.state.quota, app.state.maintenance_gate
         )
+        app.state.system_monitor = DiskMonitor(
+            database, resolved, maintenance_gate=app.state.maintenance_gate
+        )
         maintenance = asyncio.create_task(app.state.storage.maintenance_loop())
         backup_maintenance = asyncio.create_task(app.state.backup.maintenance_loop())
+        system_monitor_maintenance = asyncio.create_task(app.state.system_monitor.maintenance_loop())
         try:
             yield
         finally:
             maintenance.cancel()
             backup_maintenance.cancel()
+            system_monitor_maintenance.cancel()
             with suppress(asyncio.CancelledError):
                 await maintenance
             with suppress(asyncio.CancelledError):
                 await backup_maintenance
+            with suppress(asyncio.CancelledError):
+                await system_monitor_maintenance
+            await app.state.system_monitor.aclose()
             await volcengine.aclose()
 
     app = FastAPI(

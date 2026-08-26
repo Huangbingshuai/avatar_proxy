@@ -9,6 +9,7 @@ from ..schemas import (
     AdminPasswordChange,
     AdminSecurityAlertAck,
     AdminSensitiveAction,
+    AdminSystemMonitorSettingsUpdate,
     AdminTotpConfirm,
     AdminTotpRotationConfirm,
     AdminTotpRotationStart,
@@ -212,6 +213,73 @@ def acknowledge_security_alert(
     payload: AdminSecurityAlertAck, request: Request, principal: AdminDependency
 ) -> dict:
     return {"alert": request.app.state.admin_auth.acknowledge_security_alert(principal, payload.alert_id)}
+
+
+@router.get("/admin/system-monitor/status")
+def system_monitor_status(request: Request, principal: AdminDependency) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    return request.app.state.system_monitor.status()
+
+
+@router.get("/admin/system-monitor/history")
+def system_monitor_history(
+    request: Request,
+    principal: AdminDependency,
+    hours: int = Query(default=24, ge=1, le=24 * 30),
+) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    return {"hours": hours, "samples": request.app.state.system_monitor.history(hours)}
+
+
+@router.put("/admin/system-monitor/settings")
+def update_system_monitor_settings(
+    payload: AdminSystemMonitorSettingsUpdate,
+    request: Request,
+    principal: AdminDependency,
+) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    request.app.state.admin_auth.verify_reauthentication(
+        principal,
+        payload.current_password,
+        _request_ip(request),
+        _user_agent(request),
+        "admin.system_monitor.settings.update",
+    )
+    return {
+        "settings": request.app.state.system_monitor.update_settings(
+            enabled=payload.enabled,
+            warning_percent=payload.warning_percent,
+            critical_percent=payload.critical_percent,
+            emergency_percent=payload.emergency_percent,
+            recovery_percent=payload.recovery_percent,
+            actor_id=principal.id,
+            actor=principal.username,
+            source_ip=_request_ip(request),
+            user_agent=_user_agent(request),
+        )
+    }
+
+
+@router.post("/admin/system-monitor/webhook/test")
+async def test_system_monitor_webhook(
+    payload: AdminSensitiveAction,
+    request: Request,
+    principal: AdminDependency,
+) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    request.app.state.admin_auth.verify_reauthentication(
+        principal,
+        payload.current_password,
+        _request_ip(request),
+        _user_agent(request),
+        "admin.system_monitor.webhook.test",
+    )
+    return await request.app.state.system_monitor.test_webhook(
+        actor_id=principal.id,
+        actor=principal.username,
+        source_ip=_request_ip(request),
+        user_agent=_user_agent(request),
+    )
 
 
 @router.get("/admin/backups/status")
