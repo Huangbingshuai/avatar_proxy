@@ -303,6 +303,67 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .totpRotationHint { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.7; text-align: center; }
 .totpRotationQr { width: 190px; height: 190px; margin: 0 auto; display: block; border: 10px solid #fff; border-radius: 18px; background-position: center; background-repeat: no-repeat; background-size: contain; box-shadow: 0 10px 36px rgba(28,52,44,.12); }
 .totpRotationRecovery pre { margin: 0; padding: 16px; columns: 2; border: 1px dashed #d89a89; border-radius: 12px; background: var(--coral-soft); color: #694035; font: 12px/1.9 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.diskMonitorPanel { border-color: #d9e7df; background: #fff; }
+.diskMonitorPanel.warning { border-color: #ecdba9; }
+.diskMonitorPanel.critical, .diskMonitorPanel.emergency, .diskMonitorPanel.probe_failed { border-color: #efb4a8; box-shadow: 0 12px 34px rgba(184,71,57,.08); }
+.diskMonitorHead h3 { display: flex; align-items: center; gap: 8px; }
+.diskState { padding: 7px 10px; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; color: #2d6c54; background: #e5f3eb; font-size: 9px; font-weight: 900; white-space: nowrap; }
+.diskState.warning { color: #7a5c1c; background: #fff3cf; }
+.diskState.critical, .diskState.emergency, .diskState.probe_failed { color: #a43f33; background: #fff0ec; }
+.diskState.disabled { color: #68736c; background: #eeefeb; }
+.diskOverview { padding: 17px 20px; display: grid; grid-template-columns: 1.55fr .7fr 1fr .8fr; align-items: center; gap: 12px; border-top: 1px solid #efeee9; background: #fffdfa; }
+.diskOverview > div { min-width: 0; padding: 11px 12px; border-radius: 13px; background: #f6f5ef; }
+.diskOverview small, .diskOverview b, .diskOverview code { display: block; }
+.diskOverview small { color: var(--muted); font-size: 9px; }
+.diskOverview b { margin-top: 4px; color: #355246; font-size: 12px; }
+.diskOverview code { overflow: hidden; color: #486258; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.diskGauge { display: grid !important; grid-template-columns: minmax(100px,1fr) auto; align-items: center; gap: 12px; background: #edf6f1 !important; }
+.diskGaugeTrack { height: 9px; overflow: hidden; border-radius: 999px; background: #d9e7df; }
+.diskGaugeTrack i { height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg,#4f9b7d 0%,#efb85b 78%,#ef705b 100%); transition: width .35s ease; }
+.diskGauge b, .diskGauge small { text-align: right; white-space: nowrap; }
+.diskProbeError { margin: 0 20px 14px; padding: 9px 11px; display: flex; align-items: center; gap: 7px; border-radius: 11px; color: #a34336; background: #fff0ec; font-size: 10px; }
+.diskMonitorBody { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(340px,.9fr); border-top: 1px solid #efeee9; }
+.diskTrendCard, .diskSettingsCard { min-width: 0; padding: 18px 20px; }
+.diskSettingsCard { display: grid; gap: 12px; border-left: 1px solid #efeee9; background: #fffaf7; }
+.diskSubhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.diskSubhead b, .diskSubhead small { display: block; }
+.diskSubhead b { color: #3f4f47; font-size: 12px; }
+.diskSubhead small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.diskSubhead > div:last-child { display: flex; gap: 3px; padding: 3px; border-radius: 9px; background: #f1f2ed; }
+.diskSubhead > div:last-child button { padding: 5px 8px; border: 0; border-radius: 7px; color: #778079; background: transparent; font-size: 8px; font-weight: 800; }
+.diskSubhead > div:last-child button.active { color: #fff; background: #537866; }
+.diskChart { height: 160px; margin-top: 16px; position: relative; overflow: hidden; border: 1px solid #e8e8e2; border-radius: 14px; background: repeating-linear-gradient(to bottom,#fbfcfa 0,#fbfcfa 31px,#edf0eb 32px); }
+.diskChart svg { width: 100%; height: 100%; position: relative; z-index: 2; overflow: visible; }
+.diskChart polyline { fill: none; stroke: #ef705b; stroke-width: 3; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.diskChartEmpty { height: 100%; display: grid; place-items: center; color: #9a9f99; font-size: 10px; }
+.diskThreshold { width: 100%; height: 1px; position: absolute; left: 0; z-index: 1; border-top: 1px dashed; opacity: .5; }
+.diskThreshold.warning { border-color: #d6a536; }
+.diskThreshold.critical { border-color: #e48056; }
+.diskThreshold.emergency { border-color: #cf4b3d; }
+.diskLegend { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 8px; }
+.diskLegend span { display: inline-flex; align-items: center; gap: 5px; }
+.diskLegend i { width: 7px; height: 7px; border-radius: 50%; }
+.diskLegend i.warning { background: #d6a536; }
+.diskLegend i.critical { background: #e48056; }
+.diskLegend i.emergency { background: #cf4b3d; }
+.monitorSwitch { display: inline-flex !important; flex-direction: row !important; align-items: center; gap: 6px; color: #4a6659 !important; font-size: 9px !important; }
+.monitorSwitch input { width: 16px !important; height: 16px; }
+.diskThresholdFields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; }
+.diskThresholdFields label { min-width: 0; }
+.diskThresholdFields input { padding: 8px 7px !important; }
+.diskSettingsCard > label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; }
+.diskSettingsCard input { width: 100%; padding: 9px 10px; border: 1px solid #dddcd5; border-radius: 9px; outline: none; background: #fff; color: #313a35; font-size: 10px; }
+.diskSettingsCard input:focus { border-color: #ef927f; box-shadow: 0 0 0 3px rgba(240,112,91,.1); }
+.wecomStatus { padding: 10px; display: grid; grid-template-columns: minmax(0,1fr) 150px auto; align-items: center; gap: 8px; border-radius: 12px; }
+.wecomStatus.configured { color: #2b654f; background: #e8f5ed; }
+.wecomStatus.missing { color: #775f37; background: #fff7e6; }
+.wecomStatus > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wecomStatus b, .wecomStatus small { display: block; }
+.wecomStatus b { font-size: 10px; }
+.wecomStatus small { margin-top: 2px; overflow: hidden; opacity: .72; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.wecomStatus input { padding: 7px 8px; font-size: 9px; }
+.wecomStatus button { padding: 7px 9px; font-size: 9px; white-space: nowrap; }
+.monitorSuccess { padding: 9px 11px; display: flex; align-items: center; gap: 7px; border-radius: 10px; color: #2e6c53; background: #e5f4eb; font-size: 9px; }
 .backupSummary { padding: 16px 20px; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; border-top: 1px solid #efeee9; }
 .backupSummary > div { padding: 12px; border-radius: 12px; background: #f6f5ef; }
 .backupSummary small, .backupSummary b { display: block; }
@@ -381,6 +442,9 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .quotaMeters { grid-template-columns: repeat(2, 1fr); }
   .quotaEditGrid { grid-template-columns: 1fr; }
   .quotaBottomGrid { grid-template-columns: 1fr; }
+  .diskMonitorBody { grid-template-columns: 1fr; }
+  .diskSettingsCard { border-top: 1px solid #efeee9; border-left: 0; }
+  .diskOverview { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -405,6 +469,10 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .quotaSelector { grid-template-columns: 1fr; }
   .quotaSelector > div { text-align: left; }
   .backupSummary, .restoreTargetSummary { grid-template-columns: 1fr; }
+  .diskOverview, .diskThresholdFields { grid-template-columns: 1fr; }
+  .diskGauge { grid-template-columns: 1fr !important; }
+  .diskGauge b, .diskGauge small { text-align: left; }
+  .wecomStatus { grid-template-columns: 1fr; }
   .totpSecurityPanel, .totpSecurityAction { align-items: flex-start; flex-direction: column; }
   .restoreSectionHead { align-items: flex-start; flex-direction: column; }
   .backupItem { grid-template-columns: auto minmax(0,1fr); }

@@ -241,6 +241,51 @@ CREATE TABLE IF NOT EXISTS admin_restore_runs (
     started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS system_monitor_settings (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    enabled INTEGER NOT NULL DEFAULT 1,
+    warning_percent REAL NOT NULL DEFAULT 80,
+    critical_percent REAL NOT NULL DEFAULT 90,
+    emergency_percent REAL NOT NULL DEFAULT 95,
+    recovery_percent REAL NOT NULL DEFAULT 75,
+    updated_by TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS disk_usage_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    total_bytes INTEGER NOT NULL,
+    used_bytes INTEGER NOT NULL,
+    available_bytes INTEGER NOT NULL,
+    reserved_bytes INTEGER NOT NULL DEFAULT 0,
+    used_percent REAL NOT NULL,
+    level TEXT NOT NULL CHECK(level IN ('normal','warning','critical','emergency')),
+    sampled_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS system_monitor_state (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    active_disk_incident_id TEXT,
+    disk_alerted_levels_json TEXT NOT NULL DEFAULT '[]',
+    recovery_streak INTEGER NOT NULL DEFAULT 0,
+    probe_failure_streak INTEGER NOT NULL DEFAULT 0,
+    probe_alert_active INTEGER NOT NULL DEFAULT 0,
+    last_sampled_at INTEGER,
+    last_persisted_at INTEGER,
+    last_error TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS system_monitor_webhook_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','failed')),
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TEXT,
+    FOREIGN KEY(alert_id) REFERENCES admin_security_alerts(id) ON DELETE SET NULL
+);
 CREATE INDEX IF NOT EXISTS idx_quota_events_open ON quota_events(acknowledged, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_asset_records_project_status ON asset_records(project_name, status);
 CREATE INDEX IF NOT EXISTS idx_asset_records_asset_id ON asset_records(project_name, asset_id);
@@ -258,6 +303,10 @@ CREATE INDEX IF NOT EXISTS idx_admin_backup_runs_started
     ON admin_backup_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_admin_restore_runs_started
     ON admin_restore_runs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_disk_usage_samples_sampled
+    ON disk_usage_samples(sampled_at DESC);
+CREATE INDEX IF NOT EXISTS idx_system_monitor_deliveries_pending
+    ON system_monitor_webhook_deliveries(status, next_attempt_at);
 """
 
 
@@ -311,6 +360,12 @@ class Database:
                 connection.execute(
                     "ALTER TABLE admin_sessions ADD COLUMN mfa_verified INTEGER NOT NULL DEFAULT 0"
                 )
+            connection.execute(
+                "INSERT OR IGNORE INTO system_monitor_settings(id) VALUES (1)"
+            )
+            connection.execute(
+                "INSERT OR IGNORE INTO system_monitor_state(id) VALUES (1)"
+            )
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations
