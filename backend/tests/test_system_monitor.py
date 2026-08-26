@@ -1,9 +1,11 @@
 import asyncio
 import json
+import smtplib
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -43,8 +45,7 @@ def build_monitor(
     *,
     percent: float = 10,
     clock: Clock | None = None,
-    webhook: str = "",
-    transport: httpx.BaseTransport | None = None,
+    email: bool = False,
 ) -> tuple[Database, DiskMonitor, Clock, dict[str, float]]:
     database = Database(tmp_path / "monitor.db")
     database.initialize()
@@ -55,15 +56,19 @@ def build_monitor(
         system_monitor_path=tmp_path,
         system_monitor_sample_interval_seconds=60,
         system_monitor_persist_interval_seconds=300,
-        wecom_robot_webhook_url=webhook or None,
+        smtp_host="smtp.example.test" if email else "",
+        smtp_port=465,
+        smtp_username="alerts@example.test" if email else "",
+        smtp_password="super-secret-password" if email else None,
+        smtp_from_email="alerts@example.test" if email else "",
+        alert_email_recipients="ops@example.test,owner@example.test" if email else "",
+        smtp_security="ssl",
     )
-    client = httpx.AsyncClient(transport=transport) if transport else None
     monitor = DiskMonitor(
         database,
         settings,
         clock=timer,
         statvfs=lambda _: disk_stats(current["percent"]),
-        http_client=client,
     )
     return database, monitor, timer, current
 
@@ -93,6 +98,56 @@ def test_database_migration_defaults_are_idempotent(tmp_path: Path) -> None:
     assert state["disk_alerted_levels_json"] == "[]"
     settings = build_settings(tmp_path / "fallback" / "app.db", system_monitor_path="")
     assert settings.effective_system_monitor_path == tmp_path / "fallback"
+
+
+def test_database_upgrade_keeps_legacy_webhook_table_but_uses_new_email_queue(tmp_path: Path) -> None:
+    path = tmp_path / "legacy-webhook.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE system_monitor_webhook_deliveries "
+            "(id INTEGER PRIMARY KEY, message TEXT NOT NULL, status TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO system_monitor_webhook_deliveries(id,message,status) VALUES (1,'legacy','pending')"
+        )
+    database = Database(path)
+    database.initialize()
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM system_monitor_webhook_deliveries"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM system_monitor_email_deliveries"
+        ).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"smtp_password": None},
+        {"smtp_username": ""},
+        {"smtp_from_email": "invalid-address"},
+        {"alert_email_recipients": "invalid-address"},
+    ],
+)
+def test_incomplete_or_invalid_email_configuration_is_not_enabled(
+    tmp_path: Path,
+    overrides: dict,
+) -> None:
+    values = {
+        "smtp_host": "smtp.example.test",
+        "smtp_username": "alerts@example.test",
+        "smtp_password": "mail-secret",
+        "smtp_from_email": "alerts@example.test",
+        "alert_email_recipients": "ops@example.test",
+    }
+    values.update(overrides)
+    settings = build_settings(tmp_path / "invalid-email.db", **values)
+    database = Database(settings.database_path)
+    database.initialize()
+    monitor = DiskMonitor(database, settings)
+    assert monitor.email_configured is False
+    assert monitor.settings_payload()["emailConfigured"] is False
 
 
 @pytest.mark.parametrize(
@@ -132,7 +187,6 @@ def test_incident_escalation_deduplicates_across_restart_and_recovers(tmp_path: 
         monitor.settings,
         clock=timer,
         statvfs=lambda _: disk_stats(current["percent"]),
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200))),
     )
     timer.value += 60
     asyncio.run(restarted.run_once())
@@ -172,6 +226,54 @@ def test_direct_emergency_marks_lower_thresholds_as_already_alerted(tmp_path: Pa
     asyncio.run(monitor.run_once())
     assert [row["event_type"] for row in alert_rows(database)] == ["disk_usage_emergency"]
     asyncio.run(monitor.aclose())
+
+
+def test_existing_active_incident_is_emailed_automatically_after_smtp_is_configured(
+    tmp_path: Path,
+) -> None:
+    database, monitor, timer, current = build_monitor(tmp_path, percent=96)
+    asyncio.run(monitor.run_once())
+    with database.connect() as connection:
+        alert_id = connection.execute(
+            "SELECT id FROM admin_security_alerts WHERE event_type='disk_usage_emergency'"
+        ).fetchone()[0]
+        assert connection.execute(
+            "SELECT COUNT(*) FROM system_monitor_email_deliveries"
+        ).fetchone()[0] == 0
+
+    settings = build_settings(
+        database.path,
+        system_monitor_path=tmp_path,
+        system_monitor_sample_interval_seconds=60,
+        system_monitor_persist_interval_seconds=300,
+        smtp_host="smtp.example.test",
+        smtp_port=465,
+        smtp_username="alerts@example.test",
+        smtp_password="mail-secret",
+        smtp_from_email="alerts@example.test",
+        alert_email_recipients="ops@example.test",
+        smtp_security="ssl",
+    )
+    restarted = DiskMonitor(
+        database,
+        settings,
+        clock=timer,
+        statvfs=lambda _: disk_stats(current["percent"]),
+    )
+    restarted._send_email = AsyncMock()
+    timer.value += 60
+    asyncio.run(restarted.run_once())
+    timer.value += 60
+    asyncio.run(restarted.run_once())
+
+    assert restarted._send_email.await_count == 1
+    with database.connect() as connection:
+        delivery = dict(connection.execute(
+            "SELECT alert_id,status,attempt_count FROM system_monitor_email_deliveries"
+        ).fetchone())
+    assert delivery == {"alert_id": alert_id, "status": "sent", "attempt_count": 1}
+    asyncio.run(monitor.aclose())
+    asyncio.run(restarted.aclose())
 
 
 def test_probe_failure_alerts_after_three_failures_then_recovers(tmp_path: Path) -> None:
@@ -218,58 +320,118 @@ def test_samples_persist_every_five_minutes_and_old_history_is_pruned(tmp_path: 
     asyncio.run(monitor.aclose())
 
 
-def test_wecom_delivery_retries_at_expected_schedule_without_storing_secret(tmp_path: Path) -> None:
+def test_email_delivery_retries_at_expected_schedule_without_storing_secret(tmp_path: Path) -> None:
     attempts: list[int] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    async def send_email(subject: str, body: str) -> None:
+        assert "磁盘空间监控" in subject
+        assert "磁盘空间达到预警阈值" in body
         attempts.append(1)
         if len(attempts) < 4:
-            return httpx.Response(500, json={"errcode": 500})
-        return httpx.Response(200, json={"errcode": 0, "errmsg": "ok"})
+            raise ApiError("SMTP邮件发送失败（SMTPServerDisconnected）", 502, "alert_email_send_failed")
 
-    webhook = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=super-secret"
     database, monitor, timer, _ = build_monitor(
         tmp_path,
         percent=80,
-        webhook=webhook,
-        transport=httpx.MockTransport(handler),
+        email=True,
     )
+    monitor._send_email = send_email
     asyncio.run(monitor.run_once())
     for delay in (60, 300, 900):
         timer.value += delay
         asyncio.run(monitor.deliver_pending())
     with database.connect() as connection:
-        delivery = dict(connection.execute("SELECT * FROM system_monitor_webhook_deliveries").fetchone())
+        delivery = dict(connection.execute("SELECT * FROM system_monitor_email_deliveries").fetchone())
         dump = " ".join(connection.iterdump())
     assert len(attempts) == 4
     assert delivery["status"] == "sent"
     assert delivery["attempt_count"] == 4
-    assert webhook not in dump
-    assert "super-secret" not in dump
+    assert "super-secret-password" not in dump
     asyncio.run(monitor.aclose())
 
 
-def test_failed_wecom_delivery_stops_after_four_attempts(tmp_path: Path) -> None:
-    transport = httpx.MockTransport(lambda _: httpx.Response(200, json={"errcode": 93000}))
+def test_failed_email_delivery_stops_after_four_attempts(tmp_path: Path) -> None:
     database, monitor, timer, _ = build_monitor(
-        tmp_path, percent=80, webhook="https://example.invalid/webhook", transport=transport
+        tmp_path, percent=80, email=True
+    )
+    monitor._send_email = AsyncMock(
+        side_effect=ApiError("SMTP邮件发送失败（SMTPAuthenticationError）", 502, "alert_email_send_failed")
     )
     asyncio.run(monitor.run_once())
     for delay in (60, 300, 900, 3600):
         timer.value += delay
         asyncio.run(monitor.deliver_pending())
     with database.connect() as connection:
-        delivery = dict(connection.execute("SELECT * FROM system_monitor_webhook_deliveries").fetchone())
+        delivery = dict(connection.execute("SELECT * FROM system_monitor_email_deliveries").fetchone())
     assert delivery["status"] == "failed"
     assert delivery["attempt_count"] == 4
-    assert "93000" in delivery["last_error"]
+    assert "SMTPAuthenticationError" in delivery["last_error"]
     asyncio.run(monitor.aclose())
 
 
+@pytest.mark.parametrize("security", ["ssl", "starttls"])
+def test_smtp_message_uses_tls_authentication_and_expected_recipients(
+    tmp_path: Path,
+    monkeypatch,
+    security: str,
+) -> None:
+    events: dict[str, object] = {"ehlo": 0, "starttls": 0}
+
+    class FakeSmtp:
+        def __init__(self, host, port, **kwargs):
+            events.update(host=host, port=port, kwargs=kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def ehlo(self):
+            events["ehlo"] = int(events["ehlo"]) + 1
+
+        def starttls(self, *, context):
+            events["starttls"] = int(events["starttls"]) + 1
+            events["tls_context"] = context
+
+        def login(self, username, password):
+            events["login"] = (username, password)
+
+        def send_message(self, message, *, from_addr, to_addrs):
+            events["message"] = message
+            events["from_addr"] = from_addr
+            events["to_addrs"] = to_addrs
+            return {}
+
+    monkeypatch.setattr(smtplib, "SMTP_SSL" if security == "ssl" else "SMTP", FakeSmtp)
+    settings = build_settings(
+        tmp_path / "smtp.db",
+        smtp_host="smtp.example.test",
+        smtp_port=465 if security == "ssl" else 587,
+        smtp_username="alerts@example.test",
+        smtp_password="mail-authorization-secret",
+        smtp_from_email="alerts@example.test",
+        alert_email_recipients="ops@example.test; owner@example.test",
+        smtp_security=security,
+    )
+    monitor = DiskMonitor(Database(settings.database_path), settings)
+    monitor._send_email_sync("[Avatar Proxy] 测试", "测试正文")
+
+    assert events["host"] == "smtp.example.test"
+    assert events["login"] == ("alerts@example.test", "mail-authorization-secret")
+    assert events["from_addr"] == "alerts@example.test"
+    assert events["to_addrs"] == ["ops@example.test", "owner@example.test"]
+    assert str(events["message"]["Subject"]) == "[Avatar Proxy] 测试"
+    assert events["starttls"] == (1 if security == "starttls" else 0)
+    assert events["ehlo"] == (2 if security == "starttls" else 0)
+
+
 def test_disabling_monitor_clears_incident_and_cancels_pending_delivery(tmp_path: Path) -> None:
-    transport = httpx.MockTransport(lambda _: httpx.Response(500, json={"errcode": 500}))
     database, monitor, _, _ = build_monitor(
-        tmp_path, percent=80, webhook="https://example.invalid/webhook", transport=transport
+        tmp_path, percent=80, email=True
+    )
+    monitor._send_email = AsyncMock(
+        side_effect=ApiError("SMTP邮件发送失败（TimeoutError）", 502, "alert_email_send_failed")
     )
     asyncio.run(monitor.run_once())
     updated = monitor.update_settings(
@@ -285,7 +447,7 @@ def test_disabling_monitor_clears_incident_and_cancels_pending_delivery(tmp_path
     )
     with database.connect() as connection:
         state = dict(connection.execute("SELECT * FROM system_monitor_state").fetchone())
-        delivery = dict(connection.execute("SELECT * FROM system_monitor_webhook_deliveries").fetchone())
+        delivery = dict(connection.execute("SELECT * FROM system_monitor_email_deliveries").fetchone())
     assert updated["enabled"] is False
     assert state["active_disk_incident_id"] is None
     assert delivery["status"] == "failed"
@@ -299,7 +461,11 @@ def test_super_admin_monitor_contract_reauthentication_and_audit(tmp_path: Path,
             tmp_path / "admin.db",
             system_monitor_enabled=False,
             system_monitor_path=tmp_path,
-            wecom_robot_webhook_url="https://example.invalid/wecom-secret",
+            smtp_host="smtp.example.test",
+            smtp_username="alerts@example.test",
+            smtp_password="mail-secret",
+            smtp_from_email="alerts@example.test",
+            alert_email_recipients="ops@example.test",
         )
     )
     with TestClient(app) as client:
@@ -307,8 +473,13 @@ def test_super_admin_monitor_contract_reauthentication_and_audit(tmp_path: Path,
         headers = {"X-CSRF-Token": session["csrfToken"]}
         status = client.get("/api/internal/admin/system-monitor/status")
         assert status.status_code == 200
-        assert status.json()["settings"]["webhookConfigured"] is True
-        assert "wecom-secret" not in status.text
+        assert status.json()["settings"]["emailConfigured"] is True
+        assert status.json()["settings"]["emailRecipientCount"] == 1
+        assert "mail-secret" not in status.text
+        with app.state.database.connect() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM system_monitor_email_deliveries"
+            ).fetchone()[0] == 0
 
         invalid = client.put(
             "/api/internal/admin/system-monitor/settings",
@@ -353,12 +524,13 @@ def test_super_admin_monitor_contract_reauthentication_and_audit(tmp_path: Path,
         assert updated.status_code == 200
         assert updated.json()["settings"]["warningPercent"] == 82
 
-        async def fake_send(message: str) -> None:
-            assert "磁盘告警通道测试成功" in message
+        async def fake_send(subject: str, body: str) -> None:
+            assert "磁盘空间监控" in subject
+            assert "磁盘告警邮件通道测试成功" in body
 
-        monkeypatch.setattr(app.state.system_monitor, "_send_webhook", fake_send)
+        monkeypatch.setattr(app.state.system_monitor, "_send_email", fake_send)
         tested = client.post(
-            "/api/internal/admin/system-monitor/webhook/test",
+            "/api/internal/admin/system-monitor/email/test",
             headers=headers,
             json={"currentPassword": CHANGED_PASSWORD},
         )
@@ -377,27 +549,27 @@ def test_super_admin_monitor_contract_reauthentication_and_audit(tmp_path: Path,
             }
         assert actions == {
             "admin.system_monitor.settings.update",
-            "admin.system_monitor.webhook.test",
+            "admin.system_monitor.email.test",
         }
 
 
-def test_webhook_test_rejects_missing_configuration_and_audits_failure(tmp_path: Path) -> None:
+def test_email_test_rejects_missing_configuration_and_audits_failure(tmp_path: Path) -> None:
     database, monitor, _, _ = build_monitor(tmp_path)
     with pytest.raises(ApiError) as captured:
         asyncio.run(
-            monitor.test_webhook(
+            monitor.test_email(
                 actor_id="owner-id",
                 actor="owner",
                 source_ip="127.0.0.1",
                 user_agent="pytest",
             )
         )
-    assert captured.value.code == "wecom_webhook_not_configured"
+    assert captured.value.code == "alert_email_not_configured"
     with database.connect() as connection:
         audit = dict(connection.execute("SELECT action,outcome,after_json FROM admin_audit_logs").fetchone())
-    assert audit["action"] == "admin.system_monitor.webhook.test"
+    assert audit["action"] == "admin.system_monitor.email.test"
     assert audit["outcome"] == "failure"
-    assert "webhook" not in audit["after_json"].lower()
+    assert "mail" not in audit["after_json"].lower()
     asyncio.run(monitor.aclose())
 
 

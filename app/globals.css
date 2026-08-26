@@ -322,30 +322,12 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .diskGaugeTrack i { height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg,#4f9b7d 0%,#efb85b 78%,#ef705b 100%); transition: width .35s ease; }
 .diskGauge b, .diskGauge small { text-align: right; white-space: nowrap; }
 .diskProbeError { margin: 0 20px 14px; padding: 9px 11px; display: flex; align-items: center; gap: 7px; border-radius: 11px; color: #a34336; background: #fff0ec; font-size: 10px; }
-.diskMonitorBody { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(340px,.9fr); border-top: 1px solid #efeee9; }
-.diskTrendCard, .diskSettingsCard { min-width: 0; padding: 18px 20px; }
-.diskSettingsCard { display: grid; gap: 12px; border-left: 1px solid #efeee9; background: #fffaf7; }
+.diskMonitorBody { border-top: 1px solid #efeee9; }
+.diskSettingsCard { min-width: 0; padding: 18px 20px; display: grid; gap: 12px; background: #fffaf7; }
 .diskSubhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .diskSubhead b, .diskSubhead small { display: block; }
 .diskSubhead b { color: #3f4f47; font-size: 12px; }
 .diskSubhead small { margin-top: 3px; color: var(--muted); font-size: 9px; }
-.diskSubhead > div:last-child { display: flex; gap: 3px; padding: 3px; border-radius: 9px; background: #f1f2ed; }
-.diskSubhead > div:last-child button { padding: 5px 8px; border: 0; border-radius: 7px; color: #778079; background: transparent; font-size: 8px; font-weight: 800; }
-.diskSubhead > div:last-child button.active { color: #fff; background: #537866; }
-.diskChart { height: 160px; margin-top: 16px; position: relative; overflow: hidden; border: 1px solid #e8e8e2; border-radius: 14px; background: repeating-linear-gradient(to bottom,#fbfcfa 0,#fbfcfa 31px,#edf0eb 32px); }
-.diskChart svg { width: 100%; height: 100%; position: relative; z-index: 2; overflow: visible; }
-.diskChart polyline { fill: none; stroke: #ef705b; stroke-width: 3; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
-.diskChartEmpty { height: 100%; display: grid; place-items: center; color: #9a9f99; font-size: 10px; }
-.diskThreshold { width: 100%; height: 1px; position: absolute; left: 0; z-index: 1; border-top: 1px dashed; opacity: .5; }
-.diskThreshold.warning { border-color: #d6a536; }
-.diskThreshold.critical { border-color: #e48056; }
-.diskThreshold.emergency { border-color: #cf4b3d; }
-.diskLegend { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 8px; }
-.diskLegend span { display: inline-flex; align-items: center; gap: 5px; }
-.diskLegend i { width: 7px; height: 7px; border-radius: 50%; }
-.diskLegend i.warning { background: #d6a536; }
-.diskLegend i.critical { background: #e48056; }
-.diskLegend i.emergency { background: #cf4b3d; }
 .monitorSwitch { display: inline-flex !important; flex-direction: row !important; align-items: center; gap: 6px; color: #4a6659 !important; font-size: 9px !important; }
 .monitorSwitch input { width: 16px !important; height: 16px; }
 .diskThresholdFields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; }
@@ -354,15 +336,6 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .diskSettingsCard > label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; }
 .diskSettingsCard input { width: 100%; padding: 9px 10px; border: 1px solid #dddcd5; border-radius: 9px; outline: none; background: #fff; color: #313a35; font-size: 10px; }
 .diskSettingsCard input:focus { border-color: #ef927f; box-shadow: 0 0 0 3px rgba(240,112,91,.1); }
-.wecomStatus { padding: 10px; display: grid; grid-template-columns: minmax(0,1fr) 150px auto; align-items: center; gap: 8px; border-radius: 12px; }
-.wecomStatus.configured { color: #2b654f; background: #e8f5ed; }
-.wecomStatus.missing { color: #775f37; background: #fff7e6; }
-.wecomStatus > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.wecomStatus b, .wecomStatus small { display: block; }
-.wecomStatus b { font-size: 10px; }
-.wecomStatus small { margin-top: 2px; overflow: hidden; opacity: .72; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.wecomStatus input { padding: 7px 8px; font-size: 9px; }
-.wecomStatus button { padding: 7px 9px; font-size: 9px; white-space: nowrap; }
 .monitorSuccess { padding: 9px 11px; display: flex; align-items: center; gap: 7px; border-radius: 10px; color: #2e6c53; background: #e5f4eb; font-size: 9px; }
 .backupSummary { padding: 16px 20px; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; border-top: 1px solid #efeee9; }
 .backupSummary > div { padding: 12px; border-radius: 12px; background: #f6f5ef; }
@@ -442,7 +415,6 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .quotaMeters { grid-template-columns: repeat(2, 1fr); }
   .quotaEditGrid { grid-template-columns: 1fr; }
   .quotaBottomGrid { grid-template-columns: 1fr; }
-  .diskMonitorBody { grid-template-columns: 1fr; }
   .diskSettingsCard { border-top: 1px solid #efeee9; border-left: 0; }
   .diskOverview { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
@@ -472,7 +444,6 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .diskOverview, .diskThresholdFields { grid-template-columns: 1fr; }
   .diskGauge { grid-template-columns: 1fr !important; }
   .diskGauge b, .diskGauge small { text-align: left; }
-  .wecomStatus { grid-template-columns: 1fr; }
   .totpSecurityPanel, .totpSecurityAction { align-items: flex-start; flex-direction: column; }
   .restoreSectionHead { align-items: flex-start; flex-direction: column; }
   .backupItem { grid-template-columns: auto minmax(0,1fr); }

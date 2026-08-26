@@ -274,10 +274,11 @@ CREATE TABLE IF NOT EXISTS system_monitor_state (
     last_error TEXT,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE IF NOT EXISTS system_monitor_webhook_deliveries (
+CREATE TABLE IF NOT EXISTS system_monitor_email_deliveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     alert_id INTEGER,
-    message TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','failed')),
     attempt_count INTEGER NOT NULL DEFAULT 0,
     next_attempt_at INTEGER NOT NULL,
@@ -305,8 +306,10 @@ CREATE INDEX IF NOT EXISTS idx_admin_restore_runs_started
     ON admin_restore_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_disk_usage_samples_sampled
     ON disk_usage_samples(sampled_at DESC);
-CREATE INDEX IF NOT EXISTS idx_system_monitor_deliveries_pending
-    ON system_monitor_webhook_deliveries(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_system_monitor_email_deliveries_pending
+    ON system_monitor_email_deliveries(status, next_attempt_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_system_monitor_email_deliveries_alert
+    ON system_monitor_email_deliveries(alert_id) WHERE alert_id IS NOT NULL;
 """
 
 
