@@ -47,10 +47,16 @@ services:
 
   api-gateway:
     image: docker.m.daocloud.io/library/nginx:1.27-alpine
+    environment:
+      PAYMENT_ORIGIN: "${PAYMENT_ORIGIN:-host.docker.internal:10588}"
+      PAYMENT_ORIGIN_HOST: "${PAYMENT_ORIGIN_HOST:-drama.richbest.cn}"
+      NGINX_ENVSUBST_FILTER: "^(PAYMENT_ORIGIN|PAYMENT_ORIGIN_HOST)$"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "443:443"
     volumes:
-      - ./api-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./api-nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     restart: unless-stopped
     depends_on:

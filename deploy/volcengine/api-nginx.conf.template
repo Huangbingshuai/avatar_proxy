@@ -1,3 +1,7 @@
+log_format minidrama_callback_safe
+    '$time_iso8601 method=$request_method uri=$uri status=$status '
+    'request_time=$request_time request_id=$request_id';
+
 server {
     listen 443 ssl;
     http2 on;
@@ -12,6 +16,40 @@ server {
 
     client_max_body_size 210m;
     client_body_timeout 300s;
+
+    # Public WeChat Pay callback ingress for LocalMiniDrama. This gateway only
+    # terminates TLS and forwards the unmodified request to the payment service.
+    location = /minidrama/payments/callbacks/wechat {
+        if ($request_method != POST) {
+            return 405;
+        }
+
+        client_max_body_size 1m;
+        access_log /var/log/nginx/access.log minidrama_callback_safe;
+
+        proxy_pass http://${PAYMENT_ORIGIN}/api/v1/payments/callbacks/wechat;
+        proxy_http_version 1.1;
+        proxy_pass_request_headers on;
+        proxy_pass_request_body on;
+        proxy_request_buffering on;
+
+        proxy_set_header Host ${PAYMENT_ORIGIN_HOST};
+        proxy_set_header Wechatpay-Timestamp $http_wechatpay_timestamp;
+        proxy_set_header Wechatpay-Nonce $http_wechatpay_nonce;
+        proxy_set_header Wechatpay-Signature $http_wechatpay_signature;
+        proxy_set_header Wechatpay-Serial $http_wechatpay_serial;
+        proxy_set_header Content-Type $content_type;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host api.richbest.cn;
+
+        proxy_connect_timeout 2s;
+        proxy_send_timeout 4s;
+        proxy_read_timeout 4s;
+        proxy_next_upstream off;
+        proxy_intercept_errors off;
+    }
 
     location = /health {
         proxy_pass http://api:8000/health;
