@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,8 +42,14 @@ class Settings(BaseSettings):
     system_monitor_sample_interval_seconds: int = Field(default=60, ge=10, le=3600)
     system_monitor_persist_interval_seconds: int = Field(default=5 * 60, ge=60, le=24 * 60 * 60)
     system_monitor_retention_days: int = Field(default=30, ge=1, le=365)
-    wecom_robot_webhook_url: SecretStr | None = None
-    wecom_robot_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+    smtp_host: str = ""
+    smtp_port: int = Field(default=465, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: SecretStr | None = None
+    smtp_from_email: str = ""
+    alert_email_recipients: str = ""
+    smtp_security: Literal["ssl", "starttls"] = "ssl"
+    smtp_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
     database_path: Path = Path("./data/avatar_proxy.db")
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,"
@@ -73,6 +80,14 @@ class Settings(BaseSettings):
     @property
     def effective_system_monitor_path(self) -> Path:
         return self.system_monitor_path or self.database_path.parent
+
+    @property
+    def alert_email_recipient_list(self) -> list[str]:
+        return [
+            address.strip()
+            for address in self.alert_email_recipients.replace(";", ",").split(",")
+            if address.strip()
+        ]
 
 
 @lru_cache

@@ -3,12 +3,14 @@ import json
 import logging
 import os
 import shutil
+import smtplib
+import ssl
 import time
 import uuid
 from datetime import UTC, datetime
+from email.message import EmailMessage
+from email.utils import parseaddr
 from typing import Any, Callable
-
-import httpx
 
 from .config import Settings
 from .database import Database
@@ -22,6 +24,9 @@ LEVEL_LABELS = {
     "warning": "预警",
     "critical": "严重",
     "emergency": "紧急",
+    "recovered": "恢复",
+    "probe_failed": "探测失败",
+    "info": "测试",
 }
 RETRY_DELAYS = (60, 5 * 60, 15 * 60)
 logger = logging.getLogger(__name__)
@@ -35,7 +40,6 @@ class DiskMonitor:
         *,
         clock: Callable[[], float] | None = None,
         statvfs: Callable[[str], Any] | None = None,
-        http_client: httpx.AsyncClient | None = None,
         maintenance_gate: MaintenanceGate | None = None,
     ) -> None:
         self.database = database
@@ -43,10 +47,6 @@ class DiskMonitor:
         self.path = settings.effective_system_monitor_path.resolve()
         self.clock = clock or time.time
         self.statvfs = statvfs or self._platform_disk_stats
-        self.http_client = http_client or httpx.AsyncClient(
-            timeout=settings.wecom_robot_timeout_seconds
-        )
-        self._owns_http_client = http_client is None
         self.maintenance_gate = maintenance_gate
         self._latest_sample: dict[str, Any] | None = None
 
@@ -69,9 +69,27 @@ class DiskMonitor:
         )()
 
     @property
-    def webhook_configured(self) -> bool:
-        value = self.settings.wecom_robot_webhook_url
-        return bool(value and value.get_secret_value().strip())
+    def email_configured(self) -> bool:
+        username = self.settings.smtp_username.strip()
+        password = self.settings.smtp_password
+        password_configured = bool(password and password.get_secret_value().strip())
+        authentication_valid = bool(username) == password_configured
+        recipients = self.settings.alert_email_recipient_list
+        return bool(
+            self.settings.smtp_host.strip()
+            and self._valid_email_address(self.settings.smtp_from_email.strip())
+            and recipients
+            and all(self._valid_email_address(address) for address in recipients)
+            and authentication_valid
+        )
+
+    @staticmethod
+    def _valid_email_address(value: str) -> bool:
+        if "\r" in value or "\n" in value:
+            return False
+        _, address = parseaddr(value)
+        local, separator, domain = address.rpartition("@")
+        return bool(separator and local and "." in domain and not any(char.isspace() for char in address))
 
     def _database_settings(self, connection=None) -> dict[str, Any]:
         if connection is not None:
@@ -98,7 +116,8 @@ class DiskMonitor:
             "sampleIntervalSeconds": self.settings.system_monitor_sample_interval_seconds,
             "persistIntervalSeconds": self.settings.system_monitor_persist_interval_seconds,
             "retentionDays": self.settings.system_monitor_retention_days,
-            "webhookConfigured": self.webhook_configured,
+            "emailConfigured": self.email_configured,
+            "emailRecipientCount": len(self.settings.alert_email_recipient_list),
             "updatedBy": row["updated_by"],
             "updatedAt": row["updated_at"],
         }
@@ -127,7 +146,7 @@ class DiskMonitor:
                 "used_percent,level,sampled_at FROM disk_usage_samples ORDER BY sampled_at DESC,id DESC LIMIT 1"
             ).fetchone()
             pending = connection.execute(
-                "SELECT COUNT(*) FROM system_monitor_webhook_deliveries WHERE status='pending'"
+                "SELECT COUNT(*) FROM system_monitor_email_deliveries WHERE status='pending'"
             ).fetchone()[0]
         sample = self._latest_sample or self._sample_payload(latest)
         state_value = dict(state) if state else {}
@@ -142,7 +161,7 @@ class DiskMonitor:
             "probeAlertActive": bool(state_value.get("probe_alert_active")),
             "lastSampledAt": state_value.get("last_sampled_at"),
             "lastError": state_value.get("last_error"),
-            "pendingWebhookDeliveries": int(pending),
+            "pendingEmailDeliveries": int(pending),
             "settings": self.settings_payload(),
         }
 
@@ -188,7 +207,7 @@ class DiskMonitor:
                     "probe_alert_active=0,last_error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=1"
                 )
                 connection.execute(
-                    "UPDATE system_monitor_webhook_deliveries SET status='failed',"
+                    "UPDATE system_monitor_email_deliveries SET status='failed',"
                     "last_error='monitor_disabled' WHERE status='pending'"
                 )
             after = self._database_settings(connection)
@@ -283,25 +302,69 @@ class DiskMonitor:
             ),
         )
         alert_id = int(cursor.lastrowid)
-        if self.webhook_configured:
-            connection.execute(
-                "INSERT INTO system_monitor_webhook_deliveries"
-                "(alert_id,message,next_attempt_at) VALUES (?,?,?)",
-                (alert_id, self._wecom_markdown(message, details, now), now),
-            )
+        self._enqueue_email(connection, alert_id, message, details, now)
         return alert_id
 
-    def _wecom_markdown(self, message: str, details: dict[str, Any], now: int) -> str:
-        level = str(details.get("level") or "info")
-        color = "warning" if level in {"warning", "critical", "emergency", "probe_failed"} else "info"
-        timestamp = datetime.fromtimestamp(now, UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-        content = (
-            "## Avatar Proxy 系统监控\n"
-            f"> <font color=\"{color}\">{message}</font>\n"
-            f"> 监控路径：`{self.path}`\n"
-            f"> 时间：{timestamp}"
+    def _enqueue_email(
+        self,
+        connection,
+        alert_id: int,
+        message: str,
+        details: dict[str, Any],
+        now: int,
+    ) -> None:
+        if not self.email_configured:
+            return
+        subject, body = self._email_content(message, details, now)
+        connection.execute(
+            "INSERT OR IGNORE INTO system_monitor_email_deliveries"
+            "(alert_id,subject,body,next_attempt_at) VALUES (?,?,?,?)",
+            (alert_id, subject, body, now),
         )
-        return content[:3900]
+
+    def _ensure_active_incident_email(
+        self,
+        connection,
+        incident_id: str | None,
+        now: int,
+    ) -> None:
+        if not self.email_configured or not incident_id:
+            return
+        rows = connection.execute(
+            "SELECT id,message,details_json FROM admin_security_alerts "
+            "WHERE target_type='filesystem' AND target_id=? "
+            "AND event_type IN ('disk_usage_warning','disk_usage_critical','disk_usage_emergency') "
+            "ORDER BY id DESC LIMIT 20",
+            (str(self.path),),
+        ).fetchall()
+        for row in rows:
+            try:
+                details = json.loads(row["details_json"] or "{}")
+            except (TypeError, ValueError):
+                continue
+            if details.get("incidentId") == incident_id:
+                self._enqueue_email(connection, int(row["id"]), row["message"], details, now)
+                return
+
+    def _email_content(
+        self,
+        message: str,
+        details: dict[str, Any],
+        now: int,
+    ) -> tuple[str, str]:
+        level = str(details.get("level") or "info")
+        label = LEVEL_LABELS.get(level, "通知")
+        timestamp = datetime.fromtimestamp(now, UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        subject = f"[Avatar Proxy][{label}] 磁盘空间监控"
+        body = (
+            "Avatar Proxy 系统监控\n\n"
+            f"告警状态：{label}\n"
+            f"告警内容：{message}\n"
+            f"监控路径：{self.path}\n"
+            f"发生时间：{timestamp}\n\n"
+            "此邮件由系统自动发送，请勿直接回复。"
+        )
+        return subject[:200], body
 
     def _persist_sample(self, connection, sample: dict[str, Any]) -> None:
         connection.execute(
@@ -380,6 +443,8 @@ class DiskMonitor:
                     alerted.clear()
                     recovery_streak = 0
 
+            self._ensure_active_incident_email(connection, incident_id, now)
+
             last_persisted = int(state["last_persisted_at"] or 0)
             if now - last_persisted >= self.settings.system_monitor_persist_interval_seconds:
                 self._persist_sample(connection, sample)
@@ -425,75 +490,90 @@ class DiskMonitor:
                 (failures, int(alert_active), f"磁盘探测失败（{error_name}）"),
             )
 
-    async def _send_webhook(self, message: str) -> None:
-        secret = self.settings.wecom_robot_webhook_url
-        if not secret or not secret.get_secret_value().strip():
-            raise ApiError("企业微信Webhook尚未配置", 409, "wecom_webhook_not_configured")
+    def _send_email_sync(self, subject: str, body: str) -> None:
+        if not self.email_configured:
+            raise ApiError("SMTP邮件告警尚未完整配置", 409, "alert_email_not_configured")
+        recipients = [parseaddr(value)[1] for value in self.settings.alert_email_recipient_list]
+        sender = parseaddr(self.settings.smtp_from_email.strip())[1]
+        message = EmailMessage()
+        message["Subject"] = subject[:200]
+        message["From"] = sender
+        message["To"] = ", ".join(recipients)
+        message.set_content(body)
+        context = ssl.create_default_context()
         try:
-            response = await self.http_client.post(
-                secret.get_secret_value(),
-                json={"msgtype": "markdown", "markdown": {"content": message[:4096]}},
-            )
-        except httpx.HTTPError as error:
+            if self.settings.smtp_security == "ssl":
+                client = smtplib.SMTP_SSL(
+                    self.settings.smtp_host.strip(),
+                    self.settings.smtp_port,
+                    timeout=self.settings.smtp_timeout_seconds,
+                    context=context,
+                )
+            else:
+                client = smtplib.SMTP(
+                    self.settings.smtp_host.strip(),
+                    self.settings.smtp_port,
+                    timeout=self.settings.smtp_timeout_seconds,
+                )
+            with client:
+                if self.settings.smtp_security == "starttls":
+                    client.ehlo()
+                    client.starttls(context=context)
+                    client.ehlo()
+                username = self.settings.smtp_username.strip()
+                password = self.settings.smtp_password
+                if username and password:
+                    client.login(username, password.get_secret_value())
+                refused = client.send_message(message, from_addr=sender, to_addrs=recipients)
+                if refused:
+                    raise smtplib.SMTPRecipientsRefused(refused)
+        except (OSError, smtplib.SMTPException) as error:
             raise ApiError(
-                f"企业微信Webhook请求失败（{type(error).__name__}）",
+                f"SMTP邮件发送失败（{type(error).__name__}）",
                 502,
-                "wecom_webhook_failed",
+                "alert_email_send_failed",
             ) from error
-        if response.status_code >= 400:
-            raise ApiError(
-                f"企业微信Webhook返回HTTP {response.status_code}",
-                502,
-                "wecom_webhook_failed",
-            )
-        try:
-            body = response.json()
-        except ValueError as error:
-            raise ApiError("企业微信Webhook响应无效", 502, "wecom_webhook_failed") from error
-        if int(body.get("errcode", -1)) != 0:
-            raise ApiError(
-                f"企业微信Webhook拒绝消息（错误码 {body.get('errcode', 'unknown')}）",
-                502,
-                "wecom_webhook_failed",
-            )
+
+    async def _send_email(self, subject: str, body: str) -> None:
+        await asyncio.to_thread(self._send_email_sync, subject, body)
 
     async def deliver_pending(self, now: int | None = None) -> None:
-        if not self.webhook_configured:
+        if not self.email_configured:
             return
         current = int(self.clock()) if now is None else now
         with self.database.connect() as connection:
             rows = connection.execute(
-                "SELECT id,message,attempt_count FROM system_monitor_webhook_deliveries "
+                "SELECT id,subject,body,attempt_count FROM system_monitor_email_deliveries "
                 "WHERE status='pending' AND next_attempt_at<=? ORDER BY id LIMIT 20",
                 (current,),
             ).fetchall()
         for row in rows:
             try:
-                await self._send_webhook(row["message"])
+                await self._send_email(row["subject"], row["body"])
             except ApiError as error:
                 attempts = int(row["attempt_count"]) + 1
                 with self.database.connect() as connection:
                     if attempts >= 4:
                         connection.execute(
-                            "UPDATE system_monitor_webhook_deliveries SET status='failed',"
+                            "UPDATE system_monitor_email_deliveries SET status='failed',"
                             "attempt_count=?,last_error=? WHERE id=?",
                             (attempts, error.message[:300], row["id"]),
                         )
                     else:
                         connection.execute(
-                            "UPDATE system_monitor_webhook_deliveries SET attempt_count=?,"
+                            "UPDATE system_monitor_email_deliveries SET attempt_count=?,"
                             "next_attempt_at=?,last_error=? WHERE id=?",
                             (attempts, current + RETRY_DELAYS[attempts - 1], error.message[:300], row["id"]),
                         )
             else:
                 with self.database.connect() as connection:
                     connection.execute(
-                        "UPDATE system_monitor_webhook_deliveries SET status='sent',"
+                        "UPDATE system_monitor_email_deliveries SET status='sent',"
                         "attempt_count=attempt_count+1,last_error=NULL,sent_at=CURRENT_TIMESTAMP WHERE id=?",
                         (row["id"],),
                     )
 
-    async def test_webhook(
+    async def test_email(
         self,
         *,
         actor_id: str,
@@ -503,18 +583,17 @@ class DiskMonitor:
     ) -> dict[str, bool]:
         now = int(self.clock())
         try:
-            await self._send_webhook(
-                self._wecom_markdown("企业微信磁盘告警通道测试成功", {"level": "info"}, now)
-            )
+            subject, body = self._email_content("磁盘告警邮件通道测试成功", {"level": "info"}, now)
+            await self._send_email(subject, body)
         except ApiError:
             self.database.write_admin_audit(
                 actor=actor,
                 actor_id=actor_id,
                 source_ip=source_ip,
                 user_agent=user_agent,
-                action="admin.system_monitor.webhook.test",
+                action="admin.system_monitor.email.test",
                 target_type="system_monitor",
-                target_id="wecom",
+                target_id="email",
                 after={"result": "failed"},
                 outcome="failure",
             )
@@ -524,9 +603,9 @@ class DiskMonitor:
             actor_id=actor_id,
             source_ip=source_ip,
             user_agent=user_agent,
-            action="admin.system_monitor.webhook.test",
+            action="admin.system_monitor.email.test",
             target_type="system_monitor",
-            target_id="wecom",
+            target_id="email",
             after={"result": "success"},
         )
         return {"sent": True}
@@ -557,5 +636,4 @@ class DiskMonitor:
             await asyncio.sleep(self.settings.system_monitor_sample_interval_seconds)
 
     async def aclose(self) -> None:
-        if self._owns_http_client:
-            await self.http_client.aclose()
+        return None

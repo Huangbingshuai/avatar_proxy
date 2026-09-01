@@ -42,7 +42,7 @@ function installFetch(data: MockData = {}) {
     { id: "session-old", current: false, createdAt: 1787020800, lastSeenAt: 1787024400, absoluteExpiresAt: 1787110800, sourceIp: "10.0.0.8", userAgent: "Macintosh Safari" },
   ];
   const backupItem = { id: "20260819-080000-000001", databaseFile: "avatar_proxy-20260819-080000-000001.db", auditFile: "admin_audit-20260819-080000-000001.jsonl", databaseBytes: 2048, auditBytes: 1024, createdAt: data.backupCreatedAt ?? "2026-08-19T08:00:00Z", valid: true, counts: { projects: 2, apiKeys: 2, adminUsers: 2, adminAudits: 19 } };
-  const monitorSettings = { enabled: true, configuredEnabled: true, runtimeEnabled: true, path: "C:\\data", warningPercent: 80, criticalPercent: 90, emergencyPercent: 95, recoveryPercent: 75, sampleIntervalSeconds: 60, persistIntervalSeconds: 300, retentionDays: 30, webhookConfigured: true };
+  const monitorSettings = { enabled: true, configuredEnabled: true, runtimeEnabled: true, path: "C:\\data", warningPercent: 80, criticalPercent: 90, emergencyPercent: 95, recoveryPercent: 75, sampleIntervalSeconds: 60, persistIntervalSeconds: 300, retentionDays: 30, emailConfigured: true, emailRecipientCount: 2 };
   const monitorSample = { path: "C:\\data", totalBytes: 160 * 1024 ** 3, usedBytes: 109.4 * 1024 ** 3, availableBytes: 50.6 * 1024 ** 3, reservedBytes: 0, usedPercent: data.monitorPercent ?? 68.4, level: "normal", sampledAt: 1_787_107_800 };
   const calls: Array<{ path: string; init?: RequestInit }> = [];
   let authenticated = false;
@@ -89,10 +89,8 @@ function installFetch(data: MockData = {}) {
     if (url.pathname === "/api/internal/admin/backups/status") return jsonResponse({ enabled: true, intervalSeconds: 86400, retention: 30, directory: "data/backups", lastRun: { status: "success", completedAt: "2026-08-19 08:00:00", databaseBytes: 2048, auditBytes: 1024 } });
     if (url.pathname === "/api/internal/admin/backups") return jsonResponse({ backups: [backupItem], lastRestore: null });
     if (url.pathname === "/api/internal/admin/backups/run") return jsonResponse({ enabled: true, intervalSeconds: 86400, retention: 30, directory: "data/backups", lastRun: { status: "success", completedAt: "2026-08-19 08:10:00", databaseBytes: 2048, auditBytes: 1024 } });
-    if (url.pathname === "/api/internal/admin/system-monitor/status") return jsonResponse({ health: "ok", sample: monitorSample, activeIncidentId: null, recoveryStreak: 0, probeFailureStreak: 0, probeAlertActive: false, lastSampledAt: monitorSample.sampledAt, lastError: null, pendingWebhookDeliveries: 0, settings: monitorSettings });
-    if (url.pathname === "/api/internal/admin/system-monitor/history") return jsonResponse({ hours: Number(url.searchParams.get("hours")), samples: [{ ...monitorSample, usedPercent: 62, sampledAt: monitorSample.sampledAt - 300 }, monitorSample] });
+    if (url.pathname === "/api/internal/admin/system-monitor/status") return jsonResponse({ health: "ok", sample: monitorSample, activeIncidentId: null, recoveryStreak: 0, probeFailureStreak: 0, probeAlertActive: false, lastSampledAt: monitorSample.sampledAt, lastError: null, pendingEmailDeliveries: 0, settings: monitorSettings });
     if (url.pathname === "/api/internal/admin/system-monitor/settings" && init?.method === "PUT") { const body = JSON.parse(String(init.body)); return jsonResponse({ settings: { ...monitorSettings, ...body, currentPassword: undefined } }); }
-    if (url.pathname === "/api/internal/admin/system-monitor/webhook/test") return jsonResponse({ sent: true });
     if (/\/api\/internal\/admin\/backups\/[^/]+\/validate$/.test(url.pathname)) return jsonResponse({ backup: { ...backupItem, integrity: "ok", sha256: "abc123" } });
     if (/\/api\/internal\/admin\/backups\/[^/]+\/restore$/.test(url.pathname)) { authenticated = false; return jsonResponse({ restored: true, requiresLogin: true }); }
     if (/\/api\/internal\/admin\/users\/[^/]+\/(enable|disable)$/.test(url.pathname)) {
@@ -255,14 +253,16 @@ describe("内部控制台", () => {
     expect(new Headers(confirm?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
   });
 
-  it("超级管理员可以查看磁盘趋势、保存阈值并测试企业微信", async () => {
+  it("超级管理员只查看磁盘空间并保存阈值配置", async () => {
     const { calls } = installFetch({ role: "super_admin", monitorPercent: 68.4 });
     const user = await login();
     await user.click(screen.getByRole("button", { name: "安全管理" }));
     expect(await screen.findByRole("heading", { name: /磁盘空间监控/ })).toBeInTheDocument();
     expect(screen.getByText("68.4%")).toBeInTheDocument();
     expect(screen.getByText("C:\\data")).toBeInTheDocument();
-    expect(screen.getByText("企业微信机器人")).toBeInTheDocument();
+    expect(screen.queryByLabelText("磁盘占用趋势图")).not.toBeInTheDocument();
+    expect(screen.queryByText("邮件告警")).not.toBeInTheDocument();
+    expect(calls.some((call) => call.path === "/api/internal/admin/system-monitor/history")).toBe(false);
 
     const warning = screen.getByLabelText("预警阈值");
     await user.clear(warning);
@@ -274,11 +274,6 @@ describe("内部控制台", () => {
     expect(JSON.parse(String(settingsCall?.init?.body))).toMatchObject({ warningPercent: 82, currentPassword: "correct-password" });
     expect(new Headers(settingsCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
 
-    await user.type(screen.getByLabelText("Webhook测试密码"), "correct-password");
-    await user.click(screen.getByRole("button", { name: "发送测试" }));
-    expect(await screen.findByText("企业微信机器人测试消息已发送")).toBeInTheDocument();
-    const webhookCall = calls.find((call) => call.path === "/api/internal/admin/system-monitor/webhook/test");
-    expect(new Headers(webhookCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
   });
 
   it("切换项目并展示用量和审计", async () => {

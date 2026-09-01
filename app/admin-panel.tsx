@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArchiveRestore, CheckCircle2, Clipboard, DatabaseBackup, FileCheck2, HardDrive, KeyRound, LoaderCircle, Plus, RefreshCw, Save, ScanLine, Send, ShieldAlert, ShieldCheck, Smartphone, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import { Activity, ArchiveRestore, CheckCircle2, Clipboard, DatabaseBackup, FileCheck2, HardDrive, KeyRound, LoaderCircle, Plus, RefreshCw, Save, ScanLine, ShieldAlert, ShieldCheck, Smartphone, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { AdminApi, AdminSession, AdminUser } from "./admin-api";
@@ -78,7 +78,6 @@ type DiskMonitorSettings = {
   sampleIntervalSeconds: number;
   persistIntervalSeconds: number;
   retentionDays: number;
-  webhookConfigured: boolean;
   updatedBy?: string | null;
   updatedAt?: string | null;
 };
@@ -92,7 +91,6 @@ type DiskMonitorStatus = {
   probeAlertActive: boolean;
   lastSampledAt?: number | null;
   lastError?: string | null;
-  pendingWebhookDeliveries: number;
   settings: DiskMonitorSettings;
 };
 
@@ -152,10 +150,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
   const [backup, setBackup] = useState<BackupStatus | null>(null);
   const [backups, setBackups] = useState<BackupItem[]>([]);
   const [monitorStatus, setMonitorStatus] = useState<DiskMonitorStatus | null>(null);
-  const [monitorSamples, setMonitorSamples] = useState<DiskSample[]>([]);
-  const [monitorHours, setMonitorHours] = useState<24 | 168>(24);
   const [monitorForm, setMonitorForm] = useState({ enabled: true, warningPercent: "80", criticalPercent: "90", emergencyPercent: "95", recoveryPercent: "75", currentPassword: "" });
-  const [webhookPassword, setWebhookPassword] = useState("");
   const [monitorMessage, setMonitorMessage] = useState("");
   const [restoreTarget, setRestoreTarget] = useState<BackupItem | null>(null);
   const [restoreForm, setRestoreForm] = useState({ currentPassword: "", totpCode: "", confirmation: "" });
@@ -182,7 +177,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
     setLoading(true);
     setError("");
     try {
-      const [userData, sessionData, auditData, alertData, backupData, backupListData, monitorData, monitorHistoryData] = await Promise.all([
+      const [userData, sessionData, auditData, alertData, backupData, backupListData, monitorData] = await Promise.all([
         adminApi("/api/internal/admin/users"),
         adminApi("/api/internal/auth/sessions"),
         adminApi("/api/internal/admin/audits?limit=100"),
@@ -190,7 +185,6 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
         adminApi("/api/internal/admin/backups/status"),
         adminApi("/api/internal/admin/backups"),
         adminApi("/api/internal/admin/system-monitor/status").catch(() => null),
-        adminApi(`/api/internal/admin/system-monitor/history?hours=${monitorHours}`).catch(() => ({ samples: [] })),
       ]);
       setUsers((userData.users ?? []) as AdminUser[]);
       setSessions((sessionData.sessions ?? []) as AdminSession[]);
@@ -200,7 +194,6 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
       setBackups((backupListData.backups ?? []) as BackupItem[]);
       const nextMonitor = monitorData as unknown as DiskMonitorStatus | null;
       setMonitorStatus(nextMonitor);
-      setMonitorSamples((monitorHistoryData.samples ?? []) as DiskSample[]);
       if (nextMonitor) {
         setMonitorForm({
           enabled: nextMonitor.settings.configuredEnabled,
@@ -216,7 +209,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
     } finally {
       setLoading(false);
     }
-  }, [adminApi, monitorHours]);
+  }, [adminApi]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadSecurityData(), 0);
@@ -231,19 +224,6 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
     }, 60_000);
     return () => window.clearInterval(timer);
   }, [adminApi]);
-
-  async function changeMonitorRange(hours: 24 | 168) {
-    setMonitorHours(hours);
-    setBusyId("monitor-history");
-    try {
-      const data = await adminApi(`/api/internal/admin/system-monitor/history?hours=${hours}`);
-      setMonitorSamples((data.samples ?? []) as DiskSample[]);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "磁盘历史数据加载失败");
-    } finally {
-      setBusyId("");
-    }
-  }
 
   async function saveMonitorSettings(event: FormEvent) {
     event.preventDefault();
@@ -269,24 +249,6 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
       await loadSecurityData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "磁盘监控配置保存失败");
-    } finally {
-      setBusyId("");
-    }
-  }
-
-  async function testMonitorWebhook() {
-    setBusyId("monitor-webhook");
-    setError("");
-    setMonitorMessage("");
-    try {
-      await adminApi("/api/internal/admin/system-monitor/webhook/test", {
-        method: "POST",
-        body: JSON.stringify({ currentPassword: webhookPassword }),
-      });
-      setWebhookPassword("");
-      setMonitorMessage("企业微信机器人测试消息已发送");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "企业微信机器人测试失败");
     } finally {
       setBusyId("");
     }
@@ -559,9 +521,6 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
     : monitorStatus?.health === "probe_failed"
       ? "probe_failed"
       : diskSample?.level ?? "normal";
-  const trendPoints = monitorSamples.length > 1
-    ? monitorSamples.map((sample, index) => `${(index / (monitorSamples.length - 1)) * 600},${140 - Math.min(100, Math.max(0, sample.usedPercent)) * 1.2}`).join(" ")
-    : "";
   const sensitiveDescription = sensitiveAction?.kind === "backup"
     ? "立即创建SQLite一致性副本和独立审计JSONL文件。"
     : sensitiveAction?.kind === "reset"
@@ -589,7 +548,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
     </section>
 
     <section className={`panel adminSection diskMonitorPanel ${diskVisualState}`}>
-      <div className="panelHead diskMonitorHead"><div><h3><HardDrive size={18} />磁盘空间监控</h3><p>每分钟采样，历史数据每 5 分钟落库；只预警，不会自动删除任何文件。</p></div><span className={`diskState ${diskVisualState}`}><Activity size={14} />{monitorStatus?.health === "disabled" ? "已停用" : monitorStatus?.health === "probe_failed" ? "探测异常" : diskLevelLabel(diskSample?.level)}</span></div>
+      <div className="panelHead diskMonitorHead"><div><h3><HardDrive size={18} />磁盘空间监控</h3><p>每分钟自动采样；达到阈值后由后端自动发送邮件，不依赖管理员登录。</p></div><span className={`diskState ${diskVisualState}`}><Activity size={14} />{monitorStatus?.health === "disabled" ? "已停用" : monitorStatus?.health === "probe_failed" ? "探测异常" : diskLevelLabel(diskSample?.level)}</span></div>
       <div className="diskOverview">
         <div className="diskGauge"><div className="diskGaugeTrack"><i style={{ width: `${diskPercent}%` }} /></div><div><b>{diskSample ? `${diskSample.usedPercent.toFixed(1)}%` : "等待采样"}</b><small>{diskSample ? `${formatBytes(diskSample.usedBytes)} / ${formatBytes(diskSample.totalBytes)}` : monitorStatus?.lastError || "监控服务启动后将显示实时用量"}</small></div></div>
         <div><small>可用空间</small><b>{formatBytes(diskSample?.availableBytes)}</b></div>
@@ -598,18 +557,8 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
       </div>
       {monitorStatus?.lastError && <div className="diskProbeError"><ShieldAlert size={15} />{monitorStatus.lastError} · 连续失败 {monitorStatus.probeFailureStreak} 次</div>}
       <div className="diskMonitorBody">
-        <div className="diskTrendCard">
-          <div className="diskSubhead"><div><b>空间占用趋势</b><small>{monitorHours === 24 ? "最近 24 小时" : "最近 7 天"} · {monitorSamples.length} 个持久化采样点</small></div><div><button className={monitorHours === 24 ? "active" : ""} onClick={() => void changeMonitorRange(24)}>24小时</button><button className={monitorHours === 168 ? "active" : ""} onClick={() => void changeMonitorRange(168)}>7天</button></div></div>
-          <div className="diskChart" aria-label="磁盘占用趋势图">
-            <span className="diskThreshold warning" style={{ bottom: `${monitorStatus?.settings.warningPercent ?? 80}%` }} />
-            <span className="diskThreshold critical" style={{ bottom: `${monitorStatus?.settings.criticalPercent ?? 90}%` }} />
-            <span className="diskThreshold emergency" style={{ bottom: `${monitorStatus?.settings.emergencyPercent ?? 95}%` }} />
-            {trendPoints ? <svg viewBox="0 0 600 140" preserveAspectRatio="none" role="img" aria-label="磁盘使用率折线"><polyline points={trendPoints} /></svg> : <div className="diskChartEmpty">等待积累历史采样</div>}
-          </div>
-          <div className="diskLegend"><span><i className="warning" />预警 {monitorStatus?.settings.warningPercent ?? 80}%</span><span><i className="critical" />严重 {monitorStatus?.settings.criticalPercent ?? 90}%</span><span><i className="emergency" />紧急 {monitorStatus?.settings.emergencyPercent ?? 95}%</span></div>
-        </div>
         <form className="diskSettingsCard" onSubmit={saveMonitorSettings}>
-          <div className="diskSubhead"><div><b>阈值与通知</b><small>修改配置需要再次验证超级管理员密码。</small></div><label className="monitorSwitch"><input type="checkbox" checked={monitorForm.enabled} onChange={(event) => setMonitorForm({ ...monitorForm, enabled: event.target.checked })} /><span>{monitorForm.enabled ? "启用" : "停用"}</span></label></div>
+          <div className="diskSubhead"><div><b>阈值配置</b><small>修改配置需要再次验证超级管理员密码。</small></div><label className="monitorSwitch"><input type="checkbox" checked={monitorForm.enabled} onChange={(event) => setMonitorForm({ ...monitorForm, enabled: event.target.checked })} /><span>{monitorForm.enabled ? "启用" : "停用"}</span></label></div>
           <div className="diskThresholdFields">
             <label>恢复线 %<input aria-label="恢复线" type="number" min="0" max="98" step="0.1" required value={monitorForm.recoveryPercent} onChange={(event) => setMonitorForm({ ...monitorForm, recoveryPercent: event.target.value })} /></label>
             <label>预警 %<input aria-label="预警阈值" type="number" min="1" max="99" step="0.1" required value={monitorForm.warningPercent} onChange={(event) => setMonitorForm({ ...monitorForm, warningPercent: event.target.value })} /></label>
@@ -618,7 +567,6 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
           </div>
           <label>保存配置前验证密码<input aria-label="磁盘监控配置密码" type="password" autoComplete="current-password" required value={monitorForm.currentPassword} onChange={(event) => setMonitorForm({ ...monitorForm, currentPassword: event.target.value })} /></label>
           <button className="primary wide" disabled={busyId === "monitor-settings" || !monitorForm.currentPassword}>{busyId === "monitor-settings" ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}保存监控配置</button>
-          <div className={`wecomStatus ${monitorStatus?.settings.webhookConfigured ? "configured" : "missing"}`}><div><Send size={16} /><span><b>企业微信机器人</b><small>{monitorStatus?.settings.webhookConfigured ? `已配置 · 待发送 ${monitorStatus.pendingWebhookDeliveries} 条` : "未配置服务端 WECOM_ROBOT_WEBHOOK_URL"}</small></span></div>{monitorStatus?.settings.webhookConfigured && <><input aria-label="Webhook测试密码" type="password" autoComplete="current-password" placeholder="输入超管密码后测试" value={webhookPassword} onChange={(event) => setWebhookPassword(event.target.value)} /><button type="button" className="secondary" disabled={!webhookPassword || busyId === "monitor-webhook"} onClick={() => void testMonitorWebhook()}>{busyId === "monitor-webhook" ? <LoaderCircle size={13} className="spin" /> : "发送测试"}</button></>}</div>
           {monitorMessage && <div className="monitorSuccess"><CheckCircle2 size={14} />{monitorMessage}</div>}
         </form>
       </div>

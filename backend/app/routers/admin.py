@@ -260,8 +260,8 @@ def update_system_monitor_settings(
     }
 
 
-@router.post("/admin/system-monitor/webhook/test")
-async def test_system_monitor_webhook(
+@router.post("/admin/system-monitor/email/test")
+async def test_system_monitor_email(
     payload: AdminSensitiveAction,
     request: Request,
     principal: AdminDependency,
@@ -272,9 +272,9 @@ async def test_system_monitor_webhook(
         payload.current_password,
         _request_ip(request),
         _user_agent(request),
-        "admin.system_monitor.webhook.test",
+        "admin.system_monitor.email.test",
     )
-    return await request.app.state.system_monitor.test_webhook(
+    return await request.app.state.system_monitor.test_email(
         actor_id=principal.id,
         actor=principal.username,
         source_ip=_request_ip(request),
