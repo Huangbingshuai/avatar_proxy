@@ -79,6 +79,22 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 - 只记录供应商真实返回的 Token、图片数和视频秒数，未知字段保持为空；第一阶段不做余额或金额扣费。
 - 图片和视频结果 URL 由供应商提供，系统不自动转存 TOS，客户应在供应商链接有效期内下载。
 
+#### Seedance 中转验证基线
+
+截至 2026-09-02，使用业务 Key、素材库 `asset://` 图片以及最低分辨率完成了真实异步链路验证。以下别名由服务端固定映射，客户不能覆盖真实 Model ID：
+
+| 对外别名 | 火山 Model ID | 最小验证规格 | 本地实测 |
+|---|---|---:|---|
+| `seedance-2.5` | `doubao-seedance-2-5-260628` | 4 秒 / 480p | 成功 |
+| `seedance-2.0` | `doubao-seedance-2-0-260128` | 4 秒 / 480p | 成功 |
+| `seedance-2.0-fast` | `doubao-seedance-2-0-fast-260128` | 4 秒 / 480p | 成功 |
+| `seedance-2.0-mini` | `doubao-seedance-2-0-mini-260615` | 4 秒 / 480p | 成功 |
+| `seedance-1.5-pro` | `doubao-seedance-1-5-pro-251215` | 4 秒 / 480p | 模型存在，但测试渠道被上游拒绝创建任务 |
+| `seedance-1.0-pro` | `doubao-seedance-1-0-pro-250528` | 2 秒 / 480p | 成功 |
+| `seedance-1.0-pro-fast` | `doubao-seedance-1-0-pro-fast-251015` | 2 秒 / 480p | 成功 |
+
+模型出现在火山 API Key 权限页或 `/models` 列表中，不代表其始终可以创建新任务；例如供应商状态为 `Retiring` 时仍可能保留在列表，但任务创建会被拒绝。系统继续保留这类目录项，实际可用性以当前渠道权限和任务创建响应为准。首次创建视频任务的公共响应只返回任务 ID、模型别名、状态、进度和创建时间，不暴露渠道 ID、凭证版本、真实上游 Model ID 或内部请求哈希。
+
 ### 备份与恢复
 
 - SQLite 与管理员审计 JSONL 默认每天生成一次一致性快照，默认保留最近 30 组。
