@@ -1,0 +1,503 @@
+import json
+import time
+from pathlib import Path
+
+import httpx
+import pytest
+import pyotp
+from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
+
+from app.errors import ApiError
+from app.main import create_app
+from app.security import ApiPrincipal
+from conftest import ADMIN_HEADERS, build_settings, create_key, create_project
+
+
+def relay_client(tmp_path: Path, **overrides: object) -> TestClient:
+    settings = build_settings(
+        tmp_path / "relay.db",
+        multi_provider_enabled=True,
+        provider_credential_encryption_key=Fernet.generate_key().decode("ascii"),
+        **overrides,
+    )
+    return TestClient(create_app(settings))
+
+
+def provision(
+    client: TestClient,
+    *,
+    provider: str,
+    alias: str,
+    upstream_model: str,
+    config: dict | None = None,
+    project_name: str = "relay_project",
+    key_name: str = "relay-key",
+) -> tuple[str, str, dict]:
+    create_project(client, project_name)
+    key_id, secret = create_key(client, project_name, key_name)
+    relay = client.app.state.provider_relay
+    channel = relay.create_channel(
+        project_name=project_name,
+        name=f"{provider}-production",
+        provider=provider,
+        config=config or {},
+        secret=f"secret-{provider}-abcdefgh",
+        actor_id="super-admin",
+    )
+    relay.set_project_models(
+        project_name,
+        [
+            {
+                "model": alias,
+                "channelId": channel["id"],
+                "upstreamModel": upstream_model,
+                "enabled": True,
+            }
+        ],
+        "business-admin",
+    )
+    relay.set_key_models(key_id, [alias], "business-admin")
+    return key_id, secret, channel
+
+
+def test_default_disabled_isolated_from_existing_api(tmp_path: Path) -> None:
+    app = create_app(build_settings(tmp_path / "disabled.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+
+        existing = client.get("/api/auth/me", headers={"Authorization": f"Bearer {secret}"})
+        disabled = client.get("/v1/models", headers={"Authorization": f"Bearer {secret}"})
+
+    assert existing.status_code == 200
+    assert disabled.status_code == 503
+    assert disabled.json()["error"] == {
+        "message": "多供应商模型中转尚未启用",
+        "type": "upstream_error",
+        "param": None,
+        "code": "multi_provider_disabled",
+    }
+    assert disabled.json()["request_id"].startswith("req_")
+    assert disabled.headers["x-request-id"] == disabled.json()["request_id"]
+
+
+def test_credentials_are_encrypted_masked_and_cross_project_binding_is_rejected(tmp_path: Path) -> None:
+    raw_secret = "ark-production-secret-123456"
+    with relay_client(tmp_path) as client:
+        create_project(client, "project_a")
+        create_project(client, "project_b")
+        relay = client.app.state.provider_relay
+        channel = relay.create_channel(
+            project_name="project_a",
+            name="ark-a",
+            provider="volcengine_ark",
+            config={"projectName": "project_a"},
+            secret=raw_secret,
+            actor_id="owner",
+        )
+        with client.app.state.database.connect() as connection:
+            stored = connection.execute(
+                "SELECT secret_ciphertext,secret_hint FROM provider_credentials"
+            ).fetchone()
+            dump = " ".join(connection.iterdump())
+
+        assert raw_secret not in stored["secret_ciphertext"]
+        assert raw_secret not in dump
+        assert channel["secretHint"] == "ark****3456"
+        assert "secret" not in channel
+
+        with pytest.raises(ApiError) as error:
+            relay.set_project_models(
+                "project_b",
+                [{"model": "glm-5.3", "channelId": channel["id"], "upstreamModel": "ep-glm"}],
+                "admin",
+            )
+        assert error.value.code == "cross_project_channel_forbidden"
+
+
+def test_model_listing_permission_revocation_and_channel_status_are_immediate(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        key_id, secret, channel = provision(
+            client,
+            provider="volcengine_ark",
+            alias="glm-5.3",
+            upstream_model="ep-glm-53",
+        )
+        headers = {"Authorization": f"Bearer {secret}"}
+
+        listed = client.get("/v1/models", headers=headers)
+        assert listed.status_code == 200
+        assert [item["id"] for item in listed.json()["data"]] == ["glm-5.3"]
+
+        client.app.state.provider_relay.set_key_models(key_id, [], "admin")
+        assert client.get("/v1/models", headers=headers).json()["data"] == []
+        denied = client.post(
+            "/v1/chat/completions",
+            headers=headers,
+            json={"model": "glm-5.3", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert denied.status_code == 403
+        assert denied.json()["error"]["code"] == "model_not_allowed"
+
+        client.app.state.provider_relay.set_key_models(key_id, ["glm-5.3"], "admin")
+        client.app.state.provider_relay.set_channel_status(channel["id"], False)
+        assert client.get("/v1/models", headers=headers).json()["data"] == []
+
+
+def test_chat_and_responses_rewrite_model_and_record_only_real_usage(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        payload = json.loads(request.content)
+        if request.url.path.endswith("/chat/completions"):
+            return httpx.Response(
+                200,
+                headers={"x-request-id": "ark-chat-request"},
+                json={
+                    "id": "chatcmpl-upstream",
+                    "model": payload["model"],
+                    "choices": [],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19},
+                },
+            )
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "ark-response-request"},
+            json={"id": "resp-upstream", "model": payload["model"], "output": []},
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias="deepseek-v4-flash",
+            upstream_model="ep-deepseek-v4-flash",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}"}
+
+        chat = client.post(
+            "/v1/chat/completions",
+            headers=headers,
+            json={"model": "deepseek-v4-flash", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        response = client.post(
+            "/v1/responses",
+            headers=headers,
+            json={"model": "deepseek-v4-flash", "input": "hello"},
+        )
+
+        assert chat.status_code == response.status_code == 200
+        assert chat.json()["model"] == response.json()["model"] == "deepseek-v4-flash"
+        assert all(json.loads(item.content)["model"] == "ep-deepseek-v4-flash" for item in requests)
+        with client.app.state.database.connect() as connection:
+            usage = connection.execute(
+                "SELECT request_id,input_tokens,output_tokens,total_tokens FROM inference_usage ORDER BY created_at"
+            ).fetchall()
+        assert [dict(item) for item in usage] == [
+            {"request_id": "ark-chat-request", "input_tokens": 12, "output_tokens": 7, "total_tokens": 19},
+            {"request_id": "ark-response-request", "input_tokens": None, "output_tokens": None, "total_tokens": None},
+        ]
+
+
+def test_sse_rewrites_alias_and_does_not_invent_usage(tmp_path: Path) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        body = (
+            'data: {"id":"stream-1","model":"ep-real","choices":[{"delta":{"content":"hi"}}]}\n\n'
+            "data: [DONE]\n\n"
+        )
+        return httpx.Response(200, headers={"x-request-id": "upstream-stream"}, content=body)
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias="glm-5.3",
+            upstream_model="ep-glm",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        result = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "glm-5.3", "messages": [], "stream": True},
+        )
+        with client.app.state.database.connect() as connection:
+            usage = dict(connection.execute("SELECT * FROM inference_usage").fetchone())
+
+    assert result.status_code == 200
+    assert '"model":"glm-5.3"' in result.text
+    assert usage["status"] == "unknown"
+    assert usage["input_tokens"] is usage["output_tokens"] is usage["total_tokens"] is None
+
+
+def test_image_idempotency_prevents_duplicates_and_conflicts(tmp_path: Path) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        assert request.url == httpx.URL("https://api.openai.com/v1/images/generations")
+        assert request.headers["authorization"] == "Bearer secret-openai-abcdefgh"
+        payload = json.loads(request.content)
+        assert payload["model"] == "gpt-image-real"
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "openai-image-request"},
+            json={"created": 1, "data": [{"url": "https://cdn.example.com/image.png"}]},
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="openai",
+            alias="image2.0",
+            upstream_model="gpt-image-real",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}", "Idempotency-Key": "same-image"}
+        first = client.post(
+            "/v1/images/generations", headers=headers, json={"model": "image2.0", "prompt": "cat"}
+        )
+        second = client.post(
+            "/v1/images/generations", headers=headers, json={"model": "image2.0", "prompt": "cat"}
+        )
+        conflict = client.post(
+            "/v1/images/generations", headers=headers, json={"model": "image2.0", "prompt": "dog"}
+        )
+        with client.app.state.database.connect() as connection:
+            task_count = connection.execute("SELECT COUNT(*) FROM inference_tasks").fetchone()[0]
+            usage = connection.execute("SELECT generated_images FROM inference_usage").fetchone()[0]
+
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "idempotency_key_conflict"
+    assert calls == task_count == usage == 1
+
+
+def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp_path: Path) -> None:
+    auth_headers: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        auth_headers.append(request.headers["authorization"])
+        if request.method == "POST":
+            assert request.url.host == "workspace-a.cn-beijing.maas.aliyuncs.com"
+            assert request.headers["x-dashscope-async"] == "enable"
+            payload = json.loads(request.content)
+            assert payload["model"] == "wan-real-model"
+            return httpx.Response(200, json={"output": {"task_id": "ali-task-1"}})
+        return httpx.Response(
+            200,
+            json={
+                "output": {
+                    "task_status": "SUCCEEDED",
+                    "video_url": "https://video.example.com/result.mp4",
+                    "video_duration": 8,
+                }
+            },
+        )
+
+    with relay_client(tmp_path) as client:
+        key_id, secret, channel = provision(
+            client,
+            provider="aliyun_bailian",
+            alias="wan3.0",
+            upstream_model="wan-real-model",
+            config={"workspaceId": "workspace-a", "region": "cn-beijing"},
+        )
+        relay = client.app.state.provider_relay
+        relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}", "Idempotency-Key": "video-one"}
+        created = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={"model": "wan3.0", "prompt": "ocean", "duration": 8},
+        )
+        relay.rotate_channel_secret(channel["id"], "new-aliyun-secret-abcdefgh", "owner")
+        finished = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
+        repeated = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
+        content = client.head(f"/v1/videos/{created.json()['id']}/content", headers=headers, follow_redirects=False)
+        with client.app.state.database.connect() as connection:
+            usage_count = connection.execute("SELECT COUNT(*) FROM inference_usage").fetchone()[0]
+            task = dict(connection.execute("SELECT * FROM inference_tasks").fetchone())
+
+    assert created.status_code == 202
+    assert finished.json()["status"] == repeated.json()["status"] == "succeeded"
+    assert content.status_code == 307
+    assert content.headers["location"] == "https://video.example.com/result.mp4"
+    assert auth_headers == ["Bearer secret-aliyun_bailian-abcdefgh"] * 2
+    assert usage_count == 1
+    assert task["credential_id"] != relay.get_channel(channel["id"])["credentialId"]
+    assert task["upstream_model"] == "wan-real-model"
+    assert key_id == task["api_key_id"]
+
+
+def test_minimax_payload_status_and_forbidden_override(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "POST":
+            payload = json.loads(request.content)
+            assert payload["model"] == "MiniMax-H3"
+            assert payload["content"][0] == {"type": "text", "text": "camera move"}
+            return httpx.Response(200, json={"task_id": "mini-task"})
+        return httpx.Response(
+            200,
+            json={
+                "task": {
+                    "status": "succeeded",
+                    "content": {"url": "https://mini.example.com/video.mp4"},
+                    "usage": {"output_seconds": 6},
+                }
+            },
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="minimax",
+            alias="minimax-h3",
+            upstream_model="MiniMax-H3",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}"}
+        forbidden = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={"model": "minimax-h3", "prompt": "x", "base_url": "http://127.0.0.1"},
+        )
+        created = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={"model": "minimax-h3", "prompt": "camera move", "duration": 6},
+        )
+        finished = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
+
+    assert forbidden.status_code == 422
+    assert forbidden.json()["error"]["code"] == "invalid_request_parameter"
+    assert forbidden.json()["error"]["param"] == "base_url"
+    assert created.status_code == 202
+    assert finished.json()["url"] == "https://mini.example.com/video.mp4"
+    assert [request.url.path for request in requests] == [
+        "/v2/video_generation",
+        "/v2/query/video_generation/mini-task",
+    ]
+
+
+def test_channel_delete_protection_and_business_admin_cannot_manage_secrets(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        _, _, channel = provision(
+            client,
+            provider="volcengine_ark",
+            alias="glm-5.3",
+            upstream_model="ep-glm",
+        )
+        with pytest.raises(ApiError) as in_use:
+            client.app.state.provider_relay.delete_channel(channel["id"])
+        assert in_use.value.code == "provider_channel_in_use"
+
+        forbidden = client.post(
+            "/api/internal/provider/channels",
+            headers=ADMIN_HEADERS,
+            json={
+                "projectName": "relay_project",
+                "name": "forbidden",
+                "provider": "volcengine_ark",
+                "config": {},
+                "secret": "must-not-be-stored",
+                "currentPassword": "Test-admin-password!2026",
+                "totpCode": "123456",
+            },
+        )
+        with client.app.state.database.connect() as connection:
+            dump = " ".join(connection.iterdump())
+
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "super_admin_required"
+    assert "must-not-be-stored" not in dump
+
+
+def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_path: Path) -> None:
+    path = tmp_path / "migration.db"
+    app = create_app(build_settings(path))
+    with TestClient(app):
+        pass
+    app.state.database.initialize()
+    with app.state.database.connect() as connection:
+        aliases = [row[0] for row in connection.execute("SELECT alias FROM model_catalog ORDER BY alias")]
+        bindings = connection.execute("SELECT COUNT(*) FROM project_model_bindings").fetchone()[0]
+        permissions = connection.execute("SELECT COUNT(*) FROM api_key_model_permissions").fetchone()[0]
+
+    assert aliases == sorted([
+        "deepseek-v4-flash", "glm-5.3", "image2.0", "minimax-h3", "seedream-5.0-pro", "wan3.0"
+    ])
+    assert bindings == permissions == 0
+
+
+def test_super_admin_channel_creation_requires_reauth_totp_and_audit_redacts_secret(tmp_path: Path) -> None:
+    password = "Initial-provider-owner!2026"
+    changed_password = "Changed-provider-owner!2026"
+    with relay_client(tmp_path) as client:
+        client.app.state.database.create_project("secure_project", "Secure Project", "")
+        _, initial = client.app.state.admin_auth.create_initial_super_admin(
+            "provider-owner", "Provider Owner", password=password
+        )
+        assert initial == password
+        login = client.post(
+            "/api/internal/auth/login",
+            json={"username": "provider-owner", "password": password},
+        ).json()
+        changed = client.post(
+            "/api/internal/auth/change-password",
+            headers={"X-CSRF-Token": login["csrfToken"]},
+            json={"currentPassword": password, "newPassword": changed_password},
+        )
+        assert changed.status_code == 200
+        login = client.post(
+            "/api/internal/auth/login",
+            json={"username": "provider-owner", "password": changed_password},
+        ).json()
+        setup = client.post(
+            "/api/internal/auth/totp/setup",
+            headers={"X-CSRF-Token": login["csrfToken"]},
+        ).json()
+        now = int(time.time())
+        client.app.state.admin_auth.clock = lambda: now
+        confirmed = client.post(
+            "/api/internal/auth/totp/confirm",
+            headers={"X-CSRF-Token": login["csrfToken"]},
+            json={"code": pyotp.TOTP(setup["secret"]).at(now)},
+        )
+        assert confirmed.status_code == 200
+        client.app.state.admin_auth.clock = lambda: now + 30
+        secret = "super-sensitive-provider-secret"
+        created = client.post(
+            "/api/internal/provider/channels",
+            headers={"X-CSRF-Token": login["csrfToken"]},
+            json={
+                "projectName": "secure_project",
+                "name": "secure-ark",
+                "provider": "volcengine_ark",
+                "config": {"projectName": "secure_project"},
+                "secret": secret,
+                "currentPassword": changed_password,
+                "totpCode": pyotp.TOTP(setup["secret"]).at(now + 30),
+            },
+        )
+        with client.app.state.database.connect() as connection:
+            audit = dict(
+                connection.execute(
+                    "SELECT actor,action,after_json FROM admin_audit_logs "
+                    "WHERE action='provider.channel.create' ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            )
+            dump = " ".join(connection.iterdump())
+
+    assert created.status_code == 201, created.text
+    assert created.json()["channel"]["secretHint"] == "sup****cret"
+    assert audit["actor"] == "provider-owner"
+    assert secret not in audit["after_json"]
+    assert secret not in dump
