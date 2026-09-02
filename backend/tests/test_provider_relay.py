@@ -57,7 +57,6 @@ def provision(
         ],
         "business-admin",
     )
-    relay.set_key_models(key_id, [alias], "business-admin")
     return key_id, secret, channel
 
 
@@ -92,7 +91,7 @@ def test_credentials_are_encrypted_masked_and_cross_project_binding_is_rejected(
             project_name="project_a",
             name="ark-a",
             provider="volcengine_ark",
-            config={"projectName": "project_a"},
+            config={"projectName": "wrong-project-must-be-ignored"},
             secret=raw_secret,
             actor_id="owner",
         )
@@ -105,42 +104,54 @@ def test_credentials_are_encrypted_masked_and_cross_project_binding_is_rejected(
         assert raw_secret not in stored["secret_ciphertext"]
         assert raw_secret not in dump
         assert channel["secretHint"] == "ark****3456"
+        assert channel["config"] == {"projectName": "project_a"}
         assert "secret" not in channel
 
         with pytest.raises(ApiError) as error:
             relay.set_project_models(
                 "project_b",
-                [{"model": "glm-5.3", "channelId": channel["id"], "upstreamModel": "ep-glm"}],
+                [{"model": "glm-5.2", "channelId": channel["id"], "upstreamModel": "ignored-model"}],
                 "admin",
             )
         assert error.value.code == "cross_project_channel_forbidden"
 
 
-def test_model_listing_permission_revocation_and_channel_status_are_immediate(tmp_path: Path) -> None:
+def test_project_model_access_and_channel_status_are_immediate_for_all_keys(tmp_path: Path) -> None:
     with relay_client(tmp_path) as client:
-        key_id, secret, channel = provision(
+        _, secret, channel = provision(
             client,
             provider="volcengine_ark",
-            alias="glm-5.3",
-            upstream_model="ep-glm-53",
+            alias="glm-5.2",
+            upstream_model="must-be-ignored",
         )
+        _, second_secret = create_key(client, "relay_project", "second-key")
         headers = {"Authorization": f"Bearer {secret}"}
+        second_headers = {"Authorization": f"Bearer {second_secret}"}
 
         listed = client.get("/v1/models", headers=headers)
         assert listed.status_code == 200
-        assert [item["id"] for item in listed.json()["data"]] == ["glm-5.3"]
+        assert [item["id"] for item in listed.json()["data"]] == ["glm-5.2"]
+        assert client.get("/v1/models", headers=second_headers).json()["data"] == listed.json()["data"]
+        with client.app.state.database.connect() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM api_key_model_permissions").fetchone()[0] == 0
 
-        client.app.state.provider_relay.set_key_models(key_id, [], "admin")
+        client.app.state.provider_relay.set_project_models("relay_project", [], "admin")
         assert client.get("/v1/models", headers=headers).json()["data"] == []
+        assert client.get("/v1/models", headers=second_headers).json()["data"] == []
         denied = client.post(
             "/v1/chat/completions",
             headers=headers,
-            json={"model": "glm-5.3", "messages": [{"role": "user", "content": "hi"}]},
+            json={"model": "glm-5.2", "messages": [{"role": "user", "content": "hi"}]},
         )
         assert denied.status_code == 403
         assert denied.json()["error"]["code"] == "model_not_allowed"
 
-        client.app.state.provider_relay.set_key_models(key_id, ["glm-5.3"], "admin")
+        client.app.state.provider_relay.set_project_models(
+            "relay_project",
+            [{"model": "glm-5.2", "channelId": channel["id"], "enabled": True}],
+            "admin",
+        )
+        assert [item["id"] for item in client.get("/v1/models", headers=second_headers).json()["data"]] == ["glm-5.2"]
         client.app.state.provider_relay.set_channel_status(channel["id"], False)
         assert client.get("/v1/models", headers=headers).json()["data"] == []
 
@@ -191,7 +202,7 @@ def test_chat_and_responses_rewrite_model_and_record_only_real_usage(tmp_path: P
 
         assert chat.status_code == response.status_code == 200
         assert chat.json()["model"] == response.json()["model"] == "deepseek-v4-flash"
-        assert all(json.loads(item.content)["model"] == "ep-deepseek-v4-flash" for item in requests)
+        assert all(json.loads(item.content)["model"] == "deepseek-v4-flash-260425" for item in requests)
         with client.app.state.database.connect() as connection:
             usage = connection.execute(
                 "SELECT request_id,input_tokens,output_tokens,total_tokens FROM inference_usage ORDER BY created_at"
@@ -214,20 +225,20 @@ def test_sse_rewrites_alias_and_does_not_invent_usage(tmp_path: Path) -> None:
         _, secret, _ = provision(
             client,
             provider="volcengine_ark",
-            alias="glm-5.3",
-            upstream_model="ep-glm",
+            alias="glm-5.2",
+            upstream_model="ignored-model",
         )
         client.app.state.provider_relay.transport = httpx.MockTransport(handler)
         result = client.post(
             "/v1/chat/completions",
             headers={"Authorization": f"Bearer {secret}"},
-            json={"model": "glm-5.3", "messages": [], "stream": True},
+            json={"model": "glm-5.2", "messages": [], "stream": True},
         )
         with client.app.state.database.connect() as connection:
             usage = dict(connection.execute("SELECT * FROM inference_usage").fetchone())
 
     assert result.status_code == 200
-    assert '"model":"glm-5.3"' in result.text
+    assert '"model":"glm-5.2"' in result.text
     assert usage["status"] == "unknown"
     assert usage["input_tokens"] is usage["output_tokens"] is usage["total_tokens"] is None
 
@@ -241,7 +252,7 @@ def test_image_idempotency_prevents_duplicates_and_conflicts(tmp_path: Path) -> 
         assert request.url == httpx.URL("https://api.openai.com/v1/images/generations")
         assert request.headers["authorization"] == "Bearer secret-openai-abcdefgh"
         payload = json.loads(request.content)
-        assert payload["model"] == "gpt-image-real"
+        assert payload["model"] == "gpt-image-2"
         return httpx.Response(
             200,
             headers={"x-request-id": "openai-image-request"},
@@ -253,7 +264,7 @@ def test_image_idempotency_prevents_duplicates_and_conflicts(tmp_path: Path) -> 
             client,
             provider="openai",
             alias="image2.0",
-            upstream_model="gpt-image-real",
+            upstream_model="ignored-model",
         )
         client.app.state.provider_relay.transport = httpx.MockTransport(handler)
         headers = {"Authorization": f"Bearer {secret}", "Idempotency-Key": "same-image"}
@@ -286,7 +297,7 @@ def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp
             assert request.url.host == "workspace-a.cn-beijing.maas.aliyuncs.com"
             assert request.headers["x-dashscope-async"] == "enable"
             payload = json.loads(request.content)
-            assert payload["model"] == "wan-real-model"
+            assert payload["model"] == "wan3.0-video"
             return httpx.Response(200, json={"output": {"task_id": "ali-task-1"}})
         return httpx.Response(
             200,
@@ -303,8 +314,8 @@ def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp
         key_id, secret, channel = provision(
             client,
             provider="aliyun_bailian",
-            alias="wan3.0",
-            upstream_model="wan-real-model",
+            alias="wan3.0-video",
+            upstream_model="ignored-model",
             config={"workspaceId": "workspace-a", "region": "cn-beijing"},
         )
         relay = client.app.state.provider_relay
@@ -313,7 +324,7 @@ def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp
         created = client.post(
             "/v1/videos",
             headers=headers,
-            json={"model": "wan3.0", "prompt": "ocean", "duration": 8},
+            json={"model": "wan3.0-video", "prompt": "ocean", "duration": 8},
         )
         relay.rotate_channel_secret(channel["id"], "new-aliyun-secret-abcdefgh", "owner")
         finished = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
@@ -330,8 +341,245 @@ def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp
     assert auth_headers == ["Bearer secret-aliyun_bailian-abcdefgh"] * 2
     assert usage_count == 1
     assert task["credential_id"] != relay.get_channel(channel["id"])["credentialId"]
-    assert task["upstream_model"] == "wan-real-model"
+    assert task["upstream_model"] == "wan3.0-video"
     assert key_id == task["api_key_id"]
+
+
+@pytest.mark.parametrize(
+    ("alias", "upstream_model", "image"),
+    [
+        ("seedance-2.5", "doubao-seedance-2-5-260628", None),
+        ("seedance-2.0", "doubao-seedance-2-0-260128", None),
+        ("seedance-2.0-fast", "doubao-seedance-2-0-fast-260128", None),
+        ("seedance-2.0-mini", "doubao-seedance-2-0-mini-260615", None),
+        ("seedance-1.5-pro", "doubao-seedance-1-5-pro-251215", None),
+        ("seedance-1.0-pro", "doubao-seedance-1-0-pro-250528", None),
+        ("seedance-1.0-pro-fast", "doubao-seedance-1-0-pro-fast-250610", None),
+    ],
+)
+def test_all_volcengine_video_models_submit_and_refresh(
+    tmp_path: Path, alias: str, upstream_model: str, image: str | None
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url.host == "ark.cn-beijing.volces.com"
+        assert request.headers["authorization"] == "Bearer secret-volcengine_ark-abcdefgh"
+        if request.method == "POST":
+            payload = json.loads(request.content)
+            assert payload["model"] == upstream_model
+            assert payload["content"][0] == {"type": "text", "text": "sunrise over the sea"}
+            if image:
+                assert payload["content"][1] == {
+                    "type": "image_url",
+                    "image_url": {"url": image},
+                    "role": "first_frame",
+                }
+            assert payload["duration"] == 5
+            return httpx.Response(200, headers={"x-request-id": "ark-submit"}, json={"id": "cgt-test"})
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "ark-query"},
+            json={
+                "id": "cgt-test",
+                "model": upstream_model,
+                "status": "succeeded",
+                "content": {"video_url": "https://video.example.com/seedance.mp4"},
+                "duration": "5",
+                "resolution": "720p",
+                "ratio": "16:9",
+                "usage": {"completion_tokens": 1200, "total_tokens": 1200},
+            },
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias=alias,
+            upstream_model="ignored-model",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}"}
+        payload: dict[str, object] = {
+            "model": alias,
+            "prompt": "sunrise over the sea",
+            "duration": 5,
+        }
+        if image:
+            payload["image"] = image
+        created = client.post("/v1/videos", headers=headers, json=payload)
+        finished = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
+
+    assert created.status_code == 202
+    assert finished.status_code == 200
+    assert finished.json()["status"] == "succeeded"
+    assert finished.json()["url"] == "https://video.example.com/seedance.mp4"
+    assert [request.url.path for request in requests] == [
+        "/api/v3/contents/generations/tasks",
+        "/api/v3/contents/generations/tasks/cgt-test",
+    ]
+
+
+def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path: Path) -> None:
+    submitted: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        submitted.append(payload)
+        return httpx.Response(200, json={"id": f"cgt-{len(submitted)}"})
+
+    with relay_client(tmp_path) as client:
+        _, secret, channel = provision(
+            client,
+            provider="volcengine_ark",
+            alias="seedance-1.5-pro",
+            upstream_model="ignored-model",
+        )
+        relay = client.app.state.provider_relay
+        relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}"}
+        pro_15 = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={
+                "model": "seedance-1.5-pro",
+                "prompt": "ignored because native content is supplied",
+                "duration": 6,
+                "seed": 42,
+                "metadata": {
+                    "content": [
+                        {"type": "text", "text": "cinematic sunrise"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "asset://asset-example"},
+                            "role": "first_frame",
+                        },
+                    ],
+                    "resolution": "1080p",
+                    "ratio": "16:9",
+                    "generate_audio": True,
+                    "draft": True,
+                    "watermark": False,
+                    "return_last_frame": True,
+                    "service_tier": "flex",
+                    "execution_expires_after": 3600,
+                },
+            },
+        )
+
+        relay.set_project_models(
+            "relay_project",
+            [{"model": "seedance-1.0-pro", "channelId": channel["id"], "enabled": True}],
+            "admin",
+        )
+        pro_10 = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={
+                "model": "seedance-1.0-pro",
+                "prompt": "fixed camera",
+                "metadata": {
+                    "frames": 29,
+                    "resolution": "720p",
+                    "ratio": "adaptive",
+                    "camera_fixed": True,
+                    "service_tier": "default",
+                },
+            },
+        )
+
+    assert pro_15.status_code == pro_10.status_code == 202
+    assert submitted == [
+        {
+            "model": "doubao-seedance-1-5-pro-251215",
+            "content": [
+                {"type": "text", "text": "cinematic sunrise"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "asset://asset-example"},
+                    "role": "first_frame",
+                },
+            ],
+            "duration": 6,
+            "resolution": "1080p",
+            "ratio": "16:9",
+            "generate_audio": True,
+            "draft": True,
+            "watermark": False,
+            "return_last_frame": True,
+            "service_tier": "flex",
+            "execution_expires_after": 3600,
+            "seed": 42,
+        },
+        {
+            "model": "doubao-seedance-1-0-pro-250528",
+            "content": [{"type": "text", "text": "fixed camera"}],
+            "frames": 29,
+            "resolution": "720p",
+            "ratio": "adaptive",
+            "camera_fixed": True,
+            "service_tier": "default",
+        },
+    ]
+
+
+def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        _, secret, channel = provision(
+            client,
+            provider="volcengine_ark",
+            alias="seedance-2.0-fast",
+            upstream_model="ignored-model",
+        )
+        headers = {"Authorization": f"Bearer {secret}"}
+        relay = client.app.state.provider_relay
+        unsupported_resolution = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={
+                "model": "seedance-2.0-fast",
+                "prompt": "x",
+                "duration": 5,
+                "metadata": {"resolution": "1080p"},
+            },
+        )
+        assert unsupported_resolution.json()["error"]["code"] == "video_resolution_invalid"
+        fixed_camera_20 = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={
+                "model": "seedance-2.0-fast",
+                "prompt": "x",
+                "duration": 5,
+                "metadata": {"camera_fixed": True},
+            },
+        )
+        assert fixed_camera_20.json()["error"]["code"] == "video_camera_unsupported"
+
+        relay.set_project_models(
+            "relay_project",
+            [{"model": "seedance-1.0-pro", "channelId": channel["id"], "enabled": True}],
+            "admin",
+        )
+        invalid_frames = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={"model": "seedance-1.0-pro", "prompt": "x", "metadata": {"frames": 30}},
+        )
+        unsupported_audio = client.post(
+            "/v1/videos",
+            headers=headers,
+            json={
+                "model": "seedance-1.0-pro",
+                "prompt": "x",
+                "duration": 5,
+                "metadata": {"generate_audio": True},
+            },
+        )
+        assert invalid_frames.json()["error"]["code"] == "video_frames_invalid"
+        assert unsupported_audio.json()["error"]["code"] == "video_audio_unsupported"
 
 
 def test_minimax_payload_status_and_forbidden_override(tmp_path: Path) -> None:
@@ -392,8 +640,8 @@ def test_channel_delete_protection_and_business_admin_cannot_manage_secrets(tmp_
         _, _, channel = provision(
             client,
             provider="volcengine_ark",
-            alias="glm-5.3",
-            upstream_model="ep-glm",
+            alias="glm-5.2",
+            upstream_model="ignored-model",
         )
         with pytest.raises(ApiError) as in_use:
             client.app.state.provider_relay.delete_channel(channel["id"])
@@ -425,16 +673,66 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
     app = create_app(build_settings(path))
     with TestClient(app):
         pass
+    with app.state.database.connect() as connection:
+        connection.execute(
+            "INSERT INTO model_catalog "
+            "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
+            "VALUES ('glm-5.3','GLM 5.3','volcengine_ark','text','openai_text','legacy-glm','{}')"
+        )
+        connection.execute(
+            "INSERT INTO model_catalog "
+            "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
+            "VALUES ('wan3.0','Wan 3.0','aliyun_bailian','video','async_video','legacy-wan','{}')"
+        )
+        connection.execute(
+            "INSERT INTO model_catalog "
+            "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
+            "VALUES ('seedance-1.0-lite-t2v','Retired Lite','volcengine_ark','video',"
+            "'async_video','retired-lite','{}')"
+        )
     app.state.database.initialize()
     with app.state.database.connect() as connection:
-        aliases = [row[0] for row in connection.execute("SELECT alias FROM model_catalog ORDER BY alias")]
+        aliases = [
+            row[0]
+            for row in connection.execute(
+                "SELECT alias FROM model_catalog WHERE enabled=1 ORDER BY alias"
+            )
+        ]
+        retired_enabled = connection.execute(
+            "SELECT enabled FROM model_catalog WHERE alias='seedance-1.0-lite-t2v'"
+        ).fetchone()[0]
         bindings = connection.execute("SELECT COUNT(*) FROM project_model_bindings").fetchone()[0]
         permissions = connection.execute("SELECT COUNT(*) FROM api_key_model_permissions").fetchone()[0]
 
     assert aliases == sorted([
-        "deepseek-v4-flash", "glm-5.3", "image2.0", "minimax-h3", "seedream-5.0-pro", "wan3.0"
+        "deepseek-v4-flash", "glm-5.2", "image2.0", "minimax-h3", "seedream-5.0-pro",
+        "seedance-2.5", "seedance-2.0", "seedance-2.0-fast", "seedance-2.0-mini",
+        "seedance-1.5-pro", "seedance-1.0-pro", "seedance-1.0-pro-fast",
+        "wan3.0-video",
     ])
+    with app.state.database.connect() as connection:
+        upstream_models = dict(
+            connection.execute(
+                "SELECT alias,upstream_model FROM model_catalog WHERE enabled=1"
+            )
+        )
+    assert upstream_models == {
+        "deepseek-v4-flash": "deepseek-v4-flash-260425",
+        "glm-5.2": "glm-5-2-260617",
+        "image2.0": "gpt-image-2",
+        "minimax-h3": "MiniMax-H3",
+        "seedream-5.0-pro": "doubao-seedream-5-0-260128",
+        "seedance-2.5": "doubao-seedance-2-5-260628",
+        "seedance-2.0": "doubao-seedance-2-0-260128",
+        "seedance-2.0-fast": "doubao-seedance-2-0-fast-260128",
+        "seedance-2.0-mini": "doubao-seedance-2-0-mini-260615",
+        "seedance-1.5-pro": "doubao-seedance-1-5-pro-251215",
+        "seedance-1.0-pro": "doubao-seedance-1-0-pro-250528",
+        "seedance-1.0-pro-fast": "doubao-seedance-1-0-pro-fast-250610",
+        "wan3.0-video": "wan3.0-video",
+    }
     assert bindings == permissions == 0
+    assert retired_enabled == 0
 
 
 def test_super_admin_channel_creation_requires_reauth_totp_and_audit_redacts_secret(tmp_path: Path) -> None:
@@ -481,7 +779,7 @@ def test_super_admin_channel_creation_requires_reauth_totp_and_audit_redacts_sec
                 "projectName": "secure_project",
                 "name": "secure-ark",
                 "provider": "volcengine_ark",
-                "config": {"projectName": "secure_project"},
+                "config": {},
                 "secret": secret,
                 "currentPassword": changed_password,
                 "totpCode": pyotp.TOTP(setup["secret"]).at(now + 30),
@@ -498,6 +796,7 @@ def test_super_admin_channel_creation_requires_reauth_totp_and_audit_redacts_sec
 
     assert created.status_code == 201, created.text
     assert created.json()["channel"]["secretHint"] == "sup****cret"
+    assert created.json()["channel"]["config"] == {"projectName": "secure_project"}
     assert audit["actor"] == "provider-owner"
     assert secret not in audit["after_json"]
     assert secret not in dump

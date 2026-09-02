@@ -97,6 +97,25 @@ export type ApiSession = {
   apiKeyId: string;
 };
 
+export type RelayModel = {
+  id: string;
+  object: "model";
+  displayName: string;
+  modality: "text" | "image" | "video";
+  capabilities: Record<string, unknown>;
+};
+
+export type RelayApiResult = {
+  body: Record<string, unknown>;
+  status: number;
+  requestId?: string;
+};
+
+export type RelayTextStreamOptions = {
+  signal?: AbortSignal;
+  onDelta?: (delta: string, accumulated: string) => void;
+};
+
 export type VideoGeneratePayload = {
   model: string;
   content: Array<Record<string, unknown>>;
@@ -108,7 +127,7 @@ export type VideoGeneratePayload = {
   metadata?: {
     prompt: string;
     promptDocument?: string;
-    assets: Array<Pick<Asset, "id" | "groupId" | "name" | "status" | "previewUrl">>;
+    assets: Array<Pick<Asset, "id" | "groupId" | "name" | "status" | "assetType" | "previewUrl">>;
     durationMode?: "seconds" | "smart";
     generationCount?: number;
   };
@@ -121,7 +140,7 @@ export type VideoHistoryRecord = {
   promptDocument?: string;
   assetName?: string;
   assetNames?: string[];
-  assets?: Array<Pick<Asset, "id" | "groupId" | "name" | "status" | "previewUrl">>;
+  assets?: Array<Pick<Asset, "id" | "groupId" | "name" | "status" | "assetType" | "previewUrl">>;
   model?: string;
   ratio?: string;
   duration?: number;
@@ -328,8 +347,205 @@ async function apiRequest<T>(
   return data as T;
 }
 
+async function relayRequest(
+  path: string,
+  apiKey: string,
+  init: RequestInit = {},
+): Promise<RelayApiResult> {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${apiKey.trim()}`);
+  headers.set("Accept", "application/json");
+  if (init.body) headers.set("Content-Type", "application/json");
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: "omit",
+  });
+  const text = await response.text();
+  let data: unknown = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { message: text };
+    }
+  }
+  if (!response.ok) throw new Error(errorMessage(data, response.status));
+  return {
+    body: isRecord(data) ? data : {},
+    status: response.status,
+    requestId: response.headers.get("x-request-id") || undefined,
+  };
+}
+
 export function authenticateApiKey(apiKey: string) {
   return apiRequest<ApiSession>("/api/auth/me", apiKey);
+}
+
+export async function listRelayModels(apiKey: string): Promise<RelayModel[]> {
+  const result = await relayRequest("/v1/models", apiKey);
+  const models = Array.isArray(result.body.data) ? result.body.data : [];
+  return models.filter(isRecord).flatMap((item) => {
+    const id = firstString(item, ["id"]);
+    const modality = firstString(item, ["modality"]);
+    if (!id || !new Set(["text", "image", "video"]).has(modality)) return [];
+    return [{
+      id,
+      object: "model" as const,
+      displayName: firstString(item, ["display_name", "displayName"], id),
+      modality: modality as RelayModel["modality"],
+      capabilities: isRecord(item.capabilities) ? item.capabilities : {},
+    }];
+  });
+}
+
+export function testRelayText(apiKey: string, model: string, prompt: string) {
+  return relayRequest("/v1/chat/completions", apiKey, {
+    method: "POST",
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      stream: false,
+      max_tokens: 512,
+    }),
+  });
+}
+
+function streamTextValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return "";
+  return value.flatMap((item) => {
+    if (typeof item === "string") return [item];
+    if (!isRecord(item)) return [];
+    const text = firstString(item, ["text", "content"]);
+    return text ? [text] : [];
+  }).join("");
+}
+
+function chatStreamDelta(event: UnknownRecord): string {
+  const choice = Array.isArray(event.choices) && isRecord(event.choices[0])
+    ? event.choices[0]
+    : {};
+  const delta = isRecord(choice.delta) ? choice.delta : {};
+  return streamTextValue(delta.content) || streamTextValue(delta.reasoning_content);
+}
+
+export async function testRelayTextStream(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  options: RelayTextStreamOptions = {},
+): Promise<RelayApiResult> {
+  const response = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey.trim()}`,
+      Accept: "text/event-stream",
+      "Content-Type": "application/json",
+    },
+    credentials: "omit",
+    signal: options.signal,
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      stream: true,
+      stream_options: { include_usage: true },
+      max_tokens: 512,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let data: unknown = {};
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { message: text };
+      }
+    }
+    throw new Error(errorMessage(data, response.status));
+  }
+  if (!response.body) throw new Error("浏览器未收到可读取的流式响应");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let accumulated = "";
+  let usage: Record<string, unknown> = {};
+  let requestId = response.headers.get("x-request-id") || undefined;
+
+  function consumeLine(rawLine: string) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trimStart();
+    if (!payload || payload === "[DONE]") return;
+    let event: unknown;
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      return;
+    }
+    if (!isRecord(event)) return;
+    if (!requestId) requestId = firstString(event, ["id"]) || undefined;
+    if (isRecord(event.usage)) usage = event.usage;
+    const delta = chatStreamDelta(event);
+    if (!delta) return;
+    accumulated += delta;
+    options.onDelta?.(delta, accumulated);
+  }
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) consumeLine(line);
+    if (done) break;
+  }
+  if (buffer) consumeLine(buffer);
+
+  return {
+    status: response.status,
+    requestId,
+    body: {
+      id: requestId,
+      object: "chat.completion",
+      model,
+      choices: [{ index: 0, message: { role: "assistant", content: accumulated }, finish_reason: "stop" }],
+      ...(Object.keys(usage).length ? { usage } : {}),
+    },
+  };
+}
+
+export function testRelayImage(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  idempotencyKey: string,
+) {
+  return relayRequest("/v1/images/generations", apiKey, {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ model, prompt, n: 1, response_format: "url" }),
+  });
+}
+
+export function testRelayVideo(
+  apiKey: string,
+  payload: { model: string; prompt: string; image?: string; duration?: number },
+  idempotencyKey: string,
+) {
+  return relayRequest("/v1/videos", apiKey, {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ ...payload, n: 1, response_format: "url" }),
+  });
+}
+
+export function getRelayVideoTask(apiKey: string, taskId: string) {
+  return relayRequest(`/v1/videos/${encodeURIComponent(taskId)}`, apiKey);
 }
 
 async function apiRead<T>(path: string, apiKey: string): Promise<T> {
@@ -528,6 +744,40 @@ export function isAssetActive(asset: Asset) {
 
 export function assetUri(assetId: string) {
   return `asset://${assetId}`;
+}
+
+export type ReferenceAsset = Pick<Asset, "id" | "assetType">;
+
+export function assetTypeOf(asset: Partial<Pick<Asset, "assetType">> | AssetType): AssetType {
+  const value = typeof asset === "string" ? asset : asset.assetType;
+  return value === "Video" || value === "Audio" ? value : "Image";
+}
+
+export function assetTypeLabel(asset: Partial<Pick<Asset, "assetType">> | AssetType) {
+  const assetType = assetTypeOf(asset);
+  if (assetType === "Video") return "视频";
+  if (assetType === "Audio") return "音频";
+  return "图片";
+}
+
+export function assetReferenceLabel(asset: ReferenceAsset, selectedAssets: ReferenceAsset[]) {
+  const assetType = assetTypeOf(asset);
+  const sameTypeIndex = selectedAssets
+    .filter((candidate) => assetTypeOf(candidate) === assetType)
+    .findIndex((candidate) => candidate.id === asset.id);
+  return `${assetTypeLabel(asset)}${Math.max(0, sameTypeIndex) + 1}`;
+}
+
+export function assetContentItem(asset: ReferenceAsset): Record<string, unknown> {
+  const url = assetUri(asset.id);
+  const assetType = assetTypeOf(asset);
+  if (assetType === "Video") {
+    return { type: "video_url", video_url: { url }, role: "reference_video" };
+  }
+  if (assetType === "Audio") {
+    return { type: "audio_url", audio_url: { url }, role: "reference_audio" };
+  }
+  return { type: "image_url", image_url: { url }, role: "reference_image" };
 }
 
 export function generateVideo(payload: VideoGeneratePayload, apiKey: string) {

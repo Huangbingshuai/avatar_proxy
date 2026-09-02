@@ -142,7 +142,10 @@ a { color: inherit; text-decoration: none; }
 .selectedAssetRail { display: flex; align-items: stretch; gap: 9px; min-height: 82px; overflow-x: auto; padding: 1px 1px 5px; scrollbar-width: thin; }
 .selectedAssetTile { position: relative; flex: 0 0 78px; width: 78px; height: 78px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 12px; background: #eef0f5; }
 .selectedAssetInsert { position: relative; display: grid; width: 100%; height: 100%; place-items: center; padding: 0; overflow: hidden; border: 0; color: #8d93a3; background: transparent; cursor: pointer; }
-.selectedAssetInsert img { width: 100%; height: 100%; object-fit: cover; }
+.selectedAssetInsert img, .selectedAssetInsert video { width: 100%; height: 100%; object-fit: cover; }
+.referenceMediaFallback { display: grid; width: 100%; height: 100%; place-items: center; color: #7c8497; background: #eef0f5; }
+.referenceMediaFallback.video, .selectedAssetTile.video { color: #be123c; background: #fff1f2; }
+.referenceMediaFallback.audio, .selectedAssetTile.audio { color: #b45309; background: #fffbeb; }
 .selectedAssetInsert::after { position: absolute; inset: 42% 0 0; background: linear-gradient(transparent, rgba(18, 20, 31, .78)); content: ""; }
 .selectedAssetInsert span { position: absolute; z-index: 1; right: 7px; bottom: 7px; left: 7px; color: #fff; font-size: 10px; font-weight: 650; text-align: left; }
 .selectedAssetControls { position: absolute; z-index: 2; top: 5px; right: 5px; display: flex; gap: 2px; opacity: 0; transition: opacity 140ms ease; }
@@ -165,6 +168,8 @@ a { color: inherit; text-decoration: none; }
 .assetMentionMenu button:hover, .assetMentionMenu button.active { background: var(--primary-soft); }
 .mentionMenuThumb { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; overflow: hidden; border-radius: 7px; color: #9298a8; background: #eef0f5; }
 .mentionMenuThumb img { width: 100%; height: 100%; object-fit: cover; }
+.mentionMenuThumb.video { color: #be123c; background: #fff1f2; }
+.mentionMenuThumb.audio { color: #b45309; background: #fffbeb; }
 .assetMentionMenu button > span:last-child { display: grid; min-width: 0; gap: 2px; }
 .assetMentionMenu b, .assetMentionMenu small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assetMentionMenu b { font-size: 11px; }
@@ -391,7 +396,7 @@ a { color: inherit; text-decoration: none; }
 .detailSection p { margin: 0; color: #333744; font-size: 12px; line-height: 1.8; }
 .detailAssets { display: flex; gap: 8px; margin-top: 16px; overflow-x: auto; padding-bottom: 5px; }
 .detailAssets > div { position: relative; display: grid; flex: 0 0 62px; width: 62px; height: 62px; place-items: center; overflow: hidden; border-radius: 9px; color: #9399aa; background: #edf0f5; }
-.detailAssets img { width: 100%; height: 100%; object-fit: cover; }
+.detailAssets img, .detailAssets video, .detailAssets .referenceMediaFallback { width: 100%; height: 100%; object-fit: cover; }
 .detailAssets span { position: absolute; right: 4px; bottom: 4px; left: 4px; overflow: hidden; color: #fff; font-size: 8px; font-weight: 650; text-align: center; text-shadow: 0 1px 3px #000; }
 .detailTags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
 .detailTags span { padding: 6px 9px; border-radius: 6px; color: #62697c; background: #f1f2f6; font-size: 9px; }
@@ -658,9 +663,74 @@ a { color: inherit; text-decoration: none; }
 .arkUsageTable td:nth-last-child(-n + 2), .arkUsageTable th:nth-last-child(-n + 2) { text-align: right; }
 .arkUsageTable td:nth-child(2), .arkUsageTable td:nth-child(3) { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .arkUsageEmpty { margin: 22px 0 2px; }
+
+/* OpenAI-compatible model playground */
+.modelLabSection { overflow: visible; }
+.modelLabHeader { border-radius: 18px 18px 0 0; background: linear-gradient(115deg, #fff 0%, #f7f7ff 100%); }
+.modelLabEyebrow { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 6px; color: var(--primary); font-size: 9px; font-weight: 750; letter-spacing: .12em; }
+.modelLabError { margin: 16px 20px 0; padding: 10px 12px; border: 1px solid #f1caca; border-radius: 10px; color: #b23f3f; background: var(--danger-soft); font-size: 10px; }
+.modelLabEmpty { min-height: 330px; }
+.modelLabWorkbench { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(330px, .82fr); min-height: 560px; border-radius: 0 0 18px 18px; }
+.modelLabComposer { display: grid; align-content: start; gap: 18px; min-width: 0; padding: 24px; border-right: 1px solid var(--line); }
+.modelLabModelGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.modelLabModelGrid > button { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 2px 9px; min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 13px; color: #525867; background: #fff; text-align: left; cursor: pointer; transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease; }
+.modelLabModelGrid > button:hover { transform: translateY(-1px); border-color: #cfd2ff; box-shadow: 0 8px 18px rgba(46, 51, 96, .06); }
+.modelLabModelGrid > button.selected { border-color: #aeb3ff; background: #f5f5ff; box-shadow: 0 8px 20px rgba(91, 99, 232, .09); }
+.modelLabModelGrid > button > span { display: grid; width: 34px; height: 34px; grid-row: 1 / span 2; place-items: center; border-radius: 10px; color: #3f70b0; background: #edf5ff; }
+.modelLabModelGrid > button > span.image { color: #a34668; background: #fff0f6; }
+.modelLabModelGrid > button > span.video { color: #93641b; background: #fff5dc; }
+.modelLabModelGrid b, .modelLabModelGrid small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modelLabModelGrid b { font-size: 10px; }
+.modelLabModelGrid small { color: var(--muted); font-size: 8px; }
+.modelLabModelGrid > button > svg { position: absolute; top: 8px; right: 8px; color: var(--primary); }
+.modelLabPrompt { position: relative; display: grid; gap: 8px; }
+.modelLabPrompt label, .modelLabVideoFields label { color: #555b69; font-size: 10px; font-weight: 650; }
+.modelLabPrompt textarea { width: 100%; min-height: 170px; resize: vertical; padding: 14px 16px 30px; border: 1px solid var(--line-strong); border-radius: 14px; outline: 0; color: var(--text); background: #fff; font-size: 12px; line-height: 1.75; }
+.modelLabPrompt textarea:focus, .modelLabVideoFields input:focus, .modelLabVideoFields select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(91, 99, 232, .1); }
+.modelLabPrompt > span { position: absolute; right: 12px; bottom: 10px; color: #a2a7b3; font-size: 8px; }
+.modelLabVideoFields { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 10px; }
+.modelLabVideoFields label { display: grid; gap: 7px; }
+.modelLabVideoFields input, .modelLabVideoFields select { width: 100%; height: 40px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 10px; outline: 0; background: #fff; font-size: 10px; }
+.modelLabSubmitRow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 3px; }
+.modelLabSubmitRow > span { display: inline-flex; align-items: center; gap: 6px; color: #8a8f9d; font-size: 8px; line-height: 1.5; }
+.modelLabSubmitRow > span em { display: inline-flex; align-items: center; gap: 4px; margin-left: 5px; padding: 4px 7px; border-radius: 999px; color: #4d55cc; background: #eeeeff; font-style: normal; font-weight: 650; }
+.modelLabActions { display: flex; align-items: center; gap: 8px; }
+.modelLabRunButton { display: inline-flex; min-width: 145px; min-height: 42px; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 11px; color: #fff; background: var(--primary); box-shadow: 0 8px 18px rgba(91, 99, 232, .2); font-size: 11px; font-weight: 650; cursor: pointer; }
+.modelLabRunButton:hover:not(:disabled) { background: var(--primary-hover); }
+.modelLabStopButton { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 6px; padding: 0 13px; border: 1px solid #efc4c4; border-radius: 11px; color: #b24848; background: #fff; font-size: 10px; font-weight: 650; cursor: pointer; }
+.modelLabStopButton:hover { background: #fff3f3; }
+.modelLabResult { min-width: 0; padding: 24px; background: #f8f8fc; }
+.modelLabResultEmpty { display: grid; min-height: 100%; align-content: center; justify-items: center; color: #a0a5b3; text-align: center; }
+.modelLabResultEmpty > svg { color: #8f95ed; }
+.modelLabResultEmpty b { margin-top: 12px; color: var(--text); font-size: 13px; }
+.modelLabResultEmpty p { max-width: 280px; margin: 7px 0 0; color: var(--muted); font-size: 9px; line-height: 1.7; }
+.modelLabResult > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.modelLabResult > header span, .modelLabResult > header small { display: inline-flex; align-items: center; gap: 5px; }
+.modelLabResult > header span { color: var(--success); font-size: 10px; font-weight: 650; }
+.modelLabResult > header small { color: var(--muted); font-size: 8px; }
+.modelLabTextResult { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; color: #3d4351; background: #fff; box-shadow: 0 8px 24px rgba(31, 35, 63, .04); }
+.modelLabTextResult > svg { margin-top: 2px; color: var(--primary); }
+.modelLabTextResult p { margin: 0; font-size: 11px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.modelLabTextResult.streaming { border-color: #cfd2ff; box-shadow: 0 8px 24px rgba(91, 99, 232, .08); }
+.modelLabStreamingHeader span { color: var(--primary) !important; }
+.modelLabTypingCursor { display: inline-block; width: 7px; height: 15px; margin-left: 3px; border-radius: 1px; vertical-align: -2px; background: var(--primary); animation: modelLabBlink .8s step-end infinite; }
+.modelLabImageResult { margin: 18px 0 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.modelLabImageResult img { display: block; width: 100%; max-height: 440px; object-fit: contain; background: #f1f2f6; }
+.modelLabImageResult figcaption { padding: 10px 12px; color: var(--muted); font-size: 9px; text-align: center; }
+.modelLabVideoResult { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; margin-top: 18px; padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.modelLabVideoResult > svg { color: var(--primary); }
+.modelLabVideoResult > div { display: grid; gap: 5px; min-width: 0; }
+.modelLabVideoResult b { font-size: 11px; text-transform: capitalize; }
+.modelLabVideoResult code, .modelLabRequestId code { overflow: hidden; color: #747a8a; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.modelLabUsage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0 0; }
+.modelLabUsage > div { display: grid; gap: 5px; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.modelLabUsage dt { color: var(--muted); font-size: 8px; }
+.modelLabUsage dd { margin: 0; color: var(--text); font-size: 14px; font-weight: 620; }
+.modelLabRequestId { display: grid; gap: 5px; margin-top: 14px; padding: 10px 12px; border-radius: 10px; color: var(--muted); background: #eff0f5; font-size: 8px; }
 .visuallyHidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
 .spin { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes modelLabBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes drift { to { transform: translateX(12px); } }
 
 @media (max-width: 960px) {
@@ -674,6 +744,9 @@ a { color: inherit; text-decoration: none; }
   .videoDetailPlayer { min-height: 480px; }
   .assetLibrary { grid-template-columns: 230px minmax(0, 1fr); }
   .assetGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .modelLabWorkbench { grid-template-columns: 1fr; }
+  .modelLabComposer { border-right: 0; border-bottom: 1px solid var(--line); }
+  .modelLabResult { min-height: 420px; }
 }
 
 @media (max-width: 720px) {
@@ -748,6 +821,11 @@ a { color: inherit; text-decoration: none; }
   .arkUsageTableToolbar { align-items: stretch; flex-direction: column; gap: 7px; }
   .arkUsageTableToolbar > label { min-width: 0; }
   .arkUsageTableToolbar > span { padding-bottom: 0; }
+  .modelLabModelGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .modelLabComposer, .modelLabResult { padding: 18px; }
+  .modelLabSubmitRow { align-items: stretch; flex-direction: column; }
+  .modelLabActions { align-items: stretch; flex-direction: column-reverse; }
+  .modelLabRunButton { width: 100%; }
 }
 
 @media (max-width: 460px) {
@@ -776,6 +854,10 @@ a { color: inherit; text-decoration: none; }
   .taskThumb { width: 54px; height: 44px; grid-row: 1 / span 2; }
   .contactSheet { padding: 16px 12px; }
   .assetGrid { gap: 8px; }
+  .modelLabModelGrid { grid-template-columns: 1fr; }
+  .modelLabVideoFields { grid-template-columns: 1fr; }
+  .modelLabVideoResult { grid-template-columns: auto minmax(0, 1fr); }
+  .modelLabVideoResult > button { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -140,7 +140,7 @@ def test_channel_full_lifecycle_and_not_found_branches(tmp_path: Path) -> None:
         assert reused["id"] != first["id"]
 
 
-def test_project_binding_and_key_permission_validation_branches(tmp_path: Path) -> None:
+def test_project_binding_validation_and_access_branches(tmp_path: Path) -> None:
     with relay_client(tmp_path) as client:
         create_project(client, "binding")
         key_id, _ = create_key(client, "binding")
@@ -156,41 +156,36 @@ def test_project_binding_and_key_permission_validation_branches(tmp_path: Path) 
         assert error_code(lambda: relay.project_models("missing")) == "project_not_found"
         assert error_code(lambda: relay.set_project_models("missing", [], "admin")) == "project_not_found"
         duplicate = [
-            {"model": "glm-5.3", "channelId": ark["id"], "upstreamModel": "ep-1"},
-            {"model": "glm-5.3", "channelId": ark["id"], "upstreamModel": "ep-2"},
+            {"model": "glm-5.2", "channelId": ark["id"], "upstreamModel": "ep-1"},
+            {"model": "glm-5.2", "channelId": ark["id"], "upstreamModel": "ep-2"},
         ]
         assert error_code(lambda: relay.set_project_models("binding", duplicate, "admin")) == "model_binding_invalid"
         assert error_code(lambda: relay.set_project_models(
             "binding", [{"model": "missing", "channelId": ark["id"], "upstreamModel": "ep"}], "admin"
         )) == "model_or_channel_not_found"
         assert error_code(lambda: relay.set_project_models(
-            "binding", [{"model": "glm-5.3", "channelId": openai["id"], "upstreamModel": "ep"}], "admin"
+            "binding", [{"model": "glm-5.2", "channelId": openai["id"], "upstreamModel": "ep"}], "admin"
         )) == "model_provider_mismatch"
-        assert error_code(lambda: relay.set_project_models(
-            "binding", [{"model": "glm-5.3", "channelId": ark["id"], "upstreamModel": ""}], "admin"
-        )) == "upstream_model_invalid"
 
-        relay.set_project_models(
-            "binding", [{"model": "glm-5.3", "channelId": ark["id"], "upstreamModel": "ep-glm"}], "admin"
+        saved = relay.set_project_models(
+            "binding", [{"model": "glm-5.2", "channelId": ark["id"], "upstreamModel": "client-override"}], "admin"
         )
-        assert error_code(lambda: relay.key_models("missing")) == "api_key_not_found"
-        assert error_code(lambda: relay.set_key_models("missing", [], "admin")) == "api_key_not_found"
-        assert error_code(lambda: relay.set_key_models(key_id, ["image2.0"], "admin")) == "model_permission_invalid"
-        assert relay.set_key_models(key_id, ["glm-5.3", "glm-5.3"], "admin")["models"][0]["enabled"] is True
+        assert next(item for item in saved if item["model"] == "glm-5.2")["upstreamModel"] == "glm-5-2-260617"
+        assert relay.resolve(ApiPrincipal(key_id, "binding"), "glm-5.2").alias == "glm-5.2"
         relay.set_project_models("binding", [], "admin")
         assert relay.project_models("binding")[0]["enabled"] is False
-        assert error_code(lambda: relay.resolve(ApiPrincipal(key_id, "binding"), "glm-5.3")) == "model_not_allowed"
+        assert error_code(lambda: relay.resolve(ApiPrincipal(key_id, "binding"), "glm-5.2")) == "model_not_allowed"
 
 
 @pytest.mark.asyncio
 async def test_upstream_error_mapping_invalid_response_and_unreachable(tmp_path: Path) -> None:
     with relay_client(tmp_path) as client:
         key_id, _, _ = provision(
-            client, provider="volcengine_ark", alias="glm-5.3", upstream_model="ep-glm"
+            client, provider="volcengine_ark", alias="glm-5.2", upstream_model="ep-glm"
         )
         relay = client.app.state.provider_relay
         principal = ApiPrincipal(key_id, "relay_project")
-        route = relay.resolve(principal, "glm-5.3")
+        route = relay.resolve(principal, "glm-5.2")
 
         relay.transport = httpx.MockTransport(lambda _: httpx.Response(
             429, headers={"x-request-id": "up-429"}, json={"error": {"message": "rate limited"}}
@@ -245,14 +240,14 @@ async def test_channel_test_success_and_failure_persist_result(tmp_path: Path) -
 def test_public_parameter_validation_and_openai_error_contract(tmp_path: Path) -> None:
     with relay_client(tmp_path) as client:
         _, secret, _ = provision(
-            client, provider="volcengine_ark", alias="glm-5.3", upstream_model="ep-glm"
+            client, provider="volcengine_ark", alias="glm-5.2", upstream_model="ep-glm"
         )
         headers = {"Authorization": f"Bearer {secret}"}
         cases = [
             ("/v1/chat/completions", {"messages": []}, "model_required"),
-            ("/v1/chat/completions", {"model": "glm-5.3", "messages": [], "provider": "openai"}, "route_override_forbidden"),
-            ("/v1/chat/completions", {"model": "glm-5.3", "messages": [], "unknown": 1}, "text_parameter_unsupported"),
-            ("/v1/chat/completions", {"model": "glm-5.3", "messages": [], "stream": "yes"}, "stream_parameter_invalid"),
+            ("/v1/chat/completions", {"model": "glm-5.2", "messages": [], "provider": "openai"}, "route_override_forbidden"),
+            ("/v1/chat/completions", {"model": "glm-5.2", "messages": [], "unknown": 1}, "text_parameter_unsupported"),
+            ("/v1/chat/completions", {"model": "glm-5.2", "messages": [], "stream": "yes"}, "stream_parameter_invalid"),
         ]
         for path, payload, code in cases:
             response = client.post(path, headers=headers, json=payload)
@@ -331,8 +326,7 @@ def test_video_validation_and_task_access_boundaries(tmp_path: Path) -> None:
         key_id, secret, _ = provision(
             client, provider="minimax", alias="minimax-h3", upstream_model="MiniMax-H3"
         )
-        second_id, second_secret = create_key(client, "relay_project", "other-key")
-        client.app.state.provider_relay.set_key_models(second_id, ["minimax-h3"], "admin")
+        _, second_secret = create_key(client, "relay_project", "other-key")
         headers = {"Authorization": f"Bearer {secret}"}
         invalid_cases = [
             ({"model": "minimax-h3"}, "video_input_required"),
@@ -376,14 +370,14 @@ def test_aliyun_validation_usage_filters_and_management_routes(tmp_path: Path) -
         key_id, secret, channel = provision(
             client,
             provider="aliyun_bailian",
-            alias="wan3.0",
+            alias="wan3.0-video",
             upstream_model="wan-real",
             config={"workspaceId": "workspace", "region": "cn-beijing"},
         )
         headers = {"Authorization": f"Bearer {secret}"}
         invalid_seed = client.post(
             "/v1/videos", headers=headers,
-            json={"model": "wan3.0", "prompt": "x", "seed": 1},
+            json={"model": "wan3.0-video", "prompt": "x", "seed": 1},
         )
         assert invalid_seed.json()["error"]["code"] == "video_parameter_unsupported"
         relay = client.app.state.provider_relay
@@ -395,7 +389,7 @@ def test_aliyun_validation_usage_filters_and_management_routes(tmp_path: Path) -
         ))
         created = client.post(
             "/v1/videos", headers=headers,
-            json={"model": "wan3.0", "prompt": "x", "metadata": {"aigc_watermark": True}},
+            json={"model": "wan3.0-video", "prompt": "x", "metadata": {"aigc_watermark": True}},
         )
         failed = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
         assert failed.json()["status"] == "failed"
@@ -403,29 +397,27 @@ def test_aliyun_validation_usage_filters_and_management_routes(tmp_path: Path) -
 
         catalog = client.get("/api/internal/model/catalog", headers=ADMIN_HEADERS)
         project_models = client.get("/api/internal/project/relay_project/models", headers=ADMIN_HEADERS)
-        key_models = client.get(f"/api/internal/apikey/{key_id}/models", headers=ADMIN_HEADERS)
+        legacy_key_models = client.get(f"/api/internal/apikey/{key_id}/models", headers=ADMIN_HEADERS)
         usage = client.get(
             "/api/internal/inference/usage?projectName=relay_project&keyId="
-            f"{key_id}&model=wan3.0&provider=aliyun_bailian&start=2020&end=2030",
+            f"{key_id}&model=wan3.0-video&provider=aliyun_bailian&start=2020&end=2030",
             headers=ADMIN_HEADERS,
         )
         tasks = client.get(
-            f"/api/internal/inference/tasks?projectName=relay_project&keyId={key_id}&model=wan3.0",
+            f"/api/internal/inference/tasks?projectName=relay_project&keyId={key_id}&model=wan3.0-video",
             headers=ADMIN_HEADERS,
         )
         saved_project = client.put(
             "/api/internal/project/relay_project/models",
             headers=ADMIN_HEADERS,
-            json={"bindings": [{"model": "wan3.0", "channelId": channel["id"], "upstreamModel": "wan-real", "enabled": True}]},
-        )
-        saved_key = client.put(
-            f"/api/internal/apikey/{key_id}/models",
-            headers=ADMIN_HEADERS,
-            json={"models": ["wan3.0"]},
+            json={"bindings": [{"model": "wan3.0-video", "channelId": channel["id"], "enabled": True}]},
         )
 
-    assert all(item.status_code == 200 for item in [catalog, project_models, key_models, usage, tasks, saved_project, saved_key])
-    assert any(item["id"] == "wan3.0" for item in catalog.json()["models"])
+    assert all(item.status_code == 200 for item in [catalog, project_models, usage, tasks, saved_project])
+    assert legacy_key_models.status_code == 404
+    assert any(item["id"] == "wan3.0-video" for item in catalog.json()["models"])
+    assert next(item for item in catalog.json()["models"] if item["id"] == "wan3.0-video")["upstreamModel"] == "wan3.0-video"
+    assert next(item for item in saved_project.json()["models"] if item["model"] == "wan3.0-video")["upstreamModel"] == "wan3.0-video"
     assert tasks.json()["tasks"][0]["status"] == "failed"
 
 

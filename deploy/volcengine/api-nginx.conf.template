@@ -88,6 +88,20 @@ server {
         proxy_send_timeout 300s;
     }
 
+    # OpenAI-compatible public model relay. It uses the customer's business
+    # API Key and is intentionally separate from administrator sessions.
+    location ^~ /v1/ {
+        proxy_pass http://api:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_buffering off;
+    }
+
     location / {
         proxy_pass http://console:3000;
         proxy_http_version 1.1;

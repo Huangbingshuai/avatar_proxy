@@ -7,12 +7,19 @@ from typing import Any, Iterator
 
 
 BUILTIN_MODEL_CATALOG = (
-    ("deepseek-v4-flash", "DeepSeek V4 Flash", "volcengine_ark", "text", "openai_text", {"chat": True, "responses": True, "stream": True}),
-    ("glm-5.3", "GLM 5.3", "volcengine_ark", "text", "openai_text", {"chat": True, "responses": True, "stream": True}),
-    ("seedream-5.0-pro", "Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", {"generations": True}),
-    ("wan3.0", "Wan 3.0", "aliyun_bailian", "video", "async_video", {"image": True, "maxN": 1}),
-    ("minimax-h3", "MiniMax H3", "minimax", "video", "async_video", {"image": True, "maxN": 1}),
-    ("image2.0", "Image 2.0", "openai", "image", "openai_image", {"generations": True}),
+    ("deepseek-v4-flash", "DeepSeek V4 Flash", "volcengine_ark", "text", "openai_text", "deepseek-v4-flash-260425", {"chat": True, "responses": True, "stream": True}),
+    ("glm-5.2", "GLM 5.2", "volcengine_ark", "text", "openai_text", "glm-5-2-260617", {"chat": True, "responses": True, "stream": True}),
+    ("seedream-5.0-pro", "Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-260128", {"generations": True}),
+    ("seedance-2.5", "Seedance 2.5", "volcengine_ark", "video", "async_video", "doubao-seedance-2-5-260628", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 30, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 50, "maxN": 1}),
+    ("seedance-2.0", "Seedance 2.0", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 20, "maxN": 1}),
+    ("seedance-2.0-fast", "Seedance 2.0 Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-fast-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
+    ("seedance-2.0-mini", "Seedance 2.0 Mini", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-mini-260615", {"text": True, "image": True, "video": True, "audio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
+    ("seedance-1.5-pro", "Seedance 1.5 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-5-pro-251215", {"text": True, "image": True, "generateAudio": True, "draft": True, "durationMin": 4, "durationMax": 12, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
+    ("seedance-1.0-pro", "Seedance 1.0 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-250528", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
+    ("seedance-1.0-pro-fast", "Seedance 1.0 Pro Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-fast-250610", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
+    ("wan3.0-video", "Wan 3.0 Video", "aliyun_bailian", "video", "async_video", "wan3.0-video", {"image": True, "maxN": 1}),
+    ("minimax-h3", "MiniMax H3", "minimax", "video", "async_video", "MiniMax-H3", {"image": True, "maxN": 1}),
+    ("image2.0", "Image 2.0", "openai", "image", "openai_image", "gpt-image-2", {"generations": True}),
 )
 
 
@@ -332,6 +339,7 @@ CREATE TABLE IF NOT EXISTS model_catalog (
     provider TEXT NOT NULL,
     modality TEXT NOT NULL CHECK(modality IN ('text','image','video')),
     protocol TEXT NOT NULL,
+    upstream_model TEXT NOT NULL,
     capabilities_json TEXT NOT NULL DEFAULT '{}',
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -517,26 +525,79 @@ class Database:
             }
             if provider_channel_columns and "deleted_at" not in provider_channel_columns:
                 connection.execute("ALTER TABLE provider_channels ADD COLUMN deleted_at TEXT")
+            model_catalog_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(model_catalog)").fetchall()
+            }
+            if model_catalog_columns and "upstream_model" not in model_catalog_columns:
+                connection.execute(
+                    "ALTER TABLE model_catalog ADD COLUMN upstream_model TEXT NOT NULL DEFAULT ''"
+                )
             connection.execute(
                 "INSERT OR IGNORE INTO system_monitor_settings(id) VALUES (1)"
             )
             connection.execute(
                 "INSERT OR IGNORE INTO system_monitor_state(id) VALUES (1)"
             )
-            for alias, display_name, provider, modality, protocol, capabilities in BUILTIN_MODEL_CATALOG:
+            for alias, display_name, provider, modality, protocol, upstream_model, capabilities in BUILTIN_MODEL_CATALOG:
                 connection.execute(
-                    "INSERT OR IGNORE INTO model_catalog "
-                    "(alias,display_name,provider,modality,protocol,capabilities_json) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO model_catalog "
+                    "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
+                    "VALUES (?,?,?,?,?,?,?) ON CONFLICT(alias) DO UPDATE SET "
+                    "display_name=excluded.display_name,provider=excluded.provider,"
+                    "modality=excluded.modality,protocol=excluded.protocol,"
+                    "upstream_model=excluded.upstream_model,"
+                    "capabilities_json=excluded.capabilities_json,updated_at=CURRENT_TIMESTAMP",
                     (
                         alias,
                         display_name,
                         provider,
                         modality,
                         protocol,
+                        upstream_model,
                         json.dumps(capabilities, separators=(",", ":")),
                     ),
                 )
+            # These models stopped accepting invocations in May 2026. Keep any
+            # historical task references intact, but never expose or route new
+            # traffic to them after upgrading an older local database.
+            connection.execute(
+                "UPDATE model_catalog SET enabled=0,updated_at=CURRENT_TIMESTAMP "
+                "WHERE alias IN ('seedance-1.0-lite-t2v','seedance-1.0-lite-i2v')"
+            )
+            # Early local catalogs used two aliases that did not match the fixed
+            # upstream IDs. Migrate every reference atomically so existing project
+            # bindings, legacy key permissions, tasks and usage remain available.
+            for legacy_alias, canonical_alias in (
+                ("glm-5.3", "glm-5.2"),
+                ("wan3.0", "wan3.0-video"),
+            ):
+                if not connection.execute(
+                    "SELECT 1 FROM model_catalog WHERE alias=?", (legacy_alias,)
+                ).fetchone():
+                    continue
+                connection.execute(
+                    "DELETE FROM project_model_bindings WHERE model_alias=? AND EXISTS ("
+                    "SELECT 1 FROM project_model_bindings current WHERE current.project_name="
+                    "project_model_bindings.project_name AND current.model_alias=?)",
+                    (legacy_alias, canonical_alias),
+                )
+                connection.execute(
+                    "DELETE FROM api_key_model_permissions WHERE model_alias=? AND EXISTS ("
+                    "SELECT 1 FROM api_key_model_permissions current WHERE current.api_key_id="
+                    "api_key_model_permissions.api_key_id AND current.model_alias=?)",
+                    (legacy_alias, canonical_alias),
+                )
+                for table in (
+                    "project_model_bindings",
+                    "api_key_model_permissions",
+                    "inference_tasks",
+                    "inference_usage",
+                ):
+                    connection.execute(
+                        f"UPDATE {table} SET model_alias=? WHERE model_alias=?",
+                        (canonical_alias, legacy_alias),
+                    )
+                connection.execute("DELETE FROM model_catalog WHERE alias=?", (legacy_alias,))
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations

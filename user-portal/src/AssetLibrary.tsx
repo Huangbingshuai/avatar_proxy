@@ -29,6 +29,9 @@ import {
 import {
   createAsset,
   createAssetGroup,
+  assetReferenceLabel,
+  assetTypeLabel,
+  assetTypeOf,
   deleteAsset,
   deleteAssetGroup,
   isAssetActive,
@@ -86,16 +89,6 @@ function assetStatusLabel(status: string) {
   if (value === "processing" || value === "pending" || value === "creating") return "处理中";
   if (FAILED_ASSET_STATUSES.has(value)) return "不可用";
   return status || "状态未知";
-}
-
-function assetTypeOf(asset: Asset): AssetType {
-  return asset.assetType || "Image";
-}
-
-function assetTypeLabel(assetType: AssetType) {
-  if (assetType === "Video") return "视频";
-  if (assetType === "Audio") return "音频";
-  return "图片";
 }
 
 function uploadRuleFor(file: File) {
@@ -254,7 +247,7 @@ export default function AssetLibrary({
       const visibleById = new Map(result.items.map((item) => [item.id, item]));
       const nextSelection = selectedAssetsRef.current.filter((selected) => {
         const visible = visibleById.get(selected.id);
-        return !visible || (isAssetActive(visible) && assetTypeOf(visible) === "Image");
+        return !visible || isAssetActive(visible);
       });
       if (nextSelection.length !== selectedAssetsRef.current.length) {
         onSelectionChangeRef.current?.(nextSelection);
@@ -486,17 +479,20 @@ export default function AssetLibrary({
   const selectedUploadRule = uploadFile ? uploadRuleFor(uploadFile) : undefined;
 
   function toggleAsset(asset: Asset) {
-    if (assetTypeOf(asset) !== "Image") {
-      message("视频生成仅支持选择图片；视频和音频可在素材库中管理", "error");
-      return;
-    }
     const selected = selectedAssets.some((item) => item.id === asset.id);
     if (selected) {
       onSelectionChange?.(selectedAssets.filter((item) => item.id !== asset.id));
       return;
     }
+    const assetType = assetTypeOf(asset);
+    const typeMaximum = assetType === "Image" ? 9 : 3;
+    const selectedOfType = selectedAssets.filter((item) => assetTypeOf(item) === assetType).length;
+    if (selectedOfType >= typeMaximum) {
+      message(`${assetTypeLabel(assetType)}素材最多选择 ${typeMaximum} 个`, "error");
+      return;
+    }
     if (selectedAssets.length >= maxSelection) {
-      message(`最多选择 ${maxSelection} 张参考图片`, "error");
+      message(`最多选择 ${maxSelection} 个参考素材`, "error");
       return;
     }
     onSelectionChange?.([...selectedAssets, asset]);
@@ -597,15 +593,15 @@ export default function AssetLibrary({
             {assets.items.map((asset) => {
               const active = isAssetActive(asset);
               const assetType = assetTypeOf(asset);
-              const selectable = active && assetType === "Image";
+              const selectable = active;
               const selectedIndex = selectedAssets.findIndex((selected) => selected.id === asset.id);
               const selected = selectedIndex >= 0;
               return (
                 <article key={asset.id} className={`assetCard ${selected ? "selected" : ""} ${active && (mode !== "select" || selectable) ? "" : "disabled"}`}>
-                  <button type="button" className="assetPreview" disabled={!selectable || mode !== "select"} onClick={() => toggleAsset(asset)} aria-label={selectable ? `${selected ? "取消选择" : "选择"}${asset.name}` : `${asset.name} ${active ? "不可作为图片选择" : "暂不可用"}`}>
+                  <button type="button" className="assetPreview" disabled={!selectable || mode !== "select"} onClick={() => toggleAsset(asset)} aria-label={selectable ? `${selected ? "取消选择" : "选择"}${asset.name}` : `${asset.name} 暂不可用`}>
                     <AssetThumbnail asset={asset} />
                     <span className={`assetTypeBadge ${assetType.toLowerCase()}`}>{assetType === "Video" ? <Video size={11} /> : assetType === "Audio" ? <AudioLines size={11} /> : <ImageIcon size={11} />}{assetTypeLabel(assetType)}</span>
-                    {mode === "select" && selectable ? <span className="selectionMark">{selected ? <><Check size={13} />图片{selectedIndex + 1}</> : "选择"}</span> : null}
+                    {mode === "select" && selectable ? <span className="selectionMark">{selected ? <><Check size={13} />{assetReferenceLabel(asset, selectedAssets)}</> : "选择"}</span> : null}
                     <span className={`assetState ${active ? "active" : "pending"}`}>{active ? <CircleCheck size={12} /> : <LoaderCircle size={12} className={FAILED_ASSET_STATUSES.has(asset.status.toLowerCase()) ? "" : "spin"} />}{assetStatusLabel(asset.status)}</span>
                   </button>
                   {editingAsset?.id === asset.id ? (

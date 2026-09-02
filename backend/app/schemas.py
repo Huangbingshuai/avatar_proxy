@@ -153,26 +153,14 @@ class ApiKeyBindProject(ApiModel):
 class ProjectModelBinding(ApiModel):
     model: str = Field(min_length=1, max_length=128)
     channel_id: str = Field(min_length=1, max_length=80)
-    upstream_model: str = Field(min_length=1, max_length=256)
+    # Kept temporarily for backward-compatible internal clients. The service
+    # deliberately ignores this value and always uses model_catalog.upstream_model.
+    upstream_model: str | None = Field(default=None, max_length=256)
     enabled: bool = True
 
 
 class ProjectModelsUpdate(ApiModel):
     bindings: list[ProjectModelBinding] = Field(default_factory=list, max_length=100)
-
-
-class ApiKeyModelsUpdate(ApiModel):
-    models: list[str] = Field(default_factory=list, max_length=100)
-
-    @field_validator("models")
-    @classmethod
-    def validate_models(cls, value: list[str]) -> list[str]:
-        stripped = [item.strip() for item in value]
-        if any(not item or len(item) > 128 for item in stripped):
-            raise ValueError("模型名称无效")
-        if len(set(stripped)) != len(stripped):
-            raise ValueError("模型名称不能重复")
-        return stripped
 
 
 class OpenAIVideoRequest(ApiModel):
@@ -305,13 +293,24 @@ class VideoGenerate(ApiModel):
     @model_validator(mode="after")
     def validate_content(self) -> "VideoGenerate":
         text_items = [item for item in self.content if item.get("type") == "text"]
-        image_items = [item for item in self.content if item.get("type") == "image_url"]
         if not any(isinstance(item.get("text"), str) and item["text"].strip() for item in text_items):
             raise ValueError("content 至少包含一项非空文本描述")
-        if len(image_items) > 9:
-            raise ValueError("单个视频任务最多使用 9 张参考图片")
-        for item in image_items:
-            image_url = item.get("image_url")
-            if not isinstance(image_url, dict) or not isinstance(image_url.get("url"), str) or not image_url["url"].strip():
-                raise ValueError("参考图片缺少有效的 image_url.url")
+
+        media_specs = {
+            "image_url": ("image_url", "参考图片", 9),
+            "video_url": ("video_url", "参考视频", 3),
+            "audio_url": ("audio_url", "参考音频", 3),
+        }
+        media_items = [item for item in self.content if item.get("type") in media_specs]
+        if len(media_items) > 9:
+            raise ValueError("单个视频任务最多使用 9 个参考素材")
+
+        for content_type, (url_field, label, maximum) in media_specs.items():
+            items = [item for item in media_items if item.get("type") == content_type]
+            if len(items) > maximum:
+                raise ValueError(f"单个视频任务最多使用 {maximum} 个{label}")
+            for item in items:
+                media_url = item.get(url_field)
+                if not isinstance(media_url, dict) or not isinstance(media_url.get("url"), str) or not media_url["url"].strip():
+                    raise ValueError(f"{label}缺少有效的 {url_field}.url")
         return self

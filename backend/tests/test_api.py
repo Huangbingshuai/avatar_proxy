@@ -813,6 +813,59 @@ def test_seedance_rejects_more_than_nine_reference_images(tmp_path: Path) -> Non
     assert response.status_code == 422
 
 
+def test_seedance_accepts_and_forwards_mixed_reference_assets(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": "cgt-mixed-assets", "status": "queued"})
+
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        app.state.seedance.transport = httpx.MockTransport(handler)
+        response = client.post(
+            "/api/video/generate",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={
+                "model": "doubao-seedance-2-0-test",
+                "content": [
+                    {"type": "text", "text": "参考图片人物、视频运镜和音频节奏生成短片"},
+                    {"type": "image_url", "image_url": {"url": "asset://image-1"}, "role": "reference_image"},
+                    {"type": "video_url", "video_url": {"url": "asset://video-1"}, "role": "reference_video"},
+                    {"type": "audio_url", "audio_url": {"url": "asset://audio-1"}, "role": "reference_audio"},
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["payload"]["content"][1:] == [
+        {"type": "image_url", "image_url": {"url": "asset://image-1"}, "role": "reference_image"},
+        {"type": "video_url", "video_url": {"url": "asset://video-1"}, "role": "reference_video"},
+        {"type": "audio_url", "audio_url": {"url": "asset://audio-1"}, "role": "reference_audio"},
+    ]
+
+
+def test_seedance_rejects_more_than_three_reference_videos(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "test.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        _, secret = create_key(client)
+        content = [{"type": "text", "text": "参考多段视频生成"}]
+        content.extend(
+            {"type": "video_url", "video_url": {"url": f"asset://video-{index}"}, "role": "reference_video"}
+            for index in range(4)
+        )
+        response = client.post(
+            "/api/video/generate",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-seedance-2-0-test", "content": content},
+        )
+
+    assert response.status_code == 422
+
+
 def test_production_docs_are_disabled_by_default(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "test.db"))
     with TestClient(app) as client:

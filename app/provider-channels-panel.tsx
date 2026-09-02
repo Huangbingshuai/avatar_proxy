@@ -32,7 +32,6 @@ const emptyForm = {
   name: "",
   provider: "volcengine_ark" as Provider,
   secret: "",
-  projectNameConfig: "",
   workspaceId: "",
   region: "cn-beijing",
   organization: "",
@@ -42,7 +41,7 @@ const emptyForm = {
 };
 
 function channelConfig(form: typeof emptyForm) {
-  if (form.provider === "volcengine_ark") return form.projectNameConfig ? { projectName: form.projectNameConfig } : {};
+  if (form.provider === "volcengine_ark") return {};
   if (form.provider === "aliyun_bailian") return { workspaceId: form.workspaceId, region: form.region };
   if (form.provider === "openai") return {
     ...(form.organization ? { organization: form.organization } : {}),
@@ -191,7 +190,6 @@ export default function ProviderChannelsPanel({ adminApi }: { adminApi: AdminApi
       <label>客户项目<select required value={form.projectName} onChange={(event) => setForm({ ...form, projectName: event.target.value })}><option value="">选择项目</option>{projects.map((project) => <option key={project.name} value={project.name}>{project.displayName} · {project.name}</option>)}</select></label>
       <label>渠道名称<input required maxLength={100} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如 客户A火山方舟生产渠道" /></label>
       <label>供应商<select value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as Provider })}>{Object.entries(providerLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      {form.provider === "volcengine_ark" && <label>火山 ProjectName（可选）<input maxLength={256} value={form.projectNameConfig} onChange={(event) => setForm({ ...form, projectNameConfig: event.target.value })} /></label>}
       {form.provider === "aliyun_bailian" && <><label>Workspace ID<input required maxLength={128} value={form.workspaceId} onChange={(event) => setForm({ ...form, workspaceId: event.target.value })} /></label><label>地域<select value={form.region} onChange={(event) => setForm({ ...form, region: event.target.value })}><option value="cn-beijing">北京</option><option value="ap-southeast-1">新加坡</option><option value="ap-northeast-1">日本</option><option value="eu-central-1">德国</option><option value="us-east-1">美国东部</option></select></label></>}
       {form.provider === "openai" && <><label>Organization（可选）<input value={form.organization} onChange={(event) => setForm({ ...form, organization: event.target.value })} /></label><label>OpenAI Project（可选）<input value={form.openaiProject} onChange={(event) => setForm({ ...form, openaiProject: event.target.value })} /></label></>}
       <label>供应商 API Key<input type="password" autoComplete="new-password" required minLength={8} value={form.secret} onChange={(event) => setForm({ ...form, secret: event.target.value })} /><small>只提交一次；服务端加密后仅显示掩码。</small></label>

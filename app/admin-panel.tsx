@@ -533,7 +533,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
           : "";
 
   return <div className="content adminConsole">
-    <div className="pageIntro"><div><h2>超级管理员安全中心</h2><p>超级管理员只负责账号、告警、会话与备份；日常业务请使用普通管理员。</p></div><button className="primary" onClick={() => setShowCreate(true)}><Plus size={16} />创建管理员</button></div>
+    <div className="pageIntro"><div><h2>超级管理员安全中心</h2><p>超级管理员只负责账号、告警、会话与备份；日常业务请使用普通管理员。</p></div></div>
     {error && <div className="errorBanner adminInlineError" role="alert">{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
 
     <ProviderChannelsPanel adminApi={adminApi} />
@@ -592,7 +592,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
     </section>
 
     <section className="panel adminSection">
-      <div className="panelHead"><div><h3>管理员账号</h3><p>只有超级管理员能访问本页；普通管理员可使用其他业务管理功能。</p></div><button className="iconButton" onClick={() => void loadSecurityData()} disabled={loading} aria-label="刷新管理员安全信息"><RefreshCw size={16} className={loading ? "spin" : ""} /></button></div>
+      <div className="panelHead"><div><h3>管理员账号</h3><p>只有超级管理员能访问本页；普通管理员可使用其他业务管理功能。</p></div><div className="panelHeadActions"><button className="iconButton" onClick={() => void loadSecurityData()} disabled={loading} aria-label="刷新管理员安全信息"><RefreshCw size={16} className={loading ? "spin" : ""} /></button><button className="primary" onClick={() => setShowCreate(true)}><Plus size={16} />创建管理员</button></div></div>
       <div className="dataTable adminTable">
         <div className="tableRow tableHead"><span>管理员</span><span>角色</span><span>状态</span><span>最后登录</span><span>来源 IP</span><span>操作</span></div>
         {users.map((user) => <div className="tableRow" key={user.id}>

@@ -6,7 +6,6 @@ from ..schemas import (
     AdminProviderDelete,
     AdminProviderSecretRotate,
     AdminProviderStatusUpdate,
-    ApiKeyModelsUpdate,
     ProjectModelsUpdate,
 )
 from ..security import AdminDependency, BusinessAdminDependency
@@ -245,30 +244,6 @@ def update_project_models(
         after={"models": [item["model"] for item in models if item["enabled"]]},
     )
     return {"projectName": project_name, "models": models}
-
-
-@router.get("/apikey/{key_id}/models")
-def api_key_models(key_id: str, request: Request, _: BusinessAdminDependency) -> dict:
-    return request.app.state.provider_relay.key_models(key_id)
-
-
-@router.put("/apikey/{key_id}/models")
-def update_api_key_models(
-    key_id: str,
-    payload: ApiKeyModelsUpdate,
-    request: Request,
-    principal: BusinessAdminDependency,
-) -> dict:
-    result = request.app.state.provider_relay.set_key_models(key_id, payload.models, principal.id)
-    _audit(
-        request,
-        principal,
-        "apikey.models.update",
-        "api_key",
-        key_id,
-        after={"models": payload.models},
-    )
-    return result
 
 
 @router.get("/inference/usage")

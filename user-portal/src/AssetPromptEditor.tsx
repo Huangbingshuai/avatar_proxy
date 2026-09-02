@@ -35,8 +35,8 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Image as ImageIcon } from "lucide-react";
-import type { Asset } from "./api";
+import { AudioLines, Image as ImageIcon, Video } from "lucide-react";
+import { assetReferenceLabel, assetTypeOf, type Asset } from "./api";
 
 type SerializedAssetMentionNode = Spread<{
   assetKey: string;
@@ -178,12 +178,12 @@ function AssetMentionPlugins({
 }) {
   const [editor] = useLexicalComposerContext();
   const [query, setQuery] = useState<string | null>(null);
-  const assetMap = useMemo(() => new Map(selectedAssets.map((asset, index) => [asset.id, { asset, label: `图片${index + 1}` }])), [selectedAssets]);
+  const assetMap = useMemo(() => new Map(selectedAssets.map((asset) => [asset.id, { asset, label: assetReferenceLabel(asset, selectedAssets) }])), [selectedAssets]);
   const triggerMatch = useBasicTypeaheadTriggerMatch("@", { minLength: 0, maxLength: 32 });
   const options = useMemo(() => {
     const keyword = query?.toLowerCase().trim() || "";
-    return selectedAssets.flatMap((asset, index) => {
-      const label = `图片${index + 1}`;
+    return selectedAssets.flatMap((asset) => {
+      const label = assetReferenceLabel(asset, selectedAssets);
       return !keyword || label.includes(keyword) || asset.name.toLowerCase().includes(keyword)
         ? [new AssetMentionOption(asset, label)]
         : [];
@@ -243,7 +243,12 @@ function AssetMentionPlugins({
                   onMouseEnter={() => menuProps.setHighlightedIndex(index)}
                   onClick={() => menuProps.selectOptionAndCleanUp(option)}
                 >
-                  <span className="mentionMenuThumb">{option.asset.previewUrl ? <img src={option.asset.previewUrl} alt="" /> : <ImageIcon size={16} />}</span>
+                  <span className={`mentionMenuThumb ${assetTypeOf(option.asset).toLowerCase()}`}>
+                    {assetTypeOf(option.asset) === "Image" && option.asset.previewUrl ? <img src={option.asset.previewUrl} alt="" /> : null}
+                    {assetTypeOf(option.asset) === "Image" && !option.asset.previewUrl ? <ImageIcon size={16} /> : null}
+                    {assetTypeOf(option.asset) === "Video" ? <Video size={16} /> : null}
+                    {assetTypeOf(option.asset) === "Audio" ? <AudioLines size={16} /> : null}
+                  </span>
                   <span><b>{option.label}</b><small>{option.asset.name}</small></span>
                 </button>
               ))}

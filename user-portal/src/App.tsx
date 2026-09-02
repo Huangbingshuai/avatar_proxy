@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   ArrowUp,
   AtSign,
+  AudioLines,
   BarChart3,
   Check,
   ChevronDown,
@@ -25,6 +26,7 @@ import {
   RefreshCw,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Video,
   WandSparkles,
@@ -32,11 +34,14 @@ import {
 } from "lucide-react";
 import { type FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AssetLibrary from "./AssetLibrary";
+import ModelPlayground from "./ModelPlayground";
 import type { AssetPromptEditorHandle, AssetPromptValue } from "./AssetPromptEditor";
 import {
   DEFAULT_MODEL,
   VIDEO_MODELS,
-  assetUri,
+  assetContentItem,
+  assetReferenceLabel,
+  assetTypeOf,
   authenticateApiKey,
   cancelVideoTask,
   clearVideoHistory,
@@ -56,9 +61,9 @@ import {
   type UsageStats,
 } from "./api";
 
-type Workspace = "create" | "library" | "tasks" | "usage";
+type Workspace = "create" | "library" | "models" | "tasks" | "usage";
 type BusyAction = "generate" | "query" | "cancel" | null;
-type TaskAsset = Pick<Asset, "id" | "groupId" | "name" | "status" | "previewUrl">;
+type TaskAsset = Pick<Asset, "id" | "groupId" | "name" | "status" | "assetType" | "previewUrl">;
 
 type TaskRecord = {
   id: string;
@@ -94,6 +99,7 @@ const DURATION_OPTIONS = Array.from({ length: 12 }, (_, index) => index + 4);
 const workspaceItems: Array<{ id: Workspace; label: string; icon: typeof WandSparkles }> = [
   { id: "create", label: "视频生成", icon: WandSparkles },
   { id: "library", label: "素材库", icon: Layers3 },
+  { id: "models", label: "模型测试", icon: Sparkles },
   { id: "tasks", label: "任务记录", icon: Clock3 },
   { id: "usage", label: "用量统计", icon: BarChart3 },
 ];
@@ -281,6 +287,7 @@ function readTaskAssets(value: unknown): TaskAsset[] | undefined {
       groupId: typeof asset.groupId === "string" ? asset.groupId : "",
       name: typeof asset.name === "string" ? asset.name : "参考素材",
       status: typeof asset.status === "string" ? asset.status : "Active",
+      assetType: asset.assetType === "Video" || asset.assetType === "Audio" ? asset.assetType : "Image",
       previewUrl: typeof asset.previewUrl === "string" ? asset.previewUrl : "",
     }];
   });
@@ -449,9 +456,22 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 function PromptWithMentions({ text }: { text: string }) {
-  return <>{text.split(/(图片\d+)/g).map((part, index) => /^图片\d+$/.test(part)
+  return <>{text.split(/((?:图片|视频|音频)\d+)/g).map((part, index) => /^(?:图片|视频|音频)\d+$/.test(part)
     ? <span className="inlineMention" key={`${part}-${index}`}>@{part}</span>
     : <span key={`${part}-${index}`}>{part}</span>)}</>;
+}
+
+function AssetReferencePreview({ asset }: { asset: TaskAsset | Asset }) {
+  const assetType = assetTypeOf(asset);
+  if (assetType === "Audio") return <div className="referenceMediaFallback audio"><AudioLines size={22} /></div>;
+  if (assetType === "Video") {
+    return asset.previewUrl
+      ? <video src={asset.previewUrl} muted playsInline preload="metadata" />
+      : <div className="referenceMediaFallback video"><Video size={22} /></div>;
+  }
+  return asset.previewUrl
+    ? <img src={asset.previewUrl} alt="" />
+    : <div className="referenceMediaFallback image"><ImageIcon size={20} /></div>;
 }
 
 function ResultPanel({ task, busy, onRefresh, onCancel }: {
@@ -572,7 +592,7 @@ function ConversationTaskCard({ record, task, busy, onOpen, onRefresh, onCancel 
       <div className="conversationMetaChips">
         <span><Video size={13} />{assetCount ? "参考生成" : "文本生成"}</span>
         <span>{(record.resolution || "720p").toUpperCase()}</span><span>{record.ratio === "adaptive" ? "智能比例" : record.ratio || "16:9"}</span><span>{record.durationMode === "smart" ? "智能时长" : `${record.duration || 5}秒`}</span>
-        {assetCount ? <span>{assetCount}张</span> : null}<span>{record.generateAudio === false ? "无声" : "有声"}</span><span>{record.generationCount || 1}条</span>
+        {assetCount ? <span>{assetCount}个素材</span> : null}<span>{record.generateAudio === false ? "无声" : "有声"}</span><span>{record.generationCount || 1}条</span>
         <span className="modelChip">{modelLabel(record.model)}</span>
       </div>
       {videoUrl ? (
@@ -630,7 +650,7 @@ function VideoDetailView({ record, task, onBack, onRegenerate, onEdit, onRemove 
       <aside className="videoDetailSidebar">
         <div className="detailModel"><span><Video size={19} /></span><div><b>{modelLabel(record.model)}</b><small>{formatTaskTime(record.createdAt, true)}</small></div><StatusBadge status={status} /></div>
         <div className="detailSection"><h2>创意描述（Prompt）</h2><p><PromptWithMentions text={record.prompt} /></p></div>
-        {record.assets?.length ? <div className="detailAssets">{record.assets.map((asset, index) => <div key={asset.id}>{asset.previewUrl ? <img src={asset.previewUrl} alt="" /> : <ImageIcon size={18} />}<span>图片{index + 1}</span></div>)}</div> : null}
+        {record.assets?.length ? <div className="detailAssets">{record.assets.map((asset) => <div key={asset.id}><AssetReferencePreview asset={asset} /><span>{assetReferenceLabel(asset, record.assets || [])}</span></div>)}</div> : null}
         <div className="detailTags"><span>{(record.resolution || "720p").toUpperCase()}</span><span>{record.ratio === "adaptive" ? "智能比例" : record.ratio || "16:9"}</span><span>{record.durationMode === "smart" ? "智能时长" : `${record.duration || 5}秒`}</span><span>{record.generateAudio === false ? "无声" : "有声"}</span></div>
         <div className="detailSection detailInvocation"><h2>调用说明</h2><dl><dt>任务状态</dt><dd>{taskLabel(status)}</dd><dt>Task ID</dt><dd>{record.id}</dd></dl></div>
         <div className="detailBottomActions"><button type="button" onClick={onRegenerate}><RotateCcw size={15} />重新生成</button><button type="button" onClick={onEdit}><Pencil size={15} />重新编辑</button></div>
@@ -920,7 +940,7 @@ function App() {
     return {
       createdAt: Date.now(), prompt: prompt.trim(), promptDocument,
       assetName: selectedAssets[0]?.name, assetNames: selectedAssets.map((asset) => asset.name),
-      assets: selectedAssets.map((asset) => ({ id: asset.id, groupId: asset.groupId, name: asset.name, status: asset.status, previewUrl: asset.previewUrl })),
+      assets: selectedAssets.map((asset) => ({ id: asset.id, groupId: asset.groupId, name: asset.name, status: asset.status, assetType: assetTypeOf(asset), previewUrl: asset.previewUrl })),
       model, ratio, resolution, duration: durationMode === "smart" ? undefined : Number(duration), durationMode,
       generationCount, generateAudio, ...overrides,
     };
@@ -928,7 +948,7 @@ function App() {
 
   async function submitVideoTask(metadata: Partial<TaskRecord>, sourceAssets: TaskAsset[]) {
     const content: Array<Record<string, unknown>> = [{ type: "text", text: metadata.prompt?.trim() || "" }];
-    for (const asset of sourceAssets) content.push({ type: "image_url", image_url: { url: assetUri(asset.id) }, role: "reference_image" });
+    for (const asset of sourceAssets) content.push(assetContentItem(asset));
     const task = await generateVideo({
       model: metadata.model || DEFAULT_MODEL,
       content,
@@ -955,7 +975,10 @@ function App() {
     setError(""); setNotice("");
     if (!keyValid) return setError("请先填写有效的业务 API Key");
     if (!hasPrompt) return setError("请至少输入两个字描述要生成的视频");
-    if (!selectedAssetsReady) return setError("所选素材中有暂不可用的图片，请重新选择");
+    if (!selectedAssetsReady) return setError("所选素材中有暂不可用的内容，请重新选择");
+    if (selectedAssets.some((asset) => assetTypeOf(asset) !== "Image") && !model.includes("seedance-2-0")) {
+      return setError("视频和音频参考素材仅支持 Seedance 2.0，请先切换模型");
+    }
     setBusy("generate");
     let createdCount = 0;
     try {
@@ -1146,7 +1169,7 @@ function App() {
         {workspace === "create" && !detailRecord ? (
           <div className={`createWorkspace ${conversationRecords.length ? "hasConversation" : ""}`}>
             <div className="conversationHeader"><span>{conversationRecords.length ? "创作会话" : ""}</span><button type="button" onClick={startNewConversation}><MessageCirclePlus size={16} />新对话</button></div>
-            {!conversationRecords.length ? <div className="officialPageTitle"><h1>体验视频生成，让创意生动</h1><p>从项目素材库选择多张图片，并在描述中用 @ 精确指定素材。</p></div> : null}
+            {!conversationRecords.length ? <div className="officialPageTitle"><h1>体验视频生成，让创意生动</h1><p>从项目素材库选择图片、视频或音频，并在描述中用 @ 精确指定素材。</p></div> : null}
             {conversationRecords.length ? <div className="conversationFeed">{conversationRecords.map((record) => {
               const task = taskSnapshots[record.id];
               return <ConversationTaskCard key={record.id} record={record} task={task} busy={busy} onOpen={() => setDetailTaskId(record.id)} onRefresh={() => void queryTask(record.id, false)} onCancel={() => void cancelTask(task || { id: record.id, status: record.status || "running" })} />;
@@ -1155,20 +1178,25 @@ function App() {
             <section className="generatorCard conversationComposer" aria-label="视频生成输入">
               <div className="generatorInputArea">
                 <div className="selectedAssetRail" aria-label="已选参考素材">
-                  {selectedAssets.map((asset, index) => <article className="selectedAssetTile" key={asset.id}>
-                    <button type="button" className="selectedAssetInsert" onClick={() => promptEditorRef.current?.insertAsset(asset.id)} aria-label={`在描述中引用图片${index + 1}`}>{asset.previewUrl ? <img src={asset.previewUrl} alt="" /> : <ImageIcon size={20} />}<span>图片{index + 1}</span></button>
-                    <div className="selectedAssetControls"><button type="button" disabled={index === 0} onClick={() => moveSelectedAsset(asset.id, -1)} aria-label={`将图片${index + 1}前移`}><ChevronLeft size={12} /></button><button type="button" disabled={index === selectedAssets.length - 1} onClick={() => moveSelectedAsset(asset.id, 1)} aria-label={`将图片${index + 1}后移`}><ChevronRight size={12} /></button><button type="button" onClick={() => removeSelectedAsset(asset.id)} aria-label={`移除图片${index + 1}`}><X size={12} /></button></div>
-                  </article>)}
+                  {selectedAssets.map((asset, index) => {
+                    const referenceLabel = assetReferenceLabel(asset, selectedAssets);
+                    return (
+                      <article className={`selectedAssetTile ${assetTypeOf(asset).toLowerCase()}`} key={asset.id}>
+                        <button type="button" className="selectedAssetInsert" onClick={() => promptEditorRef.current?.insertAsset(asset.id)} aria-label={`在描述中引用${referenceLabel}`}><AssetReferencePreview asset={asset} /><span>{referenceLabel}</span></button>
+                        <div className="selectedAssetControls"><button type="button" disabled={index === 0} onClick={() => moveSelectedAsset(asset.id, -1)} aria-label={`将${referenceLabel}前移`}><ChevronLeft size={12} /></button><button type="button" disabled={index === selectedAssets.length - 1} onClick={() => moveSelectedAsset(asset.id, 1)} aria-label={`将${referenceLabel}后移`}><ChevronRight size={12} /></button><button type="button" onClick={() => removeSelectedAsset(asset.id)} aria-label={`移除${referenceLabel}`}><X size={12} /></button></div>
+                      </article>
+                    );
+                  })}
                   {selectedAssets.length < 9 ? <button type="button" className="referenceSlot" onClick={() => setAssetPickerOpen(true)}><span>+</span><small>{selectedAssets.length ? "继续添加" : "参考素材"}</small></button> : null}
                 </div>
                 <Suspense fallback={<div className="assetPromptLoading"><LoaderCircle size={18} className="spin" />正在准备创作输入框</div>}>
-                  <AssetPromptEditor key={conversationVersion} ref={promptEditorRef} selectedAssets={selectedAssets} initialState={promptDocument} initialText={promptDocument ? undefined : prompt} onChange={handlePromptChange} placeholder="描述你想生成的视频；输入 @ 可以指定已选素材，例如：@图片1 中的人物拿起 @图片2 中的产品……" />
+                  <AssetPromptEditor key={conversationVersion} ref={promptEditorRef} selectedAssets={selectedAssets} initialState={promptDocument} initialText={promptDocument ? undefined : prompt} onChange={handlePromptChange} placeholder="描述你想生成的视频；输入 @ 指定已选素材，例如：参考 @图片1 的人物、@视频1 的运镜和 @音频1 的节奏……" />
                 </Suspense>
                 <span className="promptCount">{prompt.length}/2000</span>
               </div>
               <div className="generatorToolbar">
                  <ModelPicker value={model} onChange={setModel} onOpen={() => { setSettingsOpen(false); setAssetPickerOpen(false); }} />
-                <button type="button" className="referenceMenuButton" onClick={() => { setSettingsOpen(false); setAssetPickerOpen((value) => !value); }}><ImageIcon size={15} />{selectedAssets.length ? `${selectedAssets.length} 张参考素材` : "选择参考素材"}<ChevronDown size={14} /></button>
+                <button type="button" className="referenceMenuButton" onClick={() => { setSettingsOpen(false); setAssetPickerOpen((value) => !value); }}><Layers3 size={15} />{selectedAssets.length ? `${selectedAssets.length} 个参考素材` : "选择参考素材"}<ChevronDown size={14} /></button>
                 {selectedAssets.length ? <button type="button" className="mentionHintButton" onClick={() => promptEditorRef.current?.focus()}><AtSign size={13} />输入 @ 引用素材</button> : null}
                 {selectedAssets.length ? <button type="button" className="clearReference" onClick={() => setSelectedAssets([])}><X size={13} />清除</button> : null}
                 <button type="button" className={`videoSettingsTrigger ${settingsOpen ? "active" : ""}`} aria-expanded={settingsOpen} aria-haspopup="dialog" onClick={() => { setAssetPickerOpen(false); setSettingsOpen((value) => !value); }}>
@@ -1179,7 +1207,7 @@ function App() {
                   <span>{generateAudio ? "有声" : "无声"}</span><i /><span>{generationCount}条</span>
                   <ChevronDown size={13} className="settingsChevron" />
                 </button>
-                {selectedAssets.length && unusedAssetCount ? <span className="unusedAssetNotice">{unusedAssetCount} 张未在描述中点名</span> : null}
+                {selectedAssets.length && unusedAssetCount ? <span className="unusedAssetNotice">{unusedAssetCount} 个未在描述中点名</span> : null}
                 <button type="button" className="generateButton" onClick={() => void createTask()} disabled={busy === "generate" || !keyValid || !hasPrompt || !selectedAssetsReady || prompt.length > 2000} aria-label="生成视频">{busy === "generate" ? <LoaderCircle size={19} className="spin" /> : <ArrowUp size={20} />}</button>
               </div>
               {settingsOpen ? <VideoSettingsPanel
@@ -1198,11 +1226,13 @@ function App() {
               /> : null}
             </section>
 
-            {assetPickerOpen ? <section className="officialPicker" aria-labelledby="picker-title"><div className="sectionTitleRow"><div><h2 id="picker-title">选择参考素材</h2><p>按选择顺序编号为图片1至图片9，完成后可在描述中输入 @ 引用。</p></div><button type="button" className="closePanel" onClick={() => setAssetPickerOpen(false)}><Check size={16} />完成（{selectedAssets.length}/9）</button></div><AssetLibrary apiKey={normalizedKey} apiKeyValid={keyValid} mode="select" selectedAssets={selectedAssets} maxSelection={9} onSelectionChange={setSelectedAssets} onMessage={handleLibraryMessage} /></section> : null}
+            {assetPickerOpen ? <section className="officialPicker" aria-labelledby="picker-title"><div className="sectionTitleRow"><div><h2 id="picker-title">选择参考素材</h2><p>支持图片、视频和音频；同类素材会分别编号，完成后可在描述中输入 @ 引用。</p></div><button type="button" className="closePanel" onClick={() => setAssetPickerOpen(false)}><Check size={16} />完成（{selectedAssets.length}/9）</button></div><AssetLibrary apiKey={normalizedKey} apiKeyValid={keyValid} mode="select" selectedAssets={selectedAssets} maxSelection={9} onSelectionChange={setSelectedAssets} onMessage={handleLibraryMessage} /></section> : null}
           </div>
         ) : null}
 
         {workspace === "library" ? <section className="officialSection" aria-labelledby="library-title"><div className="sectionTitleRow"><div><h1 id="library-title">项目素材库</h1><p>按照方舟素材规范上传并管理图片、视频和音频，处理状态以方舟返回结果为准。</p></div></div><AssetLibrary apiKey={normalizedKey} apiKeyValid={keyValid} mode="manage" selectedAssets={selectedAssets} onSelectionChange={setSelectedAssets} onMessage={handleLibraryMessage} /></section> : null}
+
+        {workspace === "models" ? <ModelPlayground apiKey={normalizedKey} apiKeyValid={keyValid} /> : null}
 
         {workspace === "tasks" ? <section className="officialSection taskSection" aria-labelledby="tasks-title">
           <div className="sectionTitleRow"><div><h1 id="tasks-title">任务记录</h1><p>任务保存在服务端，使用同一个 API Key 登录即可继续查看。</p></div><div className="taskHeaderActions"><button type="button" className="secondaryButton" disabled={!keyValid || historyRefreshing} onClick={() => setHistoryRefreshToken((value) => value + 1)}>{historyRefreshing ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}刷新状态</button>{taskHistory.length ? <button type="button" className="quietDanger" disabled={historyRefreshing} onClick={() => void clearTaskHistory()}><Trash2 size={14} />清空</button> : null}</div></div>

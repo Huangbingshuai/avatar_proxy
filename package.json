@@ -25,6 +25,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@eslint/js": "9.39.4",
+    "@lobehub/icons-static-svg": "^1.94.0",
     "@next/eslint-plugin-next": "16.2.6",
     "@tailwindcss/postcss": "4.2.1",
     "@testing-library/jest-dom": "^7.0.1",

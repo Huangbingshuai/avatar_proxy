@@ -388,7 +388,7 @@ curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day
 
 ## 13. 多供应商 OpenAI 兼容模型接口
 
-该能力由管理员按客户项目启用。已有业务 API Key 不会自动获得任何模型权限；管理员完成“供应商渠道 → 项目模型绑定 → Key 模型授权”后，同一枚 `vap_live_*` 才能调用对应模型。客户不能在请求中指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
+该能力由管理员按客户项目启用。管理员完成“供应商渠道 → 项目模型绑定”后，该项目下所有有效的 `vap_live_*` 都能调用项目已启用的模型，无需逐 Key 授权或重新签发 Key。客户不能在请求中指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
 
 ### 13.1 可用模型
 
@@ -397,14 +397,21 @@ curl "$BASE_URL/v1/models" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-只返回当前 Key 已授权、项目已绑定且渠道处于启用状态的模型。内置别名如下；实际是否可用以该接口返回为准：
+只返回当前 Key 所属项目已绑定且渠道处于启用状态的模型。内置别名如下；实际是否可用以该接口返回为准：
 
 | 对外模型别名 | 类型 | 初始供应商 |
 |---|---|---|
 | `deepseek-v4-flash` | 文本 | 火山方舟 |
-| `glm-5.3` | 文本 | 火山方舟 |
+| `glm-5.2` | 文本 | 火山方舟 |
 | `seedream-5.0-pro` | 图片 | 火山方舟 |
-| `wan3.0` | 异步视频 | 阿里百炼 |
+| `seedance-2.5` | 异步视频 | 火山方舟 |
+| `seedance-2.0` | 异步视频 | 火山方舟 |
+| `seedance-2.0-fast` | 异步视频 | 火山方舟 |
+| `seedance-2.0-mini` | 异步视频 | 火山方舟 |
+| `seedance-1.5-pro` | 异步视频 | 火山方舟 |
+| `seedance-1.0-pro` | 异步视频 | 火山方舟 |
+| `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 |
+| `wan3.0-video` | 异步视频 | 阿里百炼 |
 | `minimax-h3` | 异步视频 | MiniMax |
 | `image2.0` | 图片 | OpenAI，真实模型由管理员配置 |
 
@@ -424,13 +431,13 @@ curl "$BASE_URL/v1/chat/completions" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "glm-5.3",
+    "model": "glm-5.2",
     "messages": [{"role": "user", "content": "请用三句话介绍产品"}],
     "stream": false
   }'
 ```
 
-流式调用把 `stream` 设置为 `true`，响应类型为 `text/event-stream`。中转层会把响应中的真实模型 ID 改回稳定别名。供应商没有返回 `usage` 时，系统不会伪造 Token 数。
+流式调用把 `stream` 设置为 `true`，响应类型为 `text/event-stream`。每个公开模型别名由服务端固定映射到一个真实上游模型，客户和管理员都不能在请求或项目绑定中覆盖该 ID；中转层会把响应中的真实模型 ID 改回稳定别名。供应商没有返回 `usage` 时，系统不会伪造 Token 数。
 
 ### 13.3 图片生成
 
@@ -459,7 +466,7 @@ curl "$BASE_URL/v1/videos" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: video-order-20260902-001" \
   -d '{
-    "model": "wan3.0",
+    "model": "wan3.0-video",
     "prompt": "海边日出，镜头缓慢向前推进",
     "image": "https://customer.example.com/first-frame.jpg",
     "duration": 8,
@@ -486,6 +493,20 @@ curl -I "$BASE_URL/v1/videos/$TASK_ID/content" \
 
 视频字段支持 `model`、`prompt`、`image`、`duration`、`width`、`height`、`fps`、`seed`、`n=1`、`response_format=url`、`user` 和 `metadata`。`metadata` 只允许模型适配器声明的白名单字段，不能放入凭证、Base URL 或自定义转发参数。
 
+方舟 Seedance 模型使用统一的任务创建与查询接口。基础测试可直接使用顶层 `prompt`、`image` 和 `duration`；高级输入可通过 `metadata.content` 传入方舟原生的文本、图片、视频或音频条目，但中转层仍会根据具体模型能力过滤。支持的方舟元数据字段为 `resolution`、`ratio`、`generate_audio`、`watermark`、`camera_fixed`、`return_last_frame`、`service_tier`、`content`、`draft`、`frames` 和 `execution_expires_after`。
+
+| 模型 | 输入能力 | 时长 | 分辨率 | 特殊限制 |
+|---|---|---|---|---|
+| `seedance-2.5` | 文本、图片、视频、音频 | 4～30 秒或 `-1` | 480p / 720p / 1080p | 最多 50 项参考内容，支持生成音频 |
+| `seedance-2.0` | 文本、图片、视频、音频 | 4～15 秒或 `-1` | 480p / 720p / 1080p | 支持生成音频，不支持 `flex` |
+| `seedance-2.0-fast` | 文本、图片、视频、音频 | 4～15 秒或 `-1` | 480p / 720p | 支持生成音频，不支持 1080p 和 `flex` |
+| `seedance-2.0-mini` | 文本、图片、视频、音频 | 4～15 秒或 `-1` | 480p / 720p | 轻量低成本，不支持 1080p |
+| `seedance-1.5-pro` | 文本、图片 | 4～12 秒或 `-1` | 480p / 720p / 1080p | 支持生成音频和 `draft` |
+| `seedance-1.0-pro` | 文本、图片 | 2～12 秒 | 480p / 720p / 1080p | 支持 `frames` |
+| `seedance-1.0-pro-fast` | 文本、图片 | 2～12 秒 | 480p / 720p / 1080p | 支持 `frames` |
+
+Seedance 1.0 Lite T2V/I2V 已停止服务，不再出现在模型目录，也不能创建新绑定；升级旧数据库时只保留历史任务引用。
+
 ### 13.5 幂等与错误
 
 图片和视频创建支持 `Idempotency-Key`，长度为 1～128 个字符：
@@ -499,7 +520,7 @@ curl -I "$BASE_URL/v1/videos/$TASK_ID/content" \
 ```json
 {
   "error": {
-    "message": "当前API Key未获该模型权限或渠道不可用",
+    "message": "当前项目未启用该模型或渠道不可用",
     "type": "invalid_request_error",
     "param": null,
     "code": "model_not_allowed"
