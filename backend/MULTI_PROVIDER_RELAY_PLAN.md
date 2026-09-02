@@ -8,7 +8,8 @@
 
 - `deepseek-v4-flash`：火山方舟文本模型。
 - `glm-5.2`：火山方舟文本模型。
-- `seedream-5.0-pro`：火山方舟图片模型。
+- `seedream-5.0-pro`、`seedream-5.0-lite`、`seedream-4.5`、`seedream-4.0`、`seedream-3.0-t2i`、`seededit-3.0-i2i`：火山方舟生图、参考图改图和受能力约束的组图模型；SeedEdit 必须提供一张参考图。
+- `doubao-seed-2.1-pro`、`doubao-seed-2.0-pro`、`doubao-seed-2.0-lite`、`doubao-seed-2.0-mini`、`doubao-seed-1.8`、`doubao-seed-1.6-vision`：火山方舟图文理解模型。
 - `seedance-2.5`：火山方舟 Seedance 2.5 视频模型。
 - `seedance-2.0`、`seedance-2.0-fast`、`seedance-2.0-mini`：火山方舟 Seedance 2.0 视频模型。
 - `seedance-1.5-pro`：火山方舟 Seedance 1.5 Pro 视频模型。
@@ -40,7 +41,7 @@
 
 - 渠道属于一个项目；禁止跨项目绑定。
 - 同一项目和模型第一期只有一个活动渠道，不做权重分流或自动故障转移。
-- 凭证使用独立的 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 加密，数据库、日志、审计和接口只出现掩码。
+- 凭证使用独立 Fernet 主密钥加密，数据库、日志、审计和接口只出现掩码。未显式配置 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 时，系统在 SQLite 同目录自动生成并复用受保护的 `provider_credentials.key`；生产仍可用部署 Secret 覆盖。
 - 供应商渠道的创建、凭证轮换、禁用和删除仅允许超级管理员，并复用密码与 TOTP 再认证。
 - 普通管理员只能绑定项目模型；项目下所有有效业务 Key 自动继承项目模型权限。
 - 异步任务固定渠道及凭证版本；轮换后新任务使用新凭证，旧任务继续使用原版本。
@@ -62,8 +63,8 @@ HEAD /v1/videos/{taskId}/content
 ```
 
 - `/v1/models` 只返回当前业务 Key 所属项目已绑定且渠道可用的模型。
-- Chat Completions 和 Responses 同时支持 JSON 与 SSE。
-- 图片接口采用 OpenAI 兼容请求响应。
+- Chat Completions 和 Responses 同时支持 JSON 与 SSE；视觉模型允许 OpenAI 兼容的 `image_url`/`input_image` 内容，非视觉模型拒绝图片输入。
+- 图片接口采用 OpenAI 兼容请求响应；方舟适配器会过滤 OpenAI 专属字段，并按具体 Seedream 能力转换参考图和组图参数。
 - 视频请求支持 `model`、`prompt`、`image`、`duration`、`width`、`height`、`fps`、`seed`、`n`、`response_format` 和受白名单约束的 `metadata`。
 - 图片和视频写接口支持 `Idempotency-Key`，相同请求复用结果，不同请求体返回 `409`。
 - 图片和视频结果透传供应商 URL，不自动转存 TOS。
@@ -85,7 +86,7 @@ HEAD /v1/videos/{taskId}/content
 - 超级管理员安全区增加供应商渠道管理，秘密只能录入或轮换，不能取回原文。
 - 普通管理员增加项目模型绑定；控制台不提供逐 Key 模型权限配置。
 - 增加按项目、业务 Key、模型、供应商和时间筛选的推理用量与任务列表。
-- 不修改客户工具前端；客户通过 OpenAI 兼容 API 和客户文档接入。
+- 客户工具前端提供文本流式、识图、文生图、参考图改图和异步视频测试入口；完整业务接入仍使用 OpenAI 兼容 API。
 
 ## 兼容与开关
 

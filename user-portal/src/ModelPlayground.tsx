@@ -169,10 +169,19 @@ export default function ModelPlayground({ apiKey, apiKeyValid }: { apiKey: strin
         streamController.current = controller;
         response = await testRelayTextStream(apiKey, model.id, prompt.trim(), {
           signal: controller.signal,
+          image: model.capabilities.imageInput === true
+            ? referenceImage.trim() || undefined
+            : undefined,
           onDelta: (_delta, accumulated) => setStreamingText(accumulated),
         });
       } else if (model.modality === "image") {
-        response = await testRelayImage(apiKey, model.id, prompt.trim(), requestKey("portal-image"));
+        response = await testRelayImage(
+          apiKey,
+          model.id,
+          prompt.trim(),
+          requestKey("portal-image"),
+          model.capabilities.imageInput === true ? referenceImage.trim() || undefined : undefined,
+        );
       } else {
         const parsedDuration = Number(duration);
         response = await testRelayVideo(apiKey, {
@@ -229,6 +238,8 @@ export default function ModelPlayground({ apiKey, apiKeyValid }: { apiKey: strin
     && selectedModel.capabilities.image === true;
   const videoRequiresImage = videoSupportsImage
     && selectedModel.capabilities.imageRequired === true;
+  const supportsReferenceImage = videoSupportsImage
+    || selectedModel?.capabilities.imageInput === true;
 
   return <section className="officialSection modelLabSection" aria-labelledby="model-lab-title">
     <div className="sectionTitleRow modelLabHeader"><div><span className="modelLabEyebrow"><Sparkles size={13} />MODEL LAB</span><h1 id="model-lab-title">模型在线测试</h1><p>使用当前登录的业务 Key 发起真实中转请求，测试结果会计入该 Key 的实际用量。</p></div><button type="button" className="secondaryButton" disabled={loadingModels} onClick={() => {
@@ -246,16 +257,16 @@ export default function ModelPlayground({ apiKey, apiKeyValid }: { apiKey: strin
     {models.length ? <div className="modelLabWorkbench">
       <div className="modelLabComposer">
         <div className="modelLabModelGrid" role="list" aria-label="可测试模型">
-          {models.map((model) => <button type="button" disabled={running} key={model.id} className={selectedModel?.id === model.id ? "selected" : ""} onClick={() => { setModelId(model.id); setResult(null); setStreamingText(""); setError(""); }}><span className={model.modality}><ModelIcon modality={model.modality} /></span><b>{model.id}</b><small>{model.modality === "text" ? "文本对话" : model.modality === "image" ? "图片生成" : "视频生成"}</small>{selectedModel?.id === model.id ? <CheckCircle2 size={16} /> : null}</button>)}
+          {models.map((model) => <button type="button" disabled={running} key={model.id} className={selectedModel?.id === model.id ? "selected" : ""} onClick={() => { setModelId(model.id); setResult(null); setStreamingText(""); setError(""); }}><span className={model.modality}><ModelIcon modality={model.modality} /></span><b>{model.id}</b><small>{model.modality === "text" ? model.capabilities.vision === true ? "识图 / 对话" : "文本对话" : model.modality === "image" ? model.capabilities.imageInput === true ? "生图 / 改图" : "图片生成" : "视频生成"}</small>{selectedModel?.id === model.id ? <CheckCircle2 size={16} /> : null}</button>)}
         </div>
 
         <div className="modelLabPrompt">
           <label htmlFor="model-test-prompt">测试提示词</label>
-          <textarea id="model-test-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={4000} rows={6} placeholder={selectedModel?.modality === "text" ? "例如：用三句话介绍人工智能的实际用途" : selectedModel?.modality === "image" ? "例如：电影感产品摄影，暖色灯光，精致细节" : "例如：海边日出，镜头缓慢向前推进"} />
+          <textarea id="model-test-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={4000} rows={6} placeholder={selectedModel?.capabilities.vision === true ? "例如：请详细描述参考图片中的人物、场景和文字" : selectedModel?.modality === "text" ? "例如：用三句话介绍人工智能的实际用途" : selectedModel?.modality === "image" ? "例如：电影感产品摄影，暖色灯光，精致细节" : "例如：海边日出，镜头缓慢向前推进"} />
           <span>{prompt.length}/4000</span>
         </div>
 
-        {selectedModel?.modality === "video" ? <div className="modelLabVideoFields">{videoSupportsImage ? <label>参考图片 URL{videoRequiresImage ? "（必填）" : "（可选）"}<input type="url" required={videoRequiresImage} value={referenceImage} onChange={(event) => setReferenceImage(event.target.value)} placeholder="https://..." /></label> : null}<label>视频时长<select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">5 秒</option><option value="8">8 秒</option><option value="10">10 秒</option></select></label></div> : null}
+        {supportsReferenceImage || selectedModel?.modality === "video" ? <div className="modelLabVideoFields">{supportsReferenceImage ? <label>参考图片 URL{videoRequiresImage ? "（必填）" : "（可选）"}<input type="url" required={videoRequiresImage} value={referenceImage} onChange={(event) => setReferenceImage(event.target.value)} placeholder="https://..." /></label> : null}{selectedModel?.modality === "video" ? <label>视频时长<select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">5 秒</option><option value="8">8 秒</option><option value="10">10 秒</option></select></label> : null}</div> : null}
 
         <div className="modelLabSubmitRow"><span><KeyRound size={14} />使用当前登录 Key，不会在页面显示完整密钥{selectedModel?.modality === "text" ? <em><Radio size={12} />流式输出</em> : null}</span><div className="modelLabActions">{running && selectedModel?.modality === "text" ? <button type="button" className="modelLabStopButton" onClick={stopStream}><Square size={13} fill="currentColor" />停止生成</button> : null}<button type="button" className="modelLabRunButton" disabled={running || !selectedModel || prompt.trim().length < 2 || Boolean(videoRequiresImage && !referenceImage.trim())} onClick={() => void runTest()}>{running ? <LoaderCircle size={17} className="spin" /> : <Send size={17} />}{running ? selectedModel?.modality === "text" ? "正在流式生成" : "正在调用模型" : "发送真实测试"}</button></div></div>
       </div>

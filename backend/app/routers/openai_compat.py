@@ -15,7 +15,9 @@ FORBIDDEN_ROUTE_FIELDS = {
 }
 IMAGE_FIELDS = {
     "model", "prompt", "n", "size", "quality", "style", "response_format", "user",
-    "background", "moderation", "output_compression", "output_format",
+    "background", "moderation", "output_compression", "output_format", "image", "stream",
+    "sequential_image_generation", "sequential_image_generation_options", "watermark",
+    "optimize_prompt_options", "tools", "guidance_scale", "seed",
 }
 CHAT_FIELDS = {
     "model", "messages", "stream", "stream_options", "frequency_penalty", "function_call",
@@ -129,6 +131,8 @@ async def images_generations(
         raise ApiError("n必须是1到10的整数", 422, "image_count_invalid", details={"param": "n"})
     if payload.get("response_format", "url") not in {"url", "b64_json"}:
         raise ApiError("response_format仅支持url或b64_json", 422, "image_response_format_invalid")
+    if "stream" in payload and not isinstance(payload["stream"], bool):
+        raise ApiError("stream必须是布尔值", 422, "stream_parameter_invalid", details={"param": "stream"})
     if idempotency_key is not None and not (1 <= len(idempotency_key) <= 128):
         raise ApiError("Idempotency-Key长度无效", 422, "idempotency_key_invalid")
     alias = str(payload["model"]).strip()

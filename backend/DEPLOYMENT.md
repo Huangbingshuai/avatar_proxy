@@ -12,13 +12,7 @@
 - `ADMIN_COOKIE_SECURE=true`
 - `CORS_ORIGINS=https://你的用户门户域名`
 
-多供应商模型中转默认关闭。需要启用时，先在受保护的服务器终端生成独立 Fernet 主密钥：
-
-```bash
-python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-```
-
-将结果通过部署 Secret 写入 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY`，再设置 `MULTI_PROVIDER_ENABLED=true`。该密钥不得复用 `ADMIN_TOTP_ENCRYPTION_KEY`，不得写入仓库、镜像或日志。SQLite 备份只包含供应商凭证密文，不包含此主密钥；灾备时必须分开保管并同时恢复，否则已有渠道凭证无法解密。
+多供应商模型中转默认关闭。设置 `MULTI_PROVIDER_ENABLED=true` 后，如果没有通过部署 Secret 提供 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY`，服务会在 SQLite 同目录自动生成 `provider_credentials.key` 并在后续启动时自动加载。该密钥不得复用 `ADMIN_TOTP_ENCRYPTION_KEY`，不得写入仓库、镜像或日志。生产环境仍推荐使用部署 Secret；使用自动密钥文件时必须确认数据库目录位于持久卷。SQLite 备份只包含供应商凭证密文，不包含主密钥；灾备时必须分开保管并同时恢复，否则已有渠道凭证无法解密。
 
 生产环境保持 `ENABLE_API_DOCS=false`。所有火山凭证只存在此服务器的环境变量中。管理员不再使用共享万能令牌，环境中不应继续配置 `CONSOLE_ADMIN_TOKEN`。
 

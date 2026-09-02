@@ -346,6 +346,190 @@ def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp
 
 
 @pytest.mark.parametrize(
+    ("alias", "upstream_model"),
+    [
+        ("doubao-seed-2.1-pro", "doubao-seed-2-1-pro-260628"),
+        ("doubao-seed-2.0-pro", "doubao-seed-2-0-pro-260215"),
+        ("doubao-seed-2.0-lite", "doubao-seed-2-0-lite-260215"),
+        ("doubao-seed-2.0-mini", "doubao-seed-2-0-mini-260215"),
+        ("doubao-seed-1.8", "doubao-seed-1-8-251228"),
+        ("doubao-seed-1.6-vision", "doubao-seed-1-6-vision-250815"),
+    ],
+)
+def test_all_volcengine_vision_models_forward_multimodal_chat(
+    tmp_path: Path, alias: str, upstream_model: str
+) -> None:
+    forwarded: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        forwarded.append(payload)
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "ark-vision-request"},
+            json={
+                "id": "chatcmpl-vision",
+                "model": payload["model"],
+                "choices": [{"message": {"role": "assistant", "content": "一只猫"}}],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24},
+            },
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias=alias,
+            upstream_model="ignored-model",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={
+                "model": alias,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}},
+                        {"type": "text", "text": "图片里有什么？"},
+                    ],
+                }],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["model"] == alias
+    assert forwarded[0]["model"] == upstream_model
+    assert forwarded[0]["messages"][0]["content"][0]["type"] == "image_url"
+
+
+def test_non_vision_text_model_rejects_image_input(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias="deepseek-v4-flash",
+            upstream_model="ignored-model",
+        )
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={
+                "model": "deepseek-v4-flash",
+                "messages": [{
+                    "role": "user",
+                    "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}],
+                }],
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "model_image_input_unsupported"
+
+
+@pytest.mark.parametrize(
+    ("alias", "upstream_model", "count", "sequential", "reference_image", "legacy_controls"),
+    [
+        ("seedream-5.0-pro", "doubao-seedream-5-0-pro-260628", 1, False, True, False),
+        ("seedream-5.0-lite", "doubao-seedream-5-0-lite-260128", 2, True, True, False),
+        ("seedream-4.5", "doubao-seedream-4-5-251128", 2, True, True, False),
+        ("seedream-4.0", "doubao-seedream-4-0-250828", 2, True, True, False),
+        ("seedream-3.0-t2i", "doubao-seedream-3-0-t2i-250415", 1, False, False, True),
+        ("seededit-3.0-i2i", "doubao-seededit-3-0-i2i-250628", 1, False, True, True),
+    ],
+)
+def test_all_volcengine_image_models_translate_openai_image_requests(
+    tmp_path: Path,
+    alias: str,
+    upstream_model: str,
+    count: int,
+    sequential: bool,
+    reference_image: bool,
+    legacy_controls: bool,
+) -> None:
+    forwarded: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        forwarded.append(payload)
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "ark-image-request"},
+            json={
+                "model": payload["model"],
+                "data": [{"url": f"https://example.com/{index}.png"} for index in range(count)],
+                "usage": {"generated_images": count, "output_tokens": 100, "total_tokens": 100},
+            },
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias=alias,
+            upstream_model="ignored-model",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        request_body = {
+            "model": alias,
+            "prompt": "将参考图改为水彩风格" if reference_image else "生成水彩风景",
+            "n": count,
+            "quality": "high",
+            "response_format": "url",
+        }
+        if reference_image:
+            request_body["image"] = "https://example.com/reference.png"
+        if legacy_controls:
+            request_body.update({"seed": 21, "guidance_scale": 5.5})
+        response = client.post(
+            "/v1/images/generations",
+            headers={
+                "Authorization": f"Bearer {secret}",
+                "Idempotency-Key": f"image-{alias}",
+            },
+            json=request_body,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["model"] == alias
+    assert forwarded[0]["model"] == upstream_model
+    if reference_image:
+        assert forwarded[0]["image"] == "https://example.com/reference.png"
+    else:
+        assert "image" not in forwarded[0]
+    assert "n" not in forwarded[0]
+    assert "quality" not in forwarded[0]
+    assert forwarded[0]["stream"] is False
+    if sequential:
+        assert forwarded[0]["sequential_image_generation"] == "auto"
+        assert forwarded[0]["sequential_image_generation_options"] == {"max_images": count}
+    else:
+        assert "sequential_image_generation" not in forwarded[0]
+    if legacy_controls:
+        assert forwarded[0]["seed"] == 21
+        assert forwarded[0]["guidance_scale"] == 5.5
+
+
+def test_seededit_requires_reference_image(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias="seededit-3.0-i2i",
+            upstream_model="ignored-model",
+        )
+        response = client.post(
+            "/v1/images/generations",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "seededit-3.0-i2i", "prompt": "把天空改为晚霞"},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "image_input_required"
+
+
+@pytest.mark.parametrize(
     ("alias", "upstream_model", "image"),
     [
         ("seedance-2.5", "doubao-seedance-2-5-260628", None),
@@ -706,6 +890,10 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
 
     assert aliases == sorted([
         "deepseek-v4-flash", "glm-5.2", "image2.0", "minimax-h3", "seedream-5.0-pro",
+        "seedream-5.0-lite", "seedream-4.5", "seedream-4.0", "seedream-3.0-t2i",
+        "seededit-3.0-i2i",
+        "doubao-seed-2.1-pro", "doubao-seed-2.0-pro", "doubao-seed-2.0-lite",
+        "doubao-seed-2.0-mini", "doubao-seed-1.8", "doubao-seed-1.6-vision",
         "seedance-2.5", "seedance-2.0", "seedance-2.0-fast", "seedance-2.0-mini",
         "seedance-1.5-pro", "seedance-1.0-pro", "seedance-1.0-pro-fast",
         "wan3.0-video",
@@ -721,7 +909,18 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "glm-5.2": "glm-5-2-260617",
         "image2.0": "gpt-image-2",
         "minimax-h3": "MiniMax-H3",
-        "seedream-5.0-pro": "doubao-seedream-5-0-260128",
+        "seedream-5.0-pro": "doubao-seedream-5-0-pro-260628",
+        "seedream-5.0-lite": "doubao-seedream-5-0-lite-260128",
+        "seedream-4.5": "doubao-seedream-4-5-251128",
+        "seedream-4.0": "doubao-seedream-4-0-250828",
+        "seedream-3.0-t2i": "doubao-seedream-3-0-t2i-250415",
+        "seededit-3.0-i2i": "doubao-seededit-3-0-i2i-250628",
+        "doubao-seed-2.1-pro": "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2.0-pro": "doubao-seed-2-0-pro-260215",
+        "doubao-seed-2.0-lite": "doubao-seed-2-0-lite-260215",
+        "doubao-seed-2.0-mini": "doubao-seed-2-0-mini-260215",
+        "doubao-seed-1.8": "doubao-seed-1-8-251228",
+        "doubao-seed-1.6-vision": "doubao-seed-1-6-vision-250815",
         "seedance-2.5": "doubao-seedance-2-5-260628",
         "seedance-2.0": "doubao-seedance-2-0-260128",
         "seedance-2.0-fast": "doubao-seedance-2-0-fast-260128",

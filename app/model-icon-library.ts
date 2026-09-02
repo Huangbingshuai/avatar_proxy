@@ -90,7 +90,7 @@ const PROVIDER_ICON_KEYS: Record<string, ModelIconKey> = {
 };
 
 const MODEL_PREFIX_ICONS: Array<[string, ModelIconKey]> = [
-  ["seedream", "doubao"], ["seedance", "doubao"], ["doubao", "doubao"],
+  ["seedream", "doubao"], ["seededit", "doubao"], ["seedance", "doubao"], ["doubao", "doubao"],
   ["deepseek", "deepseek"], ["glm", "chatglm"], ["chatglm", "chatglm"],
   ["minimax", "minimax"], ["wan", "bailian"], ["qwen", "qwen"],
   ["claude", "claude"], ["gemini", "gemini"], ["veo", "gemini"],

@@ -403,7 +403,18 @@ curl "$BASE_URL/v1/models" \
 |---|---|---|
 | `deepseek-v4-flash` | 文本 | 火山方舟 |
 | `glm-5.2` | 文本 | 火山方舟 |
-| `seedream-5.0-pro` | 图片 | 火山方舟 |
+| `doubao-seed-2.1-pro` | 文本、识图 | 火山方舟 |
+| `doubao-seed-2.0-pro` | 文本、识图 | 火山方舟 |
+| `doubao-seed-2.0-lite` | 文本、识图 | 火山方舟 |
+| `doubao-seed-2.0-mini` | 文本、识图 | 火山方舟 |
+| `doubao-seed-1.8` | 文本、识图 | 火山方舟 |
+| `doubao-seed-1.6-vision` | 文本、识图 | 火山方舟 |
+| `seedream-5.0-pro` | 生图、参考图改图 | 火山方舟 |
+| `seedream-5.0-lite` | 生图、参考图改图、组图 | 火山方舟 |
+| `seedream-4.5` | 生图、参考图改图、组图 | 火山方舟 |
+| `seedream-4.0` | 生图、参考图改图、组图 | 火山方舟 |
+| `seedream-3.0-t2i` | 文本生图 | 火山方舟 |
+| `seededit-3.0-i2i` | 单图编辑 | 火山方舟 |
 | `seedance-2.5` | 异步视频 | 火山方舟 |
 | `seedance-2.0` | 异步视频 | 火山方舟 |
 | `seedance-2.0-fast` | 异步视频 | 火山方舟 |
@@ -439,6 +450,27 @@ curl "$BASE_URL/v1/chat/completions" \
 
 流式调用把 `stream` 设置为 `true`，响应类型为 `text/event-stream`。每个公开模型别名由服务端固定映射到一个真实上游模型，客户和管理员都不能在请求或项目绑定中覆盖该 ID；中转层会把响应中的真实模型 ID 改回稳定别名。供应商没有返回 `usage` 时，系统不会伪造 Token 数。
 
+识图模型使用 OpenAI 兼容的图文消息，例如：
+
+```bash
+curl "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "doubao-seed-2.0-lite",
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "image_url", "image_url": {"url": "https://customer.example.com/product.jpg"}},
+        {"type": "text", "text": "描述图片中的商品和可见文字"}
+      ]
+    }],
+    "stream": false
+  }'
+```
+
+只有 `/v1/models` 返回的 `capabilities.imageInput=true` 模型接受图片内容；其他文本模型传入图片会返回 `model_image_input_unsupported`。
+
 ### 13.3 图片生成
 
 ```bash
@@ -447,14 +479,17 @@ curl "$BASE_URL/v1/images/generations" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: image-order-20260902-001" \
   -d '{
-    "model": "image2.0",
+    "model": "seedream-5.0-lite",
     "prompt": "白色背景上的东方瓷器产品摄影",
+    "image": "https://customer.example.com/reference.jpg",
     "n": 1,
     "response_format": "url"
   }'
 ```
 
-图片只允许文档列出的 OpenAI 兼容字段，不会把未知参数直接透传给供应商。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
+`image` 可填写单个 HTTP(S) 图片 URL、图片 Data URL 或 URL 数组，具体数量由 `/v1/models` 的 `maxInputImages` 决定；`seededit-3.0-i2i` 必须提供且只接受一张参考图。`n>1` 只在支持组图的 Seedream 模型上生效，中转层会转换为方舟组图参数。还可按模型能力使用 `size`、`output_format`、`watermark`、`sequential_image_generation`、`sequential_image_generation_options`、`optimize_prompt_options`、`tools`、`seed` 和 `guidance_scale`；其中 `seed`、`guidance_scale` 仅开放给 Seedream 3.0 和 SeedEdit 3.0。不支持的模型能力会返回明确的 `422`，不会盲目透传。
+
+图片接口不会把 OpenAI 的 `quality`、`style`、`user` 等供应商无关字段转发给方舟。当前公开接口只提供非流式 JSON 响应；传入 `stream=true` 会返回 `image_stream_unsupported`。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
 
 ### 13.4 异步视频
 
@@ -537,6 +572,11 @@ Seedance 1.0 Lite T2V/I2V 已停止服务，不再出现在模型目录，也不
 | `403` | `model_not_allowed` | Key 未授权、项目未绑定或渠道已禁用 |
 | `409` | `idempotency_key_conflict` | 幂等键被用于不同请求体 |
 | `422` | `model_modality_mismatch` | 模型与文本、图片或视频接口不匹配 |
+| `422` | `model_image_input_unsupported` | 当前文本或生图模型不接受参考图片 |
+| `422` | `image_input_required` | 当前图片编辑模型缺少必需的参考图片 |
+| `422` | `image_input_invalid` / `image_input_count_invalid` | 参考图片格式或数量不符合模型能力 |
+| `422` | `image_count_unsupported` / `image_sequence_unsupported` | 当前图片模型不支持请求的单次数量或组图参数 |
+| `422` | `image_stream_unsupported` | 当前中转图片接口不提供流式响应 |
 | `422` | `route_override_forbidden` | 请求试图覆盖内部路由字段 |
 | `502` | `provider_unreachable` / `provider_request_failed` | 供应商不可达或拒绝请求 |
 | `503` | `multi_provider_disabled` | 多供应商功能尚未启用 |

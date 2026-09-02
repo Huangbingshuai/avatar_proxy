@@ -113,6 +113,7 @@ export type RelayApiResult = {
 
 export type RelayTextStreamOptions = {
   signal?: AbortSignal;
+  image?: string;
   onDelta?: (delta: string, accumulated: string) => void;
 };
 
@@ -437,6 +438,12 @@ export async function testRelayTextStream(
   prompt: string,
   options: RelayTextStreamOptions = {},
 ): Promise<RelayApiResult> {
+  const content = options.image
+    ? [
+      { type: "image_url", image_url: { url: options.image } },
+      { type: "text", text: prompt },
+    ]
+    : prompt;
   const response = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
     method: "POST",
     headers: {
@@ -448,7 +455,7 @@ export async function testRelayTextStream(
     signal: options.signal,
     body: JSON.stringify({
       model,
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content }],
       stream: true,
       stream_options: { include_usage: true },
       max_tokens: 512,
@@ -524,11 +531,18 @@ export function testRelayImage(
   model: string,
   prompt: string,
   idempotencyKey: string,
+  image?: string,
 ) {
   return relayRequest("/v1/images/generations", apiKey, {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ model, prompt, n: 1, response_format: "url" }),
+    body: JSON.stringify({
+      model,
+      prompt,
+      n: 1,
+      response_format: "url",
+      ...(image ? { image } : {}),
+    }),
   });
 }
 

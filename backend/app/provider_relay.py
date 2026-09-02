@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 import httpx
@@ -26,6 +28,21 @@ ALIYUN_REGIONS = {
     "ap-northeast-1": "ap-northeast-1",
     "eu-central-1": "eu-central-1",
     "us-east-1": "us-east-1",
+}
+ARK_IMAGE_FIELDS = {
+    "prompt",
+    "image",
+    "size",
+    "response_format",
+    "output_format",
+    "sequential_image_generation",
+    "sequential_image_generation_options",
+    "watermark",
+    "optimize_prompt_options",
+    "tools",
+    "guidance_scale",
+    "seed",
+    "stream",
 }
 
 
@@ -58,6 +75,16 @@ def _request_hash(operation: str, payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _contains_image_input(value: Any) -> bool:
+    if isinstance(value, dict):
+        if value.get("type") in {"image_url", "input_image"}:
+            return True
+        return any(_contains_image_input(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_image_input(item) for item in value)
+    return False
+
+
 def _provider_request_id(headers: httpx.Headers, data: dict[str, Any] | None = None) -> str | None:
     for name in ("x-request-id", "request-id", "x-tt-logid", "x-log-id"):
         value = headers.get(name)
@@ -72,20 +99,73 @@ def _provider_request_id(headers: httpx.Headers, data: dict[str, Any] | None = N
 
 
 class CredentialVault:
-    def __init__(self, settings: Settings) -> None:
+    KEY_FILE_NAME = "provider_credentials.key"
+
+    def __init__(self, settings: Settings, database_path: Path | None = None) -> None:
         self.settings = settings
+        self.key_path = Path(database_path or settings.database_path).parent / self.KEY_FILE_NAME
+        self._cached_fernet: Fernet | None = None
+
+    def _load_or_create_local_key(self) -> bytes:
+        key_path = self.key_path
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        if key_path.is_symlink():
+            raise ApiError(
+                "供应商凭证主密钥文件不能是符号链接",
+                503,
+                "provider_encryption_key_invalid",
+            )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(key_path, flags, 0o600)
+        except FileExistsError:
+            try:
+                return key_path.read_bytes().strip()
+            except OSError as error:
+                raise ApiError(
+                    "无法读取供应商凭证主密钥文件",
+                    503,
+                    "provider_encryption_key_unavailable",
+                ) from error
+        except OSError as error:
+            raise ApiError(
+                "无法创建供应商凭证主密钥文件",
+                503,
+                "provider_encryption_key_unavailable",
+            ) from error
+        key = Fernet.generate_key()
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(key + b"\n")
+                output.flush()
+                os.fsync(output.fileno())
+            try:
+                os.chmod(key_path, 0o600)
+            except OSError:
+                pass
+        except Exception:
+            try:
+                key_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+        return key
 
     def _fernet(self) -> Fernet:
+        if self._cached_fernet is not None:
+            return self._cached_fernet
         configured = self.settings.provider_credential_encryption_key
-        if configured is None:
-            raise ApiError(
-                "多供应商凭证加密密钥尚未配置",
-                503,
-                "provider_encryption_key_missing",
-            )
         try:
-            return Fernet(configured.get_secret_value().encode("ascii"))
-        except (ValueError, UnicodeError) as error:
+            key = (
+                configured.get_secret_value().encode("ascii")
+                if configured is not None
+                else self._load_or_create_local_key()
+            )
+            self._cached_fernet = Fernet(key)
+            return self._cached_fernet
+        except (TypeError, ValueError, UnicodeError) as error:
             raise ApiError(
                 "多供应商凭证加密密钥格式无效",
                 503,
@@ -103,7 +183,7 @@ class CredentialVault:
             return self._fernet().decrypt(ciphertext.encode("ascii")).decode("utf-8")
         except (InvalidToken, UnicodeError) as error:
             raise ApiError(
-                "供应商凭证无法解密，请检查服务器主密钥",
+                "供应商凭证无法解密，主密钥与创建渠道时不一致，请重新录入该渠道凭证",
                 503,
                 "provider_secret_decrypt_failed",
             ) from error
@@ -129,7 +209,7 @@ class ProviderRelay:
     def __init__(self, settings: Settings, database: Database) -> None:
         self.settings = settings
         self.database = database
-        self.vault = CredentialVault(settings)
+        self.vault = CredentialVault(settings, database.path)
         self.transport: httpx.AsyncBaseTransport | None = None
 
     def require_enabled(self) -> None:
@@ -659,6 +739,8 @@ class ProviderRelay:
         route = self.resolve(principal, alias)
         if route.modality != "text":
             raise ApiError("该模型不支持文本接口", 422, "model_modality_mismatch")
+        if _contains_image_input(payload) and not route.capabilities.get("imageInput"):
+            raise ApiError("该模型不支持图片理解", 422, "model_image_input_unsupported")
         path = "/chat/completions" if operation == "chat" else "/responses"
         upstream_payload = dict(payload)
         upstream_payload["model"] = route.upstream_model
@@ -683,6 +765,8 @@ class ProviderRelay:
         route = self.resolve(principal, alias)
         if route.modality != "text":
             raise ApiError("该模型不支持文本接口", 422, "model_modality_mismatch")
+        if _contains_image_input(payload) and not route.capabilities.get("imageInput"):
+            raise ApiError("该模型不支持图片理解", 422, "model_image_input_unsupported")
         path = "/chat/completions" if operation == "chat" else "/responses"
         upstream_payload = dict(payload)
         upstream_payload["model"] = route.upstream_model
@@ -809,6 +893,84 @@ class ProviderRelay:
             "metadata_json": "{}",
         }, True
 
+    @staticmethod
+    def _validated_image_sources(route: ModelRoute, value: Any) -> str | list[str] | None:
+        if value is None:
+            return None
+        if not route.capabilities.get("imageInput"):
+            raise ApiError("该模型不支持参考图片", 422, "model_image_input_unsupported")
+        if isinstance(value, str):
+            sources = [value]
+            normalized: str | list[str] = value
+        elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+            sources = value
+            normalized = value
+        else:
+            raise ApiError("image必须是图片URL或URL数组", 422, "image_input_invalid")
+        maximum = int(route.capabilities.get("maxInputImages") or 1)
+        if not sources or len(sources) > maximum:
+            raise ApiError(
+                f"该模型最多支持{maximum}张参考图片",
+                422,
+                "image_input_count_invalid",
+                details={"maxImages": maximum},
+            )
+        for source in sources:
+            stripped = source.strip()
+            if not stripped or len(stripped) > 2_000_000 or not (
+                stripped.startswith("https://")
+                or stripped.startswith("http://")
+                or stripped.startswith("data:image/")
+            ):
+                raise ApiError("参考图片必须是HTTP(S) URL或图片Data URL", 422, "image_input_invalid")
+        return normalized
+
+    def _image_upstream_payload(self, route: ModelRoute, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("stream") is True:
+            raise ApiError("图片流式输出暂未开放", 422, "image_stream_unsupported")
+        image = self._validated_image_sources(route, payload.get("image"))
+        if route.capabilities.get("imageInputRequired") and image is None:
+            raise ApiError("该模型必须提供一张参考图片", 422, "image_input_required")
+        count = payload.get("n", 1)
+        maximum = int(route.capabilities.get("maxN") or 1)
+        if count > maximum:
+            raise ApiError(
+                f"该模型单次最多生成{maximum}张图片",
+                422,
+                "image_count_unsupported",
+                details={"maxImages": maximum},
+            )
+        if route.provider != "volcengine_ark":
+            upstream = dict(payload)
+            upstream["model"] = route.upstream_model
+            return upstream
+
+        if any(key in payload for key in ("sequential_image_generation", "sequential_image_generation_options")) and not route.capabilities.get("sequentialImages"):
+            raise ApiError("该模型不支持组图生成", 422, "image_sequence_unsupported")
+        if "output_format" in payload and not route.capabilities.get("outputFormat"):
+            raise ApiError("该模型不支持指定输出格式", 422, "image_output_format_unsupported")
+        if "tools" in payload and not route.capabilities.get("webSearch"):
+            raise ApiError("该模型不支持图片生成工具", 422, "image_tools_unsupported")
+        if "seed" in payload and not route.capabilities.get("seed"):
+            raise ApiError("该模型不支持指定随机种子", 422, "image_seed_unsupported")
+        if "guidance_scale" in payload and not route.capabilities.get("guidanceScale"):
+            raise ApiError("该模型不支持guidance_scale", 422, "image_guidance_scale_unsupported")
+
+        upstream = {key: value for key, value in payload.items() if key in ARK_IMAGE_FIELDS}
+        if image is not None:
+            upstream["image"] = image
+        if count > 1:
+            if not route.capabilities.get("sequentialImages"):
+                raise ApiError("该模型不支持多图输出", 422, "image_count_unsupported")
+            upstream["sequential_image_generation"] = "auto"
+            options = upstream.get("sequential_image_generation_options")
+            options = dict(options) if isinstance(options, dict) else {}
+            options["max_images"] = count
+            upstream["sequential_image_generation_options"] = options
+        upstream["stream"] = False
+        upstream["model"] = route.upstream_model
+        return upstream
+
     async def generate_image(
         self,
         principal: ApiPrincipal,
@@ -819,6 +981,7 @@ class ProviderRelay:
         route = self.resolve(principal, alias)
         if route.modality != "image":
             raise ApiError("该模型不支持图片接口", 422, "model_modality_mismatch")
+        upstream = self._image_upstream_payload(route, payload)
         task, created = self._create_task(principal, route, "image", payload, idempotency_key)
         if not created:
             metadata = _loaded(task.get("metadata_json"), {})
@@ -827,8 +990,6 @@ class ProviderRelay:
             if task["status"] in ACTIVE_TASK_STATUSES:
                 raise ApiError("相同幂等请求仍在处理中", 409, "idempotency_request_in_progress")
             raise ApiError("相同幂等请求此前执行失败", 409, "idempotency_request_failed")
-        upstream = dict(payload)
-        upstream["model"] = route.upstream_model
         try:
             response, data = await self._request(route, "POST", "/images/generations", upstream)
         except ApiError as error:

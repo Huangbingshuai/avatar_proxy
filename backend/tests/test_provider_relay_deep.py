@@ -34,7 +34,7 @@ def test_vault_and_provider_config_validation_branches(tmp_path: Path) -> None:
     assert _secret_hint("tiny") == "****"
     assert _provider_request_id(httpx.Headers(), {"requestId": "body-request"}) == "body-request"
     assert _provider_request_id(httpx.Headers(), {"id": 3}) is None
-    missing = CredentialVault(build_settings(tmp_path / "missing.db"))
+    automatic = CredentialVault(build_settings(tmp_path / "automatic.db"))
     invalid = CredentialVault(
         build_settings(
             tmp_path / "invalid.db",
@@ -47,12 +47,21 @@ def test_vault_and_provider_config_validation_branches(tmp_path: Path) -> None:
             provider_credential_encryption_key=SecretStr(Fernet.generate_key().decode()),
         )
     )
-    assert error_code(missing._fernet) == "provider_encryption_key_missing"
+    encrypted_automatic = automatic.encrypt("automatic-provider-secret")
+    key_path = tmp_path / "provider_credentials.key"
+    assert key_path.is_file()
+    assert "automatic-provider-secret" not in key_path.read_text(encoding="ascii")
+    restarted = CredentialVault(build_settings(tmp_path / "automatic.db"))
+    assert restarted.decrypt(encrypted_automatic) == "automatic-provider-secret"
     assert error_code(invalid._fernet) == "provider_encryption_key_invalid"
     assert error_code(lambda: valid.encrypt("short")) == "provider_secret_invalid"
     assert error_code(lambda: valid.decrypt(Fernet.generate_key().decode())) == "provider_secret_decrypt_failed"
     encrypted = valid.encrypt("provider-secret-long")
     assert valid.decrypt(encrypted) == "provider-secret-long"
+
+    key_path.write_text("not-a-fernet-key\n", encoding="ascii")
+    broken_file = CredentialVault(build_settings(tmp_path / "automatic.db"))
+    assert error_code(broken_file._fernet) == "provider_encryption_key_invalid"
 
     with relay_client(tmp_path) as client:
         validate = client.app.state.provider_relay._validate_provider_config

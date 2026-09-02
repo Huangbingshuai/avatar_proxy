@@ -59,6 +59,7 @@ def build_settings(database_path: Path, **overrides: object) -> Settings:
         "admin_argon2_memory_cost": 8192,
         "admin_argon2_parallelism": 1,
         "admin_backup_enabled": False,
+        "multi_provider_enabled": False,
         "database_path": database_path,
         "cors_origins": "http://localhost:3000",
     }

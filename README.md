@@ -51,7 +51,7 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 - 统一 `429` 限流协议、额度事件、审计与失败清理。
 - 可选的多供应商模型中转：使用同一枚 `vap_live_*` 调用 OpenAI 兼容文本、图片和异步视频接口。
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
-- 内置模型目录包含 `deepseek-v4-flash`、`glm-5.2`、`seedream-5.0-pro`、方舟当前在售的 7 个 Seedance 视频模型、`wan3.0-video`、`minimax-h3` 和 `image2.0`。已停服的 Seedance 1.0 Lite 不再开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
+- 内置模型目录包含 `deepseek-v4-flash`、`glm-5.2`，方舟 Seedream 5.0 Pro/5.0 Lite/4.5/4.0/3.0 与 SeedEdit 3.0 生图、改图模型，Doubao Seed 2.1/2.0/1.8/1.6 Vision 识图模型，方舟当前可调用的 7 个 Seedance 视频模型，以及 `wan3.0-video`、`minimax-h3` 和 `image2.0`。已停服模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
 
 客户 HTTP 接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。
 
@@ -71,9 +71,9 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 ### 多供应商模型中转
 
 - 默认 `MULTI_PROVIDER_ENABLED=false`，迁移后没有任何默认模型绑定，旧素材和 `/api/video/*` 行为保持不变。
-- 启用时必须配置独立 Fernet 主密钥 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY`；SQLite 只保存凭证密文和尾号掩码。
+- 启用时使用独立 Fernet 主密钥；未显式配置 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 时，系统会在 SQLite 同目录自动创建并复用 `provider_credentials.key`，SQLite 仍只保存凭证密文和尾号掩码。
 - 固定使用供应商官方 HTTPS 域名，客户请求不能指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
-- `/v1/models` 只返回当前业务 Key 所属项目已启用且渠道可用的模型；Chat Completions、Responses 和图片接口采用 OpenAI 兼容格式。
+- `/v1/models` 只返回当前业务 Key 所属项目已启用且渠道可用的模型；Chat Completions、Responses 和图片接口采用 OpenAI 兼容格式，并支持按模型能力传入图片 URL 进行识图或参考图生图。
 - 阿里百炼 Wan 和 MiniMax H3 使用统一异步视频任务；任务提交后固定渠道、凭证版本和上游模型，轮换不会破坏旧任务查询。
 - 图片和视频支持 `Idempotency-Key`；相同键与相同请求复用结果，不同请求体返回 `409`。
 - 只记录供应商真实返回的 Token、图片数和视频秒数，未知字段保持为空；第一阶段不做余额或金额扣费。
@@ -137,14 +137,7 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 
 ## 本地启动
 
-如需在本地启用多供应商中转，先生成独立加密主密钥：
-
-```powershell
-cd backend
-uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-把输出仅写入本地 `backend/.env` 的 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY`，并设置 `MULTI_PROVIDER_ENABLED=true`。不要提交该密钥；数据库备份不包含它，生产环境必须另行备份。
+如需在本地启用多供应商中转，在 `backend/.env` 设置 `MULTI_PROVIDER_ENABLED=true` 即可。若 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 留空，系统首次使用供应商凭证时会在 SQLite 同目录自动生成 `provider_credentials.key`，以后重启自动加载，无需人工复制密钥。该文件被 Git 忽略且不会进入 SQLite 备份，迁移或恢复服务时必须与数据库分别备份和恢复。生产环境也可以继续通过部署 Secret 显式提供主密钥，环境变量优先于本地密钥文件。
 
 ### 1. 后端
 
