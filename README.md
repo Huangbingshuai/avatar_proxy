@@ -22,6 +22,11 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
        ├─ AK/SK ──> 火山素材库、IAM 项目校验与用量查询
        ├─ AK/SK ──> TOS 文件中转
        └─ Ark API Key ──> Seedance 视频任务
+
+微信支付平台
+  └─ POST /minidrama/payments/callbacks/wechat
+       └─ HTTPS 网关透明转发 ──> LocalMiniDrama
+            └─ 验签、解密、订单幂等与到账处理
 ```
 
 三个运行单元彼此独立：
@@ -77,6 +82,18 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 - SMTP 授权码只从服务端环境变量读取，不写入数据库、日志或管理接口响应。
 - 磁盘邮件只用于磁盘容量告警，不与管理员登录等安全事件混用。
 
+### HTTPS 网关与漫剧支付回调
+
+- `api.richbest.cn:443` 统一承载控制台、业务 API、健康检查和漫剧微信支付回调入口。
+- 微信通知入口固定为 `POST /minidrama/payments/callbacks/wechat`；非 POST 请求返回 `405`。
+- 网关只负责 TLS 终止、路径改写和透明转发，不要求本系统管理员登录或业务 API Key。
+- 原始正文、微信支付签名头和上游状态码保持不变；网关不验签、不解密、不操作订单。
+- 微信验签、通知解密、订单校验、幂等和到账处理均由 LocalMiniDrama 负责。
+- 网关通过宿主机发布端口访问 LocalMiniDrama，不加入 Lens 内部 Docker 网络，避免扩大数据库和 Redis 的网络暴露面。
+- 回调日志不记录正文、完整签名、OpenID、商户私钥、API v3 密钥或支付证书。
+
+完整配置、验证和回滚步骤见 [漫剧微信支付回调代理说明](deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md)。
+
 ## 目录说明
 
 | 路径 | 用途 |
@@ -92,7 +109,7 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 | `backend/tests/` | 后端鉴权、迁移、额度、素材、用量和监控测试 |
 | `tests/` | 控制台单元测试及 SSR/敏感信息检查 |
 | `user-portal/` | 客户视频与素材工具前端 |
-| `deploy/volcengine/` | 火山服务器 Compose、边缘代理和安全验收脚本 |
+| `deploy/volcengine/` | 火山服务器 Compose、HTTPS 网关、漫剧支付回调代理和安全验收脚本 |
 
 ## 环境要求
 
@@ -226,7 +243,17 @@ npm test
 - 客户程序直接调用该域名下的 `/api/*`；
 - 管理控制台通过同一域名的 `/api/internal/*` 使用同源 Cookie；
 - `/health` 用于健康检查；
+- `POST /minidrama/payments/callbacks/wechat` 透明转发微信支付通知到 LocalMiniDrama；
 - 生产环境应保持 `ENABLE_API_DOCS=false`。
+
+支付回调上游只通过服务端部署变量配置：
+
+```dotenv
+PAYMENT_ORIGIN=host.docker.internal:10588
+PAYMENT_ORIGIN_HOST=drama.richbest.cn
+```
+
+这两个变量不是浏览器配置，也不能包含微信商户密钥。LocalMiniDrama 必须自行完成验签、解密和幂等；如果其回调路由仍要求登录，网关能够转发请求，但真实微信通知仍会被上游拒绝。
 
 部署前必须备份并校验 SQLite、确认持久卷和 `admin_totp.key`/`ADMIN_TOTP_ENCRYPTION_KEY`，再运行完整测试。除非收到明确部署指令，否则只在本地修改和验证。
 
@@ -236,4 +263,5 @@ npm test
 - [后端生产部署说明](backend/DEPLOYMENT.md)
 - [额度与素材账本设计](backend/RISK_CONTROL_PLAN.md)
 - [客户工具说明](user-portal/README.md)
+- [漫剧微信支付回调代理说明](deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md)
 - [开发代理协作约定](AGENTS.md)

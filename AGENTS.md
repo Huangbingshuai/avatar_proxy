@@ -10,6 +10,8 @@
 - `backend/`：FastAPI、SQLite、火山素材/TOS/Seedance 代理和后台维护任务。
 - `user-portal/`：客户工具前端（Vite、React、TypeScript）。
 
+生产部署还包含 `deploy/volcengine/` 下的 HTTPS 网关。网关同时承载控制台、业务 API 和漫剧微信支付回调的 TLS 终止，但支付业务不属于本系统后端。
+
 必须保持以下边界：
 
 - 管理端使用同源 `/api/internal/*`、HttpOnly Session Cookie 和 CSRF。
@@ -18,6 +20,7 @@
 - 火山 AK/SK、Ark Key、SMTP 授权码、管理员密码、Session、CSRF 和 TOTP 原文不得进入前端、数据库、日志、测试快照或 Git。
 - 超级管理员只做账号与安全管理；普通管理员负责项目、Key、额度和日常业务。
 - 不要恢复旧 `X-Admin-Token`、`CONSOLE_ADMIN_TOKEN` 或共享万能令牌流程。
+- `/minidrama/payments/callbacks/wechat` 仅透明代理到 LocalMiniDrama；本系统不得验签、解密、修改订单或保存支付敏感数据。
 
 ## 2. 开始修改前
 
@@ -61,6 +64,12 @@
 - `user-portal/src/`：客户视频、素材和用量界面。
 - `user-portal/README.md`：独立启动和构建说明。
 
+### 生产网关
+
+- `deploy/volcengine/compose.yaml`：API、控制台、客户工具和 HTTPS 网关编排。
+- `deploy/volcengine/api-nginx.conf.template`：同源 API、控制台及漫剧微信支付回调代理。
+- `deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md`：回调路径、上游契约、验证与回滚说明。
+
 ## 4. 实现约束
 
 ### 管理员认证
@@ -98,6 +107,17 @@
 - 磁盘告警需要去重、升级和恢复状态；SMTP 失败按队列重试，成功后不得重复发送同一事件。
 - SMTP 只发送磁盘容量告警，除非需求明确改变，不要把登录等安全事件接入邮件。
 - 自动测试只能使用模拟 SMTP，不发送真实邮件。
+
+### 漫剧微信支付回调代理
+
+- 公网入口固定为 `POST /minidrama/payments/callbacks/wechat`，其他方法必须返回 `405`。
+- 回调入口不能要求管理员 Session、业务 API Key、Basic Auth 或其他交互式登录。
+- 网关只做 TLS 终止和透明转发，必须保留原始请求正文、`Content-Type`、四个 `Wechatpay-*` 签名头及必要的转发头。
+- 微信验签、通知解密、订单核对、幂等和到账处理全部由 LocalMiniDrama 完成；不能依赖来源 IP 判断通知真实性。
+- 不记录请求正文、完整签名、OpenID、商户私钥、API v3 密钥或支付证书。
+- 回调失败不得自动改投其他上游，避免重复处理支付通知；上游状态码和响应正文应原样返回。
+- `api-gateway` 通过宿主机发布端口访问 LocalMiniDrama，不加入 `lens-rhyme_default` 等其他业务内部网络。
+- Nginx 模板只允许替换 `PAYMENT_ORIGIN` 和 `PAYMENT_ORIGIN_HOST`，不得误替换 `$host`、`$remote_addr` 等 Nginx 变量。
 
 ## 5. 配置与 Secret
 
@@ -171,6 +191,7 @@ npm test
 - 控制台：Vitest；涉及渲染、认证或环境变量时再跑 SSR 和生产构建。
 - 客户工具：`npm test`（lint + TypeScript + Vite 构建）。
 - 跨层认证：使用 `deploy/volcengine/verify_admin_auth.py`，不得创建或修改业务数据。
+- 支付回调网关：使用模拟上游和测试证书验证路径改写、正文哈希、签名头、超时、非 POST 拒绝及状态码透传，不调用真实微信支付。
 
 高风险路径必须有失败用例：鉴权拒绝、CSRF、角色边界、并发额度、回滚、TOS 删除失败、SMTP 失败、SQLite 旧库升级和恢复失败。
 
@@ -190,5 +211,6 @@ npm test
 
 - 客户接口路径、请求字段、鉴权或错误码变化：更新 `backend/CLIENT_API.md`。
 - 配置、启动、安全模型或运维变化：更新根 `README.md`、`backend/.env.example` 和必要时的 `backend/DEPLOYMENT.md`。
+- 支付回调路径、上游或代理策略变化：同步更新 `deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md`，并回归 `/health`、`/api/*`、`/api/internal/*` 和控制台路由。
 - 控制台或客户工具独立使用方式变化：更新对应 README。
 - 设计计划文档不是运行时事实来源；代码、测试、示例配置和当前 API 文档必须保持一致。
