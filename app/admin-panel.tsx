@@ -4,6 +4,7 @@ import { Activity, ArchiveRestore, CheckCircle2, Clipboard, DatabaseBackup, File
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { AdminApi, AdminSession, AdminUser } from "./admin-api";
+import ProviderChannelsPanel from "./provider-channels-panel";
 
 type AdminAudit = {
   id: number;
@@ -534,6 +535,8 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
   return <div className="content adminConsole">
     <div className="pageIntro"><div><h2>超级管理员安全中心</h2><p>超级管理员只负责账号、告警、会话与备份；日常业务请使用普通管理员。</p></div><button className="primary" onClick={() => setShowCreate(true)}><Plus size={16} />创建管理员</button></div>
     {error && <div className="errorBanner adminInlineError" role="alert">{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
+
+    <ProviderChannelsPanel adminApi={adminApi} />
 
     {openAlerts.length > 0 && <section className="securityAlertStack" aria-label="未确认安全告警">
       {openAlerts.slice(0, 5).map((alert) => <article className={`securityAlert ${alert.severity}`} key={alert.id}>

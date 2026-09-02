@@ -30,6 +30,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 
 import AdminPanel from "./admin-panel";
 import { AdminApiError, isPasswordChangeRequired, isSessionError, requestAdminApi, type AdminApi, type AdminUser } from "./admin-api";
+import ModelRelayPanel from "./model-relay-panel";
 
 type Project = {
   name: string;
@@ -118,7 +119,7 @@ type QuotaUsage = {
   cleanupObjects: CleanupObject[];
 };
 
-type Tab = "overview" | "projects" | "keys" | "quotas" | "playground" | "integration" | "admins";
+type Tab = "overview" | "projects" | "keys" | "models" | "quotas" | "playground" | "integration" | "admins";
 type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -129,6 +130,7 @@ const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "概览", icon: Gauge },
   { id: "projects", label: "项目", icon: FolderKanban },
   { id: "keys", label: "API Keys", icon: KeyRound },
+  { id: "models", label: "项目模型", icon: Sparkles },
   { id: "quotas", label: "额度与用量", icon: SlidersHorizontal },
   { id: "playground", label: "视频调试", icon: Video },
   { id: "integration", label: "接入说明", icon: BookOpen },
@@ -512,6 +514,7 @@ export default function ConsolePage() {
         {currentUser?.role !== "super_admin" && tab === "overview" && <OverviewPanel overview={overview} onOpenPlayground={() => setTab("playground")} />}
         {currentUser?.role !== "super_admin" && tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
         {currentUser?.role !== "super_admin" && tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
+        {currentUser?.role !== "super_admin" && tab === "models" && <ModelRelayPanel projects={projects} apiKeys={apiKeys} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
         {currentUser?.role !== "super_admin" && tab === "playground" && <VideoPlayground />}
         {currentUser?.role !== "super_admin" && tab === "integration" && <IntegrationPanel />}

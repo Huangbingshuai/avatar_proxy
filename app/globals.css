@@ -449,3 +449,56 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
   .backupItem { grid-template-columns: auto minmax(0,1fr); }
   .backupVerifyState, .backupActions { grid-column: 2; }
 }
+.panelHeadActions { display: flex; align-items: center; gap: 8px; }
+.providerChannelGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; padding: 18px; }
+.providerChannelCard { border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: #fff; display: grid; gap: 14px; }
+.providerChannelCard header { display: flex; align-items: center; gap: 10px; }
+.providerChannelCard header > span { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; color: var(--coral-dark); background: var(--coral-soft); }
+.providerChannelCard header > div { display: grid; gap: 3px; flex: 1; }
+.providerChannelCard header small { color: var(--muted); }
+.providerChannelCard header i { font-style: normal; font-size: 12px; padding: 4px 9px; border-radius: 999px; }
+.providerChannelCard header i.active { color: #177451; background: #e9f7f0; }
+.providerChannelCard header i.disabled { color: #9a3e31; background: #fff0eb; }
+.providerChannelCard dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.providerChannelCard dl div { display: grid; gap: 4px; padding: 10px; background: #f8f7f3; border-radius: 10px; }
+.providerChannelCard dt { color: var(--muted); font-size: 12px; }
+.providerChannelCard dd { margin: 0; display: flex; align-items: center; gap: 5px; }
+.providerChannelCard dd.success { color: #177451; }
+.providerChannelCard dd.failed, .providerTestError { color: #b34637; }
+.providerTestError { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.providerChannelCard footer { display: flex; flex-wrap: wrap; gap: 7px; }
+.providerModal { max-height: 88vh; overflow: auto; }
+
+.modelRelayPanel { gap: 18px; }
+.relayIntro { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; }
+.relayIntro > div { display: flex; align-items: center; gap: 12px; }
+.relayIntro > div > span { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; color: var(--coral-dark); background: var(--coral-soft); }
+.relayIntro h3, .relayIntro p { margin: 0; }
+.relayIntro p { color: var(--muted); margin-top: 4px; }
+.relayIntro label { min-width: 300px; }
+.relayIntro select, .relayFilters select, .relayFilters input, .relayModelList select, .relayModelList input, .relayKeyPicker select { width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 0 11px; }
+.successBanner { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-radius: 12px; color: #176a4a; background: #eaf7f1; }
+.relayModelList { display: grid; gap: 8px; padding: 16px; }
+.relayModelList article { display: grid; grid-template-columns: minmax(240px, 1.1fr) minmax(180px, .8fr) minmax(220px, 1fr); align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #faf9f6; opacity: .72; }
+.relayModelList article.enabled { background: #fff; opacity: 1; border-color: #e3c9be; }
+.relayToggle { display: flex; align-items: center; gap: 10px; }
+.relayToggle > span, .relayPermissionGrid > div > span { display: grid; gap: 3px; }
+.relayToggle small, .relayPermissionGrid small { color: var(--muted); }
+.relayKeyPicker { padding: 16px; display: grid; gap: 14px; }
+.relayKeyPicker > label { max-width: 520px; }
+.relayPermissionGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 9px; }
+.relayPermissionGrid > div { display: flex; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.relayFilters { display: flex; gap: 9px; padding: 14px 16px 0; }
+.relayFilters select, .relayFilters input { max-width: 260px; }
+.relayUsageTable { margin: 14px 16px; }
+.relayUsageTable .tableRow { grid-template-columns: 150px 1.2fr 1fr 1fr 90px; }
+.relayUsageTable i { font-style: normal; }
+.relayTaskStrip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 0 16px 16px; color: var(--muted); }
+.relayTaskStrip code { padding: 5px 8px; border-radius: 8px; background: #f4f1ed; }
+
+@media (max-width: 900px) {
+  .relayIntro { align-items: stretch; flex-direction: column; }
+  .relayIntro label { min-width: 0; }
+  .relayModelList article { grid-template-columns: 1fr; }
+  .relayUsageTable .tableRow { grid-template-columns: 1fr; }
+}

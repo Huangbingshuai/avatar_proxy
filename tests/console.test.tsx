@@ -44,6 +44,11 @@ function installFetch(data: MockData = {}) {
   const backupItem = { id: "20260819-080000-000001", databaseFile: "avatar_proxy-20260819-080000-000001.db", auditFile: "admin_audit-20260819-080000-000001.jsonl", databaseBytes: 2048, auditBytes: 1024, createdAt: data.backupCreatedAt ?? "2026-08-19T08:00:00Z", valid: true, counts: { projects: 2, apiKeys: 2, adminUsers: 2, adminAudits: 19 } };
   const monitorSettings = { enabled: true, configuredEnabled: true, runtimeEnabled: true, path: "C:\\data", warningPercent: 80, criticalPercent: 90, emergencyPercent: 95, recoveryPercent: 75, sampleIntervalSeconds: 60, persistIntervalSeconds: 300, retentionDays: 30, emailConfigured: true, emailRecipientCount: 2 };
   const monitorSample = { path: "C:\\data", totalBytes: 160 * 1024 ** 3, usedBytes: 109.4 * 1024 ** 3, availableBytes: 50.6 * 1024 ** 3, reservedBytes: 0, usedPercent: data.monitorPercent ?? 68.4, level: "normal", sampledAt: 1_787_107_800 };
+  let providerChannels = [{ id: "channel-ark", projectName: "customer_a", name: "客户A方舟", provider: "volcengine_ark", config: { projectName: "customer_a" }, status: "active", secretHint: "ark****1234", lastTestStatus: "success", lastTestLatencyMs: 88 }];
+  const modelCatalog = [
+    { id: "glm-5.3", displayName: "GLM 5.3", provider: "volcengine_ark", modality: "text", enabled: true },
+    { id: "image2.0", displayName: "Image 2.0", provider: "openai", modality: "image", enabled: true },
+  ];
   const calls: Array<{ path: string; init?: RequestInit }> = [];
   let authenticated = false;
   let passwordChanged = !data.mustChangePassword;
@@ -91,6 +96,31 @@ function installFetch(data: MockData = {}) {
     if (url.pathname === "/api/internal/admin/backups/run") return jsonResponse({ enabled: true, intervalSeconds: 86400, retention: 30, directory: "data/backups", lastRun: { status: "success", completedAt: "2026-08-19 08:10:00", databaseBytes: 2048, auditBytes: 1024 } });
     if (url.pathname === "/api/internal/admin/system-monitor/status") return jsonResponse({ health: "ok", sample: monitorSample, activeIncidentId: null, recoveryStreak: 0, probeFailureStreak: 0, probeAlertActive: false, lastSampledAt: monitorSample.sampledAt, lastError: null, pendingEmailDeliveries: 0, settings: monitorSettings });
     if (url.pathname === "/api/internal/admin/system-monitor/settings" && init?.method === "PUT") { const body = JSON.parse(String(init.body)); return jsonResponse({ settings: { ...monitorSettings, ...body, currentPassword: undefined } }); }
+    if (url.pathname === "/api/internal/provider/projects") return jsonResponse({ projects: projects.map((project) => ({ name: project.name, displayName: project.displayName })) });
+    if (url.pathname === "/api/internal/provider/channels" && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      providerChannels = [...providerChannels, { id: "channel-new", projectName: body.projectName, name: body.name, provider: body.provider, config: body.config, status: "active", secretHint: "new****cret", lastTestStatus: undefined, lastTestLatencyMs: undefined }];
+      return jsonResponse({ channel: providerChannels.at(-1) }, 201);
+    }
+    if (url.pathname === "/api/internal/provider/channels") return jsonResponse({ channels: url.searchParams.get("projectName") ? providerChannels.filter((item) => item.projectName === url.searchParams.get("projectName")) : providerChannels });
+    if (/\/api\/internal\/provider\/channels\/[^/]+\/test$/.test(url.pathname)) return jsonResponse({ test: { status: "success", latencyMs: 77 } });
+    if (/\/api\/internal\/provider\/channels\/[^/]+\/(rotate-key|status)$/.test(url.pathname)) return jsonResponse({ channel: providerChannels[0] });
+    if (/\/api\/internal\/provider\/channels\/[^/]+$/.test(url.pathname) && init?.method === "DELETE") return jsonResponse({ deleted: true });
+    if (url.pathname === "/api/internal/model/catalog") return jsonResponse({ models: modelCatalog });
+    if (/\/api\/internal\/project\/[^/]+\/models$/.test(url.pathname)) {
+      const body = init?.method === "PUT" ? JSON.parse(String(init.body)) : null;
+      const enabled = body?.bindings?.some((item: { model: string }) => item.model === "glm-5.3") ?? true;
+      return jsonResponse({ projectName: "customer_a", models: [
+        { model: "glm-5.3", displayName: "GLM 5.3", provider: "volcengine_ark", modality: "text", channelId: enabled ? "channel-ark" : null, channelName: enabled ? "客户A方舟" : null, upstreamModel: enabled ? "ep-glm-53" : null, enabled },
+        { model: "image2.0", displayName: "Image 2.0", provider: "openai", modality: "image", channelId: null, upstreamModel: null, enabled: false },
+      ] });
+    }
+    if (/\/api\/internal\/apikey\/[^/]+\/models$/.test(url.pathname)) {
+      const body = init?.method === "PUT" ? JSON.parse(String(init.body)) : null;
+      return jsonResponse({ keyId: "key-a", projectName: "customer_a", models: [{ model: "glm-5.3", displayName: "GLM 5.3", modality: "text", enabled: body ? body.models.includes("glm-5.3") : true }] });
+    }
+    if (url.pathname === "/api/internal/inference/usage") return jsonResponse({ usage: [{ id: "usage-1", projectName: "customer_a", apiKeyId: "key-a", model: "glm-5.3", provider: "volcengine_ark", status: "succeeded", inputTokens: 10, outputTokens: 20, generatedImages: null, videoSeconds: null, createdAt: "2026-09-02 08:00:00" }] });
+    if (url.pathname === "/api/internal/inference/tasks") return jsonResponse({ tasks: [{ id: "task-1", object: "video", model: "wan3.0", status: "running", progress: 50, created_at: 1_788_000_000 }] });
     if (/\/api\/internal\/admin\/backups\/[^/]+\/validate$/.test(url.pathname)) return jsonResponse({ backup: { ...backupItem, integrity: "ok", sha256: "abc123" } });
     if (/\/api\/internal\/admin\/backups\/[^/]+\/restore$/.test(url.pathname)) { authenticated = false; return jsonResponse({ restored: true, requiresLogin: true }); }
     if (/\/api\/internal\/admin\/users\/[^/]+\/(enable|disable)$/.test(url.pathname)) {
@@ -430,5 +460,43 @@ describe("内部控制台", () => {
     await user.click(screen.getByRole("button", { name: "创建项目" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("火山引擎中不存在该 ProjectName");
     expect(new Headers(calls.find((call) => call.path === "/api/internal/project/create")?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+  });
+
+  it("普通管理员可以配置项目模型和现有Key权限", async () => {
+    const { calls } = installFetch({ role: "admin" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "项目模型" }));
+    expect(await screen.findByRole("heading", { name: "项目模型绑定" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("ep-glm-53")).toBeInTheDocument();
+    expect(await screen.findByText("10 / 20 tokens")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "保存绑定" }));
+    await user.click(screen.getByRole("button", { name: "保存权限" }));
+    await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/project/customer_a/models" && call.init?.method === "PUT")).toBe(true));
+    const modelCall = calls.find((call) => call.path === "/api/internal/project/customer_a/models" && call.init?.method === "PUT");
+    const keyCall = calls.find((call) => call.path === "/api/internal/apikey/key-a/models" && call.init?.method === "PUT");
+    expect(new Headers(modelCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+    expect(new Headers(keyCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+    expect(JSON.parse(String(modelCall?.init?.body)).bindings).toEqual([{ model: "glm-5.3", channelId: "channel-ark", upstreamModel: "ep-glm-53", enabled: true }]);
+  });
+
+  it("超级管理员录入供应商凭证时必须再次输入密码和TOTP", async () => {
+    const { calls } = installFetch({ role: "super_admin" });
+    const user = await login();
+    expect(await screen.findByRole("heading", { name: "供应商渠道" })).toBeInTheDocument();
+    expect(screen.getByText("ark****1234")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "创建渠道" }));
+    const dialog = screen.getByRole("dialog", { name: "创建供应商渠道" });
+    await user.type(within(dialog).getByLabelText("渠道名称"), "新方舟渠道");
+    await user.type(within(dialog).getByLabelText(/^供应商 API Key/), "provider-secret-value");
+    await user.type(within(dialog).getByLabelText("超级管理员当前密码"), "correct-password");
+    await user.type(within(dialog).getByLabelText("TOTP 动态验证码"), "123456");
+    await user.click(within(dialog).getByRole("button", { name: "加密保存渠道" }));
+    await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST")).toBe(true));
+    const createCall = calls.find((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST");
+    expect(new Headers(createCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+    expect(JSON.parse(String(createCall?.init?.body))).toMatchObject({ secret: "provider-secret-value", currentPassword: "correct-password", totpCode: "123456" });
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
   });
 });
