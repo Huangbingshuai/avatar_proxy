@@ -407,14 +407,10 @@ curl "$BASE_URL/v1/models" \
 | `doubao-seed-2.0-pro` | 文本、识图 | 火山方舟 |
 | `doubao-seed-2.0-lite` | 文本、识图 | 火山方舟 |
 | `doubao-seed-2.0-mini` | 文本、识图 | 火山方舟 |
-| `doubao-seed-1.8` | 文本、识图 | 火山方舟 |
-| `doubao-seed-1.6-vision` | 文本、识图 | 火山方舟 |
 | `seedream-5.0-pro` | 生图、参考图改图 | 火山方舟 |
 | `seedream-5.0-lite` | 生图、参考图改图、组图 | 火山方舟 |
 | `seedream-4.5` | 生图、参考图改图、组图 | 火山方舟 |
 | `seedream-4.0` | 生图、参考图改图、组图 | 火山方舟 |
-| `seedream-3.0-t2i` | 文本生图 | 火山方舟 |
-| `seededit-3.0-i2i` | 单图编辑 | 火山方舟 |
 | `seedance-2.5` | 异步视频 | 火山方舟 |
 | `seedance-2.0` | 异步视频 | 火山方舟 |
 | `seedance-2.0-fast` | 异步视频 | 火山方舟 |
@@ -487,7 +483,7 @@ curl "$BASE_URL/v1/images/generations" \
   }'
 ```
 
-`image` 可填写单个 HTTP(S) 图片 URL、图片 Data URL 或 URL 数组，具体数量由 `/v1/models` 的 `maxInputImages` 决定；`seededit-3.0-i2i` 必须提供且只接受一张参考图。`n>1` 只在支持组图的 Seedream 模型上生效，中转层会转换为方舟组图参数。还可按模型能力使用 `size`、`output_format`、`watermark`、`sequential_image_generation`、`sequential_image_generation_options`、`optimize_prompt_options`、`tools`、`seed` 和 `guidance_scale`；其中 `seed`、`guidance_scale` 仅开放给 Seedream 3.0 和 SeedEdit 3.0。不支持的模型能力会返回明确的 `422`，不会盲目透传。
+`image` 可填写单个 HTTP(S) 图片 URL、图片 Data URL 或 URL 数组，具体数量由 `/v1/models` 的 `maxInputImages` 决定。`n>1` 只在支持组图的 Seedream 模型上生效，中转层会转换为方舟组图参数。还可按模型能力使用 `size`、`output_format`、`watermark`、`sequential_image_generation`、`sequential_image_generation_options`、`optimize_prompt_options` 和 `tools`。不支持的模型能力会返回明确的 `422`，不会盲目透传。
 
 图片接口不会把 OpenAI 的 `quality`、`style`、`user` 等供应商无关字段转发给方舟。当前公开接口只提供非流式 JSON 响应；传入 `stream=true` 会返回 `image_stream_unsupported`。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
 

@@ -1334,7 +1334,7 @@ class ProviderRelay:
                     (error.code, error.message, task["id"]),
                 )
             raise
-        return self.get_local_task(principal, task["id"])
+        return self._video_public(self.get_local_task(principal, task["id"]))
 
     def get_local_task(self, principal: ApiPrincipal, task_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:

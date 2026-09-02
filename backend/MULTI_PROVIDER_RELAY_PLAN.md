@@ -8,8 +8,8 @@
 
 - `deepseek-v4-flash`：火山方舟文本模型。
 - `glm-5.2`：火山方舟文本模型。
-- `seedream-5.0-pro`、`seedream-5.0-lite`、`seedream-4.5`、`seedream-4.0`、`seedream-3.0-t2i`、`seededit-3.0-i2i`：火山方舟生图、参考图改图和受能力约束的组图模型；SeedEdit 必须提供一张参考图。
-- `doubao-seed-2.1-pro`、`doubao-seed-2.0-pro`、`doubao-seed-2.0-lite`、`doubao-seed-2.0-mini`、`doubao-seed-1.8`、`doubao-seed-1.6-vision`：火山方舟图文理解模型。
+- `seedream-5.0-pro`、`seedream-5.0-lite`、`seedream-4.5`、`seedream-4.0`：火山方舟生图、参考图改图和受能力约束的组图模型。
+- `doubao-seed-2.1-pro`、`doubao-seed-2.0-pro`、`doubao-seed-2.0-lite`、`doubao-seed-2.0-mini`：火山方舟图文理解模型。
 - `seedance-2.5`：火山方舟 Seedance 2.5 视频模型。
 - `seedance-2.0`、`seedance-2.0-fast`、`seedance-2.0-mini`：火山方舟 Seedance 2.0 视频模型。
 - `seedance-1.5-pro`：火山方舟 Seedance 1.5 Pro 视频模型。

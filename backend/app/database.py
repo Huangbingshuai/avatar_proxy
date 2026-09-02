@@ -13,21 +13,17 @@ BUILTIN_MODEL_CATALOG = (
     ("seedream-5.0-lite", "Seedream 5.0 Lite", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-lite-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15, "outputFormat": True, "webSearch": True}),
     ("seedream-4.5", "Seedream 4.5", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-5-251128", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15}),
     ("seedream-4.0", "Seedream 4.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-0-250828", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15}),
-    ("seedream-3.0-t2i", "Seedream 3.0 T2I", "volcengine_ark", "image", "openai_image", "doubao-seedream-3-0-t2i-250415", {"generations": True, "seed": True, "guidanceScale": True, "maxN": 1}),
-    ("seededit-3.0-i2i", "SeedEdit 3.0 I2I", "volcengine_ark", "image", "openai_image", "doubao-seededit-3-0-i2i-250628", {"generations": True, "imageInput": True, "imageInputRequired": True, "maxInputImages": 1, "seed": True, "guidanceScale": True, "maxN": 1}),
     ("doubao-seed-2.1-pro", "Doubao Seed 2.1 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-1-pro-260628", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-pro", "Doubao Seed 2.0 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-pro-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-lite", "Doubao Seed 2.0 Lite", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-lite-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-mini", "Doubao Seed 2.0 Mini", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-mini-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
-    ("doubao-seed-1.8", "Doubao Seed 1.8", "volcengine_ark", "text", "openai_text", "doubao-seed-1-8-251228", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
-    ("doubao-seed-1.6-vision", "Doubao Seed 1.6 Vision", "volcengine_ark", "text", "openai_text", "doubao-seed-1-6-vision-250815", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("seedance-2.5", "Seedance 2.5", "volcengine_ark", "video", "async_video", "doubao-seedance-2-5-260628", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 30, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 50, "maxN": 1}),
     ("seedance-2.0", "Seedance 2.0", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 20, "maxN": 1}),
     ("seedance-2.0-fast", "Seedance 2.0 Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-fast-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
     ("seedance-2.0-mini", "Seedance 2.0 Mini", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-mini-260615", {"text": True, "image": True, "video": True, "audio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
     ("seedance-1.5-pro", "Seedance 1.5 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-5-pro-251215", {"text": True, "image": True, "generateAudio": True, "draft": True, "durationMin": 4, "durationMax": 12, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
     ("seedance-1.0-pro", "Seedance 1.0 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-250528", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
-    ("seedance-1.0-pro-fast", "Seedance 1.0 Pro Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-fast-250610", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
+    ("seedance-1.0-pro-fast", "Seedance 1.0 Pro Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-fast-251015", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
     ("wan3.0-video", "Wan 3.0 Video", "aliyun_bailian", "video", "async_video", "wan3.0-video", {"image": True, "maxN": 1}),
     ("minimax-h3", "MiniMax H3", "minimax", "video", "async_video", "MiniMax-H3", {"image": True, "maxN": 1}),
     ("image2.0", "Image 2.0", "openai", "image", "openai_image", "gpt-image-2", {"generations": True}),
@@ -568,12 +564,15 @@ class Database:
                         json.dumps(capabilities, separators=(",", ":")),
                     ),
                 )
-            # These models stopped accepting invocations in May 2026. Keep any
-            # historical task references intact, but never expose or route new
-            # traffic to them after upgrading an older local database.
+            # Retired or unavailable models remain in historical task/usage rows,
+            # but are hidden from catalogs and cannot receive new traffic.
             connection.execute(
                 "UPDATE model_catalog SET enabled=0,updated_at=CURRENT_TIMESTAMP "
-                "WHERE alias IN ('seedance-1.0-lite-t2v','seedance-1.0-lite-i2v')"
+                "WHERE alias IN ("
+                "'seedance-1.0-lite-t2v','seedance-1.0-lite-i2v',"
+                "'seedream-3.0-t2i','seededit-3.0-i2i',"
+                "'doubao-seed-1.8','doubao-seed-1.6-vision'"
+                ")"
             )
             # Early local catalogs used two aliases that did not match the fixed
             # upstream IDs. Migrate every reference atomically so existing project

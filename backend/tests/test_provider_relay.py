@@ -335,6 +335,8 @@ def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp
             task = dict(connection.execute("SELECT * FROM inference_tasks").fetchone())
 
     assert created.status_code == 202
+    assert set(created.json()) == {"id", "object", "model", "status", "progress", "created_at"}
+    assert created.json()["model"] == "wan3.0-video"
     assert finished.json()["status"] == repeated.json()["status"] == "succeeded"
     assert content.status_code == 307
     assert content.headers["location"] == "https://video.example.com/result.mp4"
@@ -352,8 +354,6 @@ def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp
         ("doubao-seed-2.0-pro", "doubao-seed-2-0-pro-260215"),
         ("doubao-seed-2.0-lite", "doubao-seed-2-0-lite-260215"),
         ("doubao-seed-2.0-mini", "doubao-seed-2-0-mini-260215"),
-        ("doubao-seed-1.8", "doubao-seed-1-8-251228"),
-        ("doubao-seed-1.6-vision", "doubao-seed-1-6-vision-250815"),
     ],
 )
 def test_all_volcengine_vision_models_forward_multimodal_chat(
@@ -435,8 +435,6 @@ def test_non_vision_text_model_rejects_image_input(tmp_path: Path) -> None:
         ("seedream-5.0-lite", "doubao-seedream-5-0-lite-260128", 2, True, True, False),
         ("seedream-4.5", "doubao-seedream-4-5-251128", 2, True, True, False),
         ("seedream-4.0", "doubao-seedream-4-0-250828", 2, True, True, False),
-        ("seedream-3.0-t2i", "doubao-seedream-3-0-t2i-250415", 1, False, False, True),
-        ("seededit-3.0-i2i", "doubao-seededit-3-0-i2i-250628", 1, False, True, True),
     ],
 )
 def test_all_volcengine_image_models_translate_openai_image_requests(
@@ -510,25 +508,6 @@ def test_all_volcengine_image_models_translate_openai_image_requests(
         assert forwarded[0]["seed"] == 21
         assert forwarded[0]["guidance_scale"] == 5.5
 
-
-def test_seededit_requires_reference_image(tmp_path: Path) -> None:
-    with relay_client(tmp_path) as client:
-        _, secret, _ = provision(
-            client,
-            provider="volcengine_ark",
-            alias="seededit-3.0-i2i",
-            upstream_model="ignored-model",
-        )
-        response = client.post(
-            "/v1/images/generations",
-            headers={"Authorization": f"Bearer {secret}"},
-            json={"model": "seededit-3.0-i2i", "prompt": "把天空改为晚霞"},
-        )
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "image_input_required"
-
-
 @pytest.mark.parametrize(
     ("alias", "upstream_model", "image"),
     [
@@ -538,7 +517,7 @@ def test_seededit_requires_reference_image(tmp_path: Path) -> None:
         ("seedance-2.0-mini", "doubao-seedance-2-0-mini-260615", None),
         ("seedance-1.5-pro", "doubao-seedance-1-5-pro-251215", None),
         ("seedance-1.0-pro", "doubao-seedance-1-0-pro-250528", None),
-        ("seedance-1.0-pro-fast", "doubao-seedance-1-0-pro-fast-250610", None),
+        ("seedance-1.0-pro-fast", "doubao-seedance-1-0-pro-fast-251015", None),
     ],
 )
 def test_all_volcengine_video_models_submit_and_refresh(
@@ -874,6 +853,17 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
             "VALUES ('seedance-1.0-lite-t2v','Retired Lite','volcengine_ark','video',"
             "'async_video','retired-lite','{}')"
         )
+        connection.executemany(
+            "INSERT INTO model_catalog "
+            "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
+            "VALUES (?,?,?,?,?,?,?)",
+            [
+                ("seedream-3.0-t2i", "Seedream 3.0 T2I", "volcengine_ark", "image", "openai_image", "retired", "{}"),
+                ("seededit-3.0-i2i", "SeedEdit 3.0 I2I", "volcengine_ark", "image", "openai_image", "retired", "{}"),
+                ("doubao-seed-1.8", "Doubao Seed 1.8", "volcengine_ark", "text", "openai_text", "retired", "{}"),
+                ("doubao-seed-1.6-vision", "Doubao Seed 1.6 Vision", "volcengine_ark", "text", "openai_text", "retired", "{}"),
+            ],
+        )
     app.state.database.initialize()
     with app.state.database.connect() as connection:
         aliases = [
@@ -882,18 +872,19 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
                 "SELECT alias FROM model_catalog WHERE enabled=1 ORDER BY alias"
             )
         ]
-        retired_enabled = connection.execute(
-            "SELECT enabled FROM model_catalog WHERE alias='seedance-1.0-lite-t2v'"
-        ).fetchone()[0]
+        retired_status = dict(connection.execute(
+            "SELECT alias,enabled FROM model_catalog WHERE alias IN ("
+            "'seedance-1.0-lite-t2v','seedream-3.0-t2i','seededit-3.0-i2i',"
+            "'doubao-seed-1.8','doubao-seed-1.6-vision')"
+        ))
         bindings = connection.execute("SELECT COUNT(*) FROM project_model_bindings").fetchone()[0]
         permissions = connection.execute("SELECT COUNT(*) FROM api_key_model_permissions").fetchone()[0]
 
     assert aliases == sorted([
         "deepseek-v4-flash", "glm-5.2", "image2.0", "minimax-h3", "seedream-5.0-pro",
-        "seedream-5.0-lite", "seedream-4.5", "seedream-4.0", "seedream-3.0-t2i",
-        "seededit-3.0-i2i",
+        "seedream-5.0-lite", "seedream-4.5", "seedream-4.0",
         "doubao-seed-2.1-pro", "doubao-seed-2.0-pro", "doubao-seed-2.0-lite",
-        "doubao-seed-2.0-mini", "doubao-seed-1.8", "doubao-seed-1.6-vision",
+        "doubao-seed-2.0-mini",
         "seedance-2.5", "seedance-2.0", "seedance-2.0-fast", "seedance-2.0-mini",
         "seedance-1.5-pro", "seedance-1.0-pro", "seedance-1.0-pro-fast",
         "wan3.0-video",
@@ -913,25 +904,27 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "seedream-5.0-lite": "doubao-seedream-5-0-lite-260128",
         "seedream-4.5": "doubao-seedream-4-5-251128",
         "seedream-4.0": "doubao-seedream-4-0-250828",
-        "seedream-3.0-t2i": "doubao-seedream-3-0-t2i-250415",
-        "seededit-3.0-i2i": "doubao-seededit-3-0-i2i-250628",
         "doubao-seed-2.1-pro": "doubao-seed-2-1-pro-260628",
         "doubao-seed-2.0-pro": "doubao-seed-2-0-pro-260215",
         "doubao-seed-2.0-lite": "doubao-seed-2-0-lite-260215",
         "doubao-seed-2.0-mini": "doubao-seed-2-0-mini-260215",
-        "doubao-seed-1.8": "doubao-seed-1-8-251228",
-        "doubao-seed-1.6-vision": "doubao-seed-1-6-vision-250815",
         "seedance-2.5": "doubao-seedance-2-5-260628",
         "seedance-2.0": "doubao-seedance-2-0-260128",
         "seedance-2.0-fast": "doubao-seedance-2-0-fast-260128",
         "seedance-2.0-mini": "doubao-seedance-2-0-mini-260615",
         "seedance-1.5-pro": "doubao-seedance-1-5-pro-251215",
         "seedance-1.0-pro": "doubao-seedance-1-0-pro-250528",
-        "seedance-1.0-pro-fast": "doubao-seedance-1-0-pro-fast-250610",
+        "seedance-1.0-pro-fast": "doubao-seedance-1-0-pro-fast-251015",
         "wan3.0-video": "wan3.0-video",
     }
     assert bindings == permissions == 0
-    assert retired_enabled == 0
+    assert retired_status == {
+        "seedance-1.0-lite-t2v": 0,
+        "seedream-3.0-t2i": 0,
+        "seededit-3.0-i2i": 0,
+        "doubao-seed-1.8": 0,
+        "doubao-seed-1.6-vision": 0,
+    }
 
 
 def test_super_admin_channel_creation_requires_reauth_totp_and_audit_redacts_secret(tmp_path: Path) -> None:
