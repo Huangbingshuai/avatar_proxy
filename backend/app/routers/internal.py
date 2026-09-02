@@ -104,6 +104,13 @@ def delete_project(payload: ProjectDelete, request: Request, admin: AdminDepende
             "project_has_assets",
             details={"keyCount": 0, "assetCount": result["assetCount"]},
         )
+    if result.get("channelCount"):
+        raise ApiError(
+            "项目仍有供应商渠道，请先删除全部渠道",
+            409,
+            "project_has_provider_channels",
+            details={"channelCount": result["channelCount"]},
+        )
     audit_action(
         request, admin, "project.delete", "project", result["projectName"],
         before={"projectName": result["projectName"]}, after={"deleted": True},

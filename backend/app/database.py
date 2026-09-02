@@ -6,6 +6,16 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
+BUILTIN_MODEL_CATALOG = (
+    ("deepseek-v4-flash", "DeepSeek V4 Flash", "volcengine_ark", "text", "openai_text", {"chat": True, "responses": True, "stream": True}),
+    ("glm-5.3", "GLM 5.3", "volcengine_ark", "text", "openai_text", {"chat": True, "responses": True, "stream": True}),
+    ("seedream-5.0-pro", "Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", {"generations": True}),
+    ("wan3.0", "Wan 3.0", "aliyun_bailian", "video", "async_video", {"image": True, "maxN": 1}),
+    ("minimax-h3", "MiniMax H3", "minimax", "video", "async_video", {"image": True, "maxN": 1}),
+    ("image2.0", "Image 2.0", "openai", "image", "openai_image", {"generations": True}),
+)
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
     name TEXT PRIMARY KEY,
@@ -287,6 +297,124 @@ CREATE TABLE IF NOT EXISTS system_monitor_email_deliveries (
     sent_at TEXT,
     FOREIGN KEY(alert_id) REFERENCES admin_security_alerts(id) ON DELETE SET NULL
 );
+CREATE TABLE IF NOT EXISTS provider_channels (
+    id TEXT PRIMARY KEY,
+    project_name TEXT NOT NULL,
+    name TEXT NOT NULL,
+    provider TEXT NOT NULL CHECK(provider IN ('openai','volcengine_ark','aliyun_bailian','minimax')),
+    config_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
+    last_test_status TEXT CHECK(last_test_status IN ('success','failed')),
+    last_test_at TEXT,
+    last_test_latency_ms INTEGER,
+    last_test_error TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TEXT,
+    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE RESTRICT,
+    UNIQUE(project_name, name)
+);
+CREATE TABLE IF NOT EXISTS provider_credentials (
+    id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    secret_ciphertext TEXT NOT NULL,
+    secret_hint TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','retired')),
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    retired_at TEXT,
+    FOREIGN KEY(channel_id) REFERENCES provider_channels(id) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS model_catalog (
+    alias TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    modality TEXT NOT NULL CHECK(modality IN ('text','image','video')),
+    protocol TEXT NOT NULL,
+    capabilities_json TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS project_model_bindings (
+    project_name TEXT NOT NULL,
+    model_alias TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    upstream_model TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    updated_by TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(project_name, model_alias),
+    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE CASCADE,
+    FOREIGN KEY(model_alias) REFERENCES model_catalog(alias) ON DELETE RESTRICT,
+    FOREIGN KEY(channel_id) REFERENCES provider_channels(id) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS api_key_model_permissions (
+    api_key_id TEXT NOT NULL,
+    model_alias TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    updated_by TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(api_key_id, model_alias),
+    FOREIGN KEY(api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE,
+    FOREIGN KEY(model_alias) REFERENCES model_catalog(alias) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS inference_tasks (
+    id TEXT PRIMARY KEY,
+    api_key_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    model_alias TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    credential_id TEXT NOT NULL,
+    upstream_model TEXT NOT NULL,
+    upstream_task_id TEXT,
+    operation TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed','canceled')),
+    progress INTEGER NOT NULL DEFAULT 0,
+    request_hash TEXT NOT NULL,
+    idempotency_key TEXT,
+    result_url TEXT,
+    result_format TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    provider_request_id TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT,
+    FOREIGN KEY(api_key_id) REFERENCES api_keys(id) ON DELETE RESTRICT,
+    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE RESTRICT,
+    FOREIGN KEY(model_alias) REFERENCES model_catalog(alias) ON DELETE RESTRICT,
+    FOREIGN KEY(channel_id) REFERENCES provider_channels(id) ON DELETE RESTRICT,
+    FOREIGN KEY(credential_id) REFERENCES provider_credentials(id) ON DELETE RESTRICT,
+    UNIQUE(api_key_id, operation, idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS inference_usage (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    task_id TEXT,
+    api_key_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    model_alias TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    provider_request_id TEXT,
+    status TEXT NOT NULL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    total_tokens INTEGER,
+    generated_images INTEGER,
+    video_seconds REAL,
+    video_width INTEGER,
+    video_height INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    settled_at TEXT,
+    FOREIGN KEY(task_id) REFERENCES inference_tasks(id) ON DELETE SET NULL,
+    FOREIGN KEY(api_key_id) REFERENCES api_keys(id) ON DELETE RESTRICT,
+    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE RESTRICT,
+    FOREIGN KEY(model_alias) REFERENCES model_catalog(alias) ON DELETE RESTRICT,
+    FOREIGN KEY(channel_id) REFERENCES provider_channels(id) ON DELETE RESTRICT
+);
 CREATE INDEX IF NOT EXISTS idx_quota_events_open ON quota_events(acknowledged, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_asset_records_project_status ON asset_records(project_name, status);
 CREATE INDEX IF NOT EXISTS idx_asset_records_asset_id ON asset_records(project_name, asset_id);
@@ -310,6 +438,20 @@ CREATE INDEX IF NOT EXISTS idx_system_monitor_email_deliveries_pending
     ON system_monitor_email_deliveries(status, next_attempt_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_system_monitor_email_deliveries_alert
     ON system_monitor_email_deliveries(alert_id) WHERE alert_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_provider_channels_project_status
+    ON provider_channels(project_name, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_credentials_active
+    ON provider_credentials(channel_id) WHERE status='active';
+CREATE INDEX IF NOT EXISTS idx_project_model_bindings_channel
+    ON project_model_bindings(channel_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_api_key_model_permissions_key
+    ON api_key_model_permissions(api_key_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_inference_tasks_lookup
+    ON inference_tasks(api_key_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inference_tasks_channel_status
+    ON inference_tasks(channel_id, status);
+CREATE INDEX IF NOT EXISTS idx_inference_usage_project_created
+    ON inference_usage(project_name, created_at DESC);
 """
 
 
@@ -363,12 +505,38 @@ class Database:
                 connection.execute(
                     "ALTER TABLE admin_sessions ADD COLUMN mfa_verified INTEGER NOT NULL DEFAULT 0"
                 )
+            inference_task_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(inference_tasks)").fetchall()
+            }
+            if inference_task_columns and "upstream_model" not in inference_task_columns:
+                connection.execute(
+                    "ALTER TABLE inference_tasks ADD COLUMN upstream_model TEXT NOT NULL DEFAULT ''"
+                )
+            provider_channel_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(provider_channels)").fetchall()
+            }
+            if provider_channel_columns and "deleted_at" not in provider_channel_columns:
+                connection.execute("ALTER TABLE provider_channels ADD COLUMN deleted_at TEXT")
             connection.execute(
                 "INSERT OR IGNORE INTO system_monitor_settings(id) VALUES (1)"
             )
             connection.execute(
                 "INSERT OR IGNORE INTO system_monitor_state(id) VALUES (1)"
             )
+            for alias, display_name, provider, modality, protocol, capabilities in BUILTIN_MODEL_CATALOG:
+                connection.execute(
+                    "INSERT OR IGNORE INTO model_catalog "
+                    "(alias,display_name,provider,modality,protocol,capabilities_json) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (
+                        alias,
+                        display_name,
+                        provider,
+                        modality,
+                        protocol,
+                        json.dumps(capabilities, separators=(",", ":")),
+                    ),
+                )
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations
@@ -490,12 +658,17 @@ class Database:
                 "SELECT COUNT(*) FROM asset_records WHERE project_name = ? AND status != 'deleted'",
                 (canonical_name,),
             ).fetchone()[0]
-            if key_count or asset_count:
+            channel_count = connection.execute(
+                "SELECT COUNT(*) FROM provider_channels WHERE project_name = ? AND deleted_at IS NULL",
+                (canonical_name,),
+            ).fetchone()[0]
+            if key_count or asset_count or channel_count:
                 return {
                     "deleted": False,
                     "projectName": canonical_name,
                     "keyCount": key_count,
                     "assetCount": asset_count,
+                    "channelCount": channel_count,
                 }
             connection.execute(
                 "DELETE FROM quota_reservations WHERE scope_type='project' AND scope_id=?",
@@ -506,7 +679,13 @@ class Database:
                 (canonical_name,),
             )
             connection.execute("DELETE FROM projects WHERE name = ?", (canonical_name,))
-        return {"deleted": True, "projectName": canonical_name, "keyCount": 0, "assetCount": 0}
+        return {
+            "deleted": True,
+            "projectName": canonical_name,
+            "keyCount": 0,
+            "assetCount": 0,
+            "channelCount": 0,
+        }
 
     def project_exists(self, name: str) -> bool:
         with self.connect() as connection:

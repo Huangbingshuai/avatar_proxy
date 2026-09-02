@@ -41,6 +41,33 @@ class AdminSensitiveAction(ApiModel):
     current_password: str = Field(min_length=1, max_length=128)
 
 
+class AdminProviderChannelCreate(ApiModel):
+    project_name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
+    name: str = Field(min_length=1, max_length=100)
+    provider: str = Field(pattern=r"^(openai|volcengine_ark|aliyun_bailian|minimax)$")
+    config: dict[str, Any] = Field(default_factory=dict)
+    secret: str = Field(min_length=8, max_length=4096)
+    current_password: str = Field(min_length=1, max_length=128)
+    totp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class AdminProviderSecretRotate(ApiModel):
+    secret: str = Field(min_length=8, max_length=4096)
+    current_password: str = Field(min_length=1, max_length=128)
+    totp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class AdminProviderStatusUpdate(ApiModel):
+    enabled: bool
+    current_password: str = Field(min_length=1, max_length=128)
+    totp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class AdminProviderDelete(ApiModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    totp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
 class AdminTotpConfirm(ApiModel):
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
 
@@ -121,6 +148,48 @@ class ApiKeyDelete(ApiModel):
 class ApiKeyBindProject(ApiModel):
     key_id: str = Field(min_length=1)
     project_name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
+
+
+class ProjectModelBinding(ApiModel):
+    model: str = Field(min_length=1, max_length=128)
+    channel_id: str = Field(min_length=1, max_length=80)
+    upstream_model: str = Field(min_length=1, max_length=256)
+    enabled: bool = True
+
+
+class ProjectModelsUpdate(ApiModel):
+    bindings: list[ProjectModelBinding] = Field(default_factory=list, max_length=100)
+
+
+class ApiKeyModelsUpdate(ApiModel):
+    models: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("models")
+    @classmethod
+    def validate_models(cls, value: list[str]) -> list[str]:
+        stripped = [item.strip() for item in value]
+        if any(not item or len(item) > 128 for item in stripped):
+            raise ValueError("模型名称无效")
+        if len(set(stripped)) != len(stripped):
+            raise ValueError("模型名称不能重复")
+        return stripped
+
+
+class OpenAIVideoRequest(ApiModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+
+    model: str = Field(min_length=1, max_length=128)
+    prompt: str = Field(default="", max_length=40000)
+    image: str | None = Field(default=None, max_length=2_000_000)
+    duration: float | None = Field(default=None, ge=-1, le=30)
+    width: int | None = Field(default=None, ge=128, le=8192)
+    height: int | None = Field(default=None, ge=128, le=8192)
+    fps: int | None = Field(default=None, ge=1, le=120)
+    seed: int | None = None
+    n: int = Field(default=1, ge=1, le=1)
+    response_format: str = Field(default="url", pattern=r"^url$")
+    user: str | None = Field(default=None, max_length=256)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProjectQuotaUpdate(ApiModel):
