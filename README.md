@@ -21,7 +21,8 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
   └─ Bearer vap_live_* ─────────> FastAPI
        ├─ AK/SK ──> 火山素材库、IAM 项目校验与用量查询
        ├─ AK/SK ──> TOS 文件中转
-       └─ Ark API Key ──> Seedance 视频任务
+       ├─ Ark API Key ──> Seedance 视频任务
+       └─ 项目供应商渠道 ──> 方舟 / OpenAI / 阿里百炼 / MiniMax
 
 微信支付平台
   └─ POST /minidrama/payments/callbacks/wechat
@@ -48,6 +49,9 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 - Seedance 视频任务创建、历史、状态查询与取消。
 - 业务 Key 与客户方舟 Key 同项目校验后，查询 Seedance 聚合用量。
 - 统一 `429` 限流协议、额度事件、审计与失败清理。
+- 可选的多供应商模型中转：使用同一枚 `vap_live_*` 调用 OpenAI 兼容文本、图片和异步视频接口。
+- 项目复用加密供应商渠道，每枚业务 Key 显式授权模型；新增权限立即生效，无需重新签发 Key。
+- 第一批模型别名为 `deepseek-v4-flash`、`glm-5.3`、`seedream-5.0-pro`、`wan3.0`、`minimax-h3` 和 `image2.0`，真实上游模型 ID 由管理员配置。
 
 客户 HTTP 接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。
 
@@ -61,6 +65,19 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 - 删除、启停管理员、重置密码、备份、恢复和监控阈值修改等敏感操作要求再次输入超级管理员密码。
 - 禁用账号、修改或重置密码、TOTP 换绑后，相关旧 Session 会立即失效。
 - 管理员操作、登录和安全事件写入审计；旧 `X-Admin-Token`/共享控制台令牌不再具备权限。
+- 超级管理员负责创建、测试、轮换、禁用和删除供应商渠道；这些凭证操作需要密码与 TOTP 再认证。
+- 普通管理员负责项目模型绑定、业务 Key 模型权限以及中转用量和任务查询，不能读取供应商凭证原文。
+
+### 多供应商模型中转
+
+- 默认 `MULTI_PROVIDER_ENABLED=false`，迁移后没有任何默认模型绑定或 Key 权限，旧素材和 `/api/video/*` 行为保持不变。
+- 启用时必须配置独立 Fernet 主密钥 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY`；SQLite 只保存凭证密文和尾号掩码。
+- 固定使用供应商官方 HTTPS 域名，客户请求不能指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
+- `/v1/models` 只返回当前业务 Key 已授权且渠道可用的模型；Chat Completions、Responses 和图片接口采用 OpenAI 兼容格式。
+- 阿里百炼 Wan 和 MiniMax H3 使用统一异步视频任务；任务提交后固定渠道、凭证版本和上游模型，轮换不会破坏旧任务查询。
+- 图片和视频支持 `Idempotency-Key`；相同键与相同请求复用结果，不同请求体返回 `409`。
+- 只记录供应商真实返回的 Token、图片数和视频秒数，未知字段保持为空；第一阶段不做余额或金额扣费。
+- 图片和视频结果 URL 由供应商提供，系统不自动转存 TOS，客户应在供应商链接有效期内下载。
 
 ### 备份与恢复
 
@@ -119,6 +136,15 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 - `ffprobe`（处理视频、音频上传时需要；后端 Docker 镜像已安装 FFmpeg）
 
 ## 本地启动
+
+如需在本地启用多供应商中转，先生成独立加密主密钥：
+
+```powershell
+cd backend
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+把输出仅写入本地 `backend/.env` 的 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY`，并设置 `MULTI_PROVIDER_ENABLED=true`。不要提交该密钥；数据库备份不包含它，生产环境必须另行备份。
 
 ### 1. 后端
 
@@ -260,6 +286,7 @@ PAYMENT_ORIGIN_HOST=drama.richbest.cn
 ## 相关文档
 
 - [客户 API 接入文档](backend/CLIENT_API.md)
+- [多供应商模型中转实施与安全边界](backend/MULTI_PROVIDER_RELAY_PLAN.md)
 - [后端生产部署说明](backend/DEPLOYMENT.md)
 - [额度与素材账本设计](backend/RISK_CONTROL_PLAN.md)
 - [客户工具说明](user-portal/README.md)

@@ -1,9 +1,9 @@
 # 瑞池多类型素材 API 接入文档
 
-版本：3.2
+版本：4.0
 正式地址：`https://api.richbest.cn`
 
-本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理及 Seedance 聚合用量查询接口。
+本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、Seedance 聚合用量查询及可选的多供应商 OpenAI 兼容模型接口。
 
 ## 1. 鉴权
 
@@ -378,3 +378,146 @@ curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day
 | `PUT` | `/api/asset/update` | 修改素材名称 |
 | `DELETE` | `/api/asset/delete` | 删除素材 |
 | `GET` | `/api/video/ark-usage` | 使用业务 Key 鉴权并校验同项目后，查询客户方舟 Key 的 Seedance 聚合用量 |
+| `GET` | `/v1/models` | 查询当前业务 Key 可用模型 |
+| `POST` | `/v1/chat/completions` | OpenAI 兼容文本对话，支持 JSON/SSE |
+| `POST` | `/v1/responses` | OpenAI 兼容 Responses，支持 JSON/SSE |
+| `POST` | `/v1/images/generations` | OpenAI 兼容图片生成 |
+| `POST` | `/v1/videos` | 创建异步视频任务 |
+| `GET` | `/v1/videos/{taskId}` | 查询异步视频任务 |
+| `GET` / `HEAD` | `/v1/videos/{taskId}/content` | 获取成功视频的供应商结果地址 |
+
+## 13. 多供应商 OpenAI 兼容模型接口
+
+该能力由管理员按客户项目启用。已有业务 API Key 不会自动获得任何模型权限；管理员完成“供应商渠道 → 项目模型绑定 → Key 模型授权”后，同一枚 `vap_live_*` 才能调用对应模型。客户不能在请求中指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
+
+### 13.1 可用模型
+
+```bash
+curl "$BASE_URL/v1/models" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+只返回当前 Key 已授权、项目已绑定且渠道处于启用状态的模型。内置别名如下；实际是否可用以该接口返回为准：
+
+| 对外模型别名 | 类型 | 初始供应商 |
+|---|---|---|
+| `deepseek-v4-flash` | 文本 | 火山方舟 |
+| `glm-5.3` | 文本 | 火山方舟 |
+| `seedream-5.0-pro` | 图片 | 火山方舟 |
+| `wan3.0` | 异步视频 | 阿里百炼 |
+| `minimax-h3` | 异步视频 | MiniMax |
+| `image2.0` | 图片 | OpenAI，真实模型由管理员配置 |
+
+### 13.2 Chat Completions 与 Responses
+
+接口分别为：
+
+```text
+POST /v1/chat/completions
+POST /v1/responses
+```
+
+请求格式兼容对应的 OpenAI JSON/SSE 习惯，`model` 必须使用 `/v1/models` 返回的别名。示例：
+
+```bash
+curl "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "glm-5.3",
+    "messages": [{"role": "user", "content": "请用三句话介绍产品"}],
+    "stream": false
+  }'
+```
+
+流式调用把 `stream` 设置为 `true`，响应类型为 `text/event-stream`。中转层会把响应中的真实模型 ID 改回稳定别名。供应商没有返回 `usage` 时，系统不会伪造 Token 数。
+
+### 13.3 图片生成
+
+```bash
+curl "$BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: image-order-20260902-001" \
+  -d '{
+    "model": "image2.0",
+    "prompt": "白色背景上的东方瓷器产品摄影",
+    "n": 1,
+    "response_format": "url"
+  }'
+```
+
+图片只允许文档列出的 OpenAI 兼容字段，不会把未知参数直接透传给供应商。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
+
+### 13.4 异步视频
+
+创建任务：
+
+```bash
+curl "$BASE_URL/v1/videos" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: video-order-20260902-001" \
+  -d '{
+    "model": "wan3.0",
+    "prompt": "海边日出，镜头缓慢向前推进",
+    "image": "https://customer.example.com/first-frame.jpg",
+    "duration": 8,
+    "response_format": "url",
+    "metadata": {
+      "resolution": "1080P",
+      "ratio": "16:9",
+      "prompt_extend": true
+    }
+  }'
+```
+
+成功提交返回 HTTP `202` 和本系统任务 ID。查询及获取结果：
+
+```bash
+curl "$BASE_URL/v1/videos/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+
+curl -I "$BASE_URL/v1/videos/$TASK_ID/content" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+统一状态为 `queued`、`running`、`succeeded`、`failed`、`canceled`。`content` 在成功后返回 `307` 到供应商结果 URL；查询任务必须使用创建该任务的同一枚业务 Key。
+
+视频字段支持 `model`、`prompt`、`image`、`duration`、`width`、`height`、`fps`、`seed`、`n=1`、`response_format=url`、`user` 和 `metadata`。`metadata` 只允许模型适配器声明的白名单字段，不能放入凭证、Base URL 或自定义转发参数。
+
+### 13.5 幂等与错误
+
+图片和视频创建支持 `Idempotency-Key`，长度为 1～128 个字符：
+
+- 同一业务 Key、同一操作、相同 Idempotency-Key 和相同请求体：返回已有结果或任务，不重复创建；
+- 相同 Idempotency-Key 但请求体不同：返回 `409 idempotency_key_conflict`；
+- 已有相同图片请求仍在处理中或此前失败：返回 `409`，避免不确定地重复计费。
+
+`/v1/*` 使用 OpenAI 风格错误并附带请求 ID：
+
+```json
+{
+  "error": {
+    "message": "当前API Key未获该模型权限或渠道不可用",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "model_not_allowed"
+  },
+  "request_id": "req_0123456789abcdef"
+}
+```
+
+常见错误：
+
+| HTTP | 错误码 | 说明 |
+|---:|---|---|
+| `401` | `missing_api_key` / `invalid_api_key` | 业务 Key 缺失、无效或已禁用 |
+| `403` | `model_not_allowed` | Key 未授权、项目未绑定或渠道已禁用 |
+| `409` | `idempotency_key_conflict` | 幂等键被用于不同请求体 |
+| `422` | `model_modality_mismatch` | 模型与文本、图片或视频接口不匹配 |
+| `422` | `route_override_forbidden` | 请求试图覆盖内部路由字段 |
+| `502` | `provider_unreachable` / `provider_request_failed` | 供应商不可达或拒绝请求 |
+| `503` | `multi_provider_disabled` | 多供应商功能尚未启用 |
+
+排查时请保留响应体中的 `request_id`，但不要提供业务 Key、供应商 Key 或完整图片/视频私有 URL。

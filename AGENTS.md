@@ -55,6 +55,9 @@
 - `backend/app/routers/video.py`：Seedance 任务、历史和用量接口。
 - `backend/app/quota.py`：项目/Key 额度与原子预占。
 - `backend/app/storage.py`：TOS 上传、删除和失败清理。
+- `backend/app/provider_relay.py`：多供应商渠道、加密凭证、模型路由、任务和真实用量账本。
+- `backend/app/routers/providers.py`：供应商渠道、项目模型、Key 权限和中转用量管理接口。
+- `backend/app/routers/openai_compat.py`：客户 `/v1/*` OpenAI 兼容文本、图片和视频接口。
 - `backend/app/backup.py`：SQLite 与审计备份、校验、恢复。
 - `backend/app/system_monitor.py`：磁盘采样、告警状态机、SMTP 队列和重试。
 
@@ -89,6 +92,18 @@
 - 实际额度取项目和 Key 中更严格的一项，Key 不能突破项目共享上限。
 - 写操作预占必须原子化；失败回滚，成功提交，禁止负数、超卖和残留预占。
 - 删除操作不能因素材总量或存储总量上限而被阻止。
+
+### 多供应商模型中转
+
+- `MULTI_PROVIDER_ENABLED` 默认必须为 `false`；没有项目绑定和 Key 显式权限时，任何 `/v1/*` 模型都不可调用。
+- 供应商凭证必须使用独立 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 加密，不能复用 TOTP 密钥；SQLite 备份不包含该主密钥。
+- 供应商渠道属于客户项目，禁止跨项目绑定；同一项目模型第一期只允许一个活动渠道，不增加权重或自动故障切换。
+- 超级管理员凭密码与 TOTP 再认证后才能创建、轮换、启停或删除渠道；普通管理员只能绑定项目模型和授权业务 Key。
+- 客户请求不能覆盖供应商、渠道、项目、Base URL 或真实上游模型 ID；只允许代码中固定的官方 HTTPS 域名。
+- 图片和视频 `Idempotency-Key` 必须按业务 Key 和操作隔离；相同键不同请求体返回 `409`，不能重复创建或重复结算。
+- 异步任务必须固定提交时的渠道、凭证版本和上游模型；凭证轮换后旧任务仍使用旧版本查询。
+- 用量只记录供应商真实返回值，未知 Token、图片数或视频秒数保存为 `NULL`，不得估算为零。
+- 图片和视频结果透传供应商 URL，不自动写入 TOS；文档必须提示 URL 可能过期。
 
 ### 素材与 TOS
 
