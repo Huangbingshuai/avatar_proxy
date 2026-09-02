@@ -1,6 +1,8 @@
 # 瑞池多类型素材 API 接入文档
 
-版本：4.0
+版本：4.1
+
+更新日期：2026-09-02
 正式地址：`https://api.richbest.cn`
 
 本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、Seedance 聚合用量查询及可选的多供应商 OpenAI 兼容模型接口。
@@ -399,6 +401,33 @@ curl "$BASE_URL/v1/models" \
 
 只返回当前 Key 所属项目已绑定且渠道处于启用状态的模型。内置别名如下；实际是否可用以该接口返回为准：
 
+响应示例：
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "doubao-seed-2.0-lite",
+      "object": "model",
+      "created": 0,
+      "owned_by": "richbest",
+      "display_name": "Doubao Seed 2.0 Lite",
+      "modality": "text",
+      "capabilities": {
+        "chat": true,
+        "responses": true,
+        "stream": true,
+        "imageInput": true,
+        "vision": true
+      }
+    }
+  ]
+}
+```
+
+`data` 为空不代表业务 Key 无效，而是该 Key 所属项目尚未启用模型、绑定渠道已停用或供应商凭证不可用。客户端应使用返回的 `id` 作为后续请求的 `model`，不要缓存或猜测未返回的模型。
+
 | 对外模型别名 | 类型 | 初始供应商 |
 |---|---|---|
 | `deepseek-v4-flash` | 文本 | 火山方舟 |
@@ -420,7 +449,18 @@ curl "$BASE_URL/v1/models" \
 | `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 |
 | `wan3.0-video` | 异步视频 | 阿里百炼 |
 | `minimax-h3` | 异步视频 | MiniMax |
-| `image2.0` | 图片 | OpenAI，真实模型由管理员配置 |
+| `image2.0` | 图片 | OpenAI |
+
+以下模型已根据真实接口验证结果下架，不会出现在 `/v1/models`，也不能创建新调用：
+
+| 已下架模型 | 原因 |
+|---|---|
+| `doubao-seed-1.8` | 真实接口测试返回上游模型不存在或不可用 |
+| `doubao-seed-1.6-vision` | 真实接口测试返回上游模型不存在或不可用 |
+| `seedream-3.0-t2i` | 真实接口测试返回上游模型不存在或不可用 |
+| `seededit-3.0-i2i` | 真实接口测试返回上游模型不存在或不可用 |
+
+调用未返回或已下架的模型会返回 `403 model_not_allowed`。下架只阻止新请求，历史任务和用量记录仍会保留。
 
 ### 13.2 Chat Completions 与 Responses
 
@@ -445,6 +485,37 @@ curl "$BASE_URL/v1/chat/completions" \
 ```
 
 流式调用把 `stream` 设置为 `true`，响应类型为 `text/event-stream`。每个公开模型别名由服务端固定映射到一个真实上游模型，客户和管理员都不能在请求或项目绑定中覆盖该 ID；中转层会把响应中的真实模型 ID 改回稳定别名。供应商没有返回 `usage` 时，系统不会伪造 Token 数。
+
+流式示例（`-N` 用于关闭 curl 输出缓冲）：
+
+```bash
+curl -N "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-v4-flash",
+    "messages": [{"role": "user", "content": "用一句话介绍杭州"}],
+    "stream": true,
+    "stream_options": {"include_usage": true}
+  }'
+```
+
+服务端逐段透传标准 SSE 数据，并以供应商的结束事件为准。客户端应逐行消费 `data:` 事件，不能等待整个响应完成后再一次性解析。流式连接中断后，服务端不会自动重放写请求；供应商没有返回最终 `usage` 时，用量字段保持未知。
+
+Responses 示例：
+
+```bash
+curl "$BASE_URL/v1/responses" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "glm-5.2",
+    "input": "列出三条新品发布检查项",
+    "stream": false
+  }'
+```
+
+文本接口会拒绝未列入兼容白名单的顶层字段，并返回 `422 text_parameter_unsupported`。请求中出现 `provider`、`channel`、`base_url`、`api_key`、`project` 或 `project_name` 等内部路由字段时返回 `422 route_override_forbidden`。
 
 识图模型使用 OpenAI 兼容的图文消息，例如：
 
@@ -487,6 +558,23 @@ curl "$BASE_URL/v1/images/generations" \
 
 图片接口不会把 OpenAI 的 `quality`、`style`、`user` 等供应商无关字段转发给方舟。当前公开接口只提供非流式 JSON 响应；传入 `stream=true` 会返回 `image_stream_unsupported`。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
 
+成功响应示例：
+
+```json
+{
+  "created": 1788336000,
+  "model": "seedream-5.0-lite",
+  "data": [
+    {"url": "https://provider.example.com/result.png"}
+  ],
+  "usage": {
+    "generated_images": 1
+  }
+}
+```
+
+以实际响应为准：供应商没有返回的 `usage` 字段不会被补零。使用 `url` 时应及时下载结果；使用 `b64_json` 时，响应体可能明显增大。
+
 ### 13.4 异步视频
 
 创建任务：
@@ -512,6 +600,17 @@ curl "$BASE_URL/v1/videos" \
 
 成功提交返回 HTTP `202` 和本系统任务 ID。查询及获取结果：
 
+```json
+{
+  "id": "vid_0123456789abcdef",
+  "object": "video",
+  "model": "seedance-2.0",
+  "status": "queued",
+  "progress": 0,
+  "created_at": 1788336000
+}
+```
+
 ```bash
 curl "$BASE_URL/v1/videos/$TASK_ID" \
   -H "Authorization: Bearer $API_KEY"
@@ -521,6 +620,28 @@ curl -I "$BASE_URL/v1/videos/$TASK_ID/content" \
 ```
 
 统一状态为 `queued`、`running`、`succeeded`、`failed`、`canceled`。`content` 在成功后返回 `307` 到供应商结果 URL；查询任务必须使用创建该任务的同一枚业务 Key。
+
+成功任务示例：
+
+```json
+{
+  "id": "vid_0123456789abcdef",
+  "object": "video",
+  "model": "seedance-2.0",
+  "status": "succeeded",
+  "progress": 100,
+  "created_at": 1788336000,
+  "completed_at": "2026-09-02 09:01:08",
+  "url": "https://provider.example.com/result.mp4",
+  "format": "mp4",
+  "metadata": {
+    "resolution": "720p",
+    "duration": 5
+  }
+}
+```
+
+失败任务会在响应中增加 `error.code` 和 `error.message`。轮询建议从 2～3 秒开始并逐步退避，不要高频请求；进入终态后应停止轮询。结果 URL 可能过期，业务系统应在成功后及时下载。
 
 视频字段支持 `model`、`prompt`、`image`、`duration`、`width`、`height`、`fps`、`seed`、`n=1`、`response_format=url`、`user` 和 `metadata`。`metadata` 只允许模型适配器声明的白名单字段，不能放入凭证、Base URL 或自定义转发参数。
 
@@ -573,7 +694,13 @@ Seedance 1.0 Lite T2V/I2V 已停止服务，不再出现在模型目录，也不
 | `422` | `image_input_invalid` / `image_input_count_invalid` | 参考图片格式或数量不符合模型能力 |
 | `422` | `image_count_unsupported` / `image_sequence_unsupported` | 当前图片模型不支持请求的单次数量或组图参数 |
 | `422` | `image_stream_unsupported` | 当前中转图片接口不提供流式响应 |
+| `422` | `text_parameter_unsupported` / `image_parameter_unsupported` | 请求包含当前接口未开放的字段 |
+| `422` | `stream_parameter_invalid` | `stream` 不是布尔值 |
+| `422` | `idempotency_key_invalid` | 幂等键为空或超过 128 个字符 |
+| `422` | `video_input_required` | 视频请求没有提示词、参考素材或 `metadata.content` |
+| `422` | `video_parameter_unsupported` / `video_metadata_forbidden` | 当前视频模型不支持请求参数 |
 | `422` | `route_override_forbidden` | 请求试图覆盖内部路由字段 |
+| `404` | `video_task_not_found` | 任务不存在，或任务不属于当前业务 Key |
 | `502` | `provider_unreachable` / `provider_request_failed` | 供应商不可达或拒绝请求 |
 | `503` | `multi_provider_disabled` | 多供应商功能尚未启用 |
 
