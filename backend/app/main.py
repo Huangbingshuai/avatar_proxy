@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 from contextlib import asynccontextmanager, suppress
 from typing import AsyncIterator
 
@@ -12,8 +13,9 @@ from .config import Settings, get_settings
 from .database import Database
 from .errors import install_error_handlers
 from .maintenance import MaintenanceGate
+from .provider_relay import ProviderRelay
 from .quota import QuotaManager
-from .routers import admin, assets, auth, internal, video
+from .routers import admin, assets, auth, internal, openai_compat, providers, video
 from .seedance import SeedanceClient
 from .storage import TosStorage
 from .system_monitor import DiskMonitor
@@ -39,6 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.admin_auth.validate_encrypted_totp_secret,
         )
         app.state.quota = QuotaManager(database)
+        app.state.provider_relay = ProviderRelay(resolved, database)
         app.state.volcengine = volcengine
         app.state.seedance = SeedanceClient(resolved, database)
         app.state.storage = TosStorage(
@@ -80,17 +83,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origin_regex=resolved.cors_origin_regex or None,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "X-Ark-Api-Key"],
-        expose_headers=["X-Upstream-Service", "Retry-After"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-CSRF-Token",
+            "X-Ark-Api-Key",
+        ],
+        expose_headers=["X-Request-Id", "X-Upstream-Service", "Retry-After"],
     )
 
     @app.middleware("http")
     async def maintenance_control(request, call_next):
+        request.state.request_id = f"req_{secrets.token_hex(16)}"
         gate = getattr(request.app.state, "maintenance_gate", None)
         if gate is None or request.url.path == "/health":
-            return await call_next(request)
+            response = await call_next(request)
+            response.headers.setdefault("X-Request-Id", request.state.request_id)
+            return response
         if not await gate.begin_request():
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=503,
                 content={
                     "error": {
@@ -100,16 +112,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
                 headers={"Retry-After": "3"},
             )
+            response.headers["X-Request-Id"] = request.state.request_id
+            return response
         try:
-            return await call_next(request)
+            response = await call_next(request)
+            response.headers.setdefault("X-Request-Id", request.state.request_id)
+            return response
         finally:
             await gate.finish_request()
     install_error_handlers(app)
     app.include_router(admin.router)
     app.include_router(auth.router)
     app.include_router(internal.router)
+    app.include_router(providers.router)
     app.include_router(assets.router)
     app.include_router(video.router)
+    app.include_router(openai_compat.router)
 
     @app.get("/health", tags=["系统"])
     def health() -> dict[str, str | bool]:
