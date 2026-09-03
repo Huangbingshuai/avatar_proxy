@@ -459,7 +459,7 @@ export default function ConsolePage() {
       <aside className="sidebar">
         <div className="brand">
           <span className="brandMark"><img src="/ruichi-logo.jpg" alt="" /></span>
-          <div><strong>Avatar Proxy</strong><small>内部控制台</small></div>
+          <div><strong>Star Proxy</strong><small>内部控制台</small></div>
         </div>
         <nav aria-label="控制台导航">
           {tabs.map((item) => {
@@ -588,8 +588,22 @@ export default function ConsolePage() {
 function OverviewPanel({ overview, onOpenIntegration }: { overview: Overview | null; onOpenIntegration: () => void }) {
   return <div className="content">
     <section className="overviewHero">
-      <div><span className="heroTag">CONTROL PLANE</span><h2>控制台与公网 API<br />保持独立部署</h2><p>这里管理项目和业务 API Key。用户使用签发的 Key 直接请求独立 FastAPI 服务。</p><button className="primary" onClick={onOpenIntegration}><BookOpen size={17} />查看接入说明</button></div>
-      <div className="architectureCard"><div><span><ShieldCheck size={18} /></span><div><b>内部控制台</b><small>独立管理员会话 · 操作可审计</small></div></div><i /><div><span><Server size={18} /></span><div><b>公网 API 服务器</b><small>Bearer vap_live_...</small></div></div><i /><div><span><Sparkles size={18} /></span><div><b>火山服务</b><small>服务端 AK/SK · Ark Key</small></div></div></div>
+      <div className="overviewHeroCopy">
+        <div className="overviewMeta"><span className="heroTag">PLATFORM OVERVIEW</span><span className="heroServiceState"><i />业务 API 服务已配置</span></div>
+        <h2>API 接入与项目治理中心</h2>
+        <p>统一管理客户项目、访问凭证、模型权限与风险额度。公网业务流量与内部管理会话严格隔离，供应商凭证始终留在服务端。</p>
+        <div className="heroActions"><button className="primary" onClick={onOpenIntegration}><BookOpen size={17} />查看接入说明</button><span>客户使用独立签发的 <code>vap_live_...</code> 调用业务接口</span></div>
+        <ul className="heroAssurances"><li>项目级隔离</li><li>密钥哈希存储</li><li>管理操作审计</li></ul>
+      </div>
+      <aside className="architectureCard">
+        <header><div><small>REQUEST FLOW</small><h3>请求链路与凭证边界</h3></div><ShieldCheck size={19} /></header>
+        <div className="architectureFlow">
+          <article><span><ShieldCheck size={17} /></span><div><small>01 · 管理平面</small><b>内部控制台</b><p>Session + CSRF</p></div></article><ArrowRight size={15} />
+          <article><span><Server size={17} /></span><div><small>02 · 业务入口</small><b>公网 API</b><p>Bearer API Key</p></div></article><ArrowRight size={15} />
+          <article><span><Sparkles size={17} /></span><div><small>03 · 服务上游</small><b>模型与素材</b><p>服务端凭证</p></div></article>
+        </div>
+        <footer><span className="architecturePulse"><i />边界正常</span><p>浏览器不会接触火山 AK/SK 或供应商 API Key</p></footer>
+      </aside>
     </section>
     <div className="statGrid">
       <Stat label="项目" value={overview?.stats.projects ?? 0} note="映射火山 ProjectName" />
