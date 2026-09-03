@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     status TEXT NOT NULL DEFAULT 'active',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_used_at TEXT,
+    deleted_at TEXT,
     FOREIGN KEY(project_name) REFERENCES projects(name)
 );
 CREATE TABLE IF NOT EXISTS request_logs (
@@ -489,6 +490,11 @@ class Database:
                 connection.execute("ALTER TABLE asset_records ADD COLUMN content_type TEXT")
             if "media_metadata_json" not in asset_columns:
                 connection.execute("ALTER TABLE asset_records ADD COLUMN media_metadata_json TEXT")
+            api_key_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(api_keys)").fetchall()
+            }
+            if "deleted_at" not in api_key_columns:
+                connection.execute("ALTER TABLE api_keys ADD COLUMN deleted_at TEXT")
             audit_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(admin_audit_logs)").fetchall()
             }
@@ -691,7 +697,8 @@ class Database:
                     SUM(CASE WHEN k.status = 'active' THEN 1 ELSE 0 END) AS activeKeyCount,
                     (SELECT COUNT(*) FROM asset_records a
                      WHERE a.project_name = p.name AND a.status != 'deleted') AS activeAssetCount
-                FROM projects p LEFT JOIN api_keys k ON k.project_name = p.name
+                FROM projects p LEFT JOIN api_keys k
+                    ON k.project_name = p.name AND k.status != 'deleted'
                 GROUP BY p.name ORDER BY p.created_at DESC
             """).fetchall()
         return [dict(row) for row in rows]
@@ -722,7 +729,7 @@ class Database:
                 return None
             canonical_name = row["name"]
             key_count = connection.execute(
-                "SELECT COUNT(*) FROM api_keys WHERE project_name = ?",
+                "SELECT COUNT(*) FROM api_keys WHERE project_name = ? AND status != 'deleted'",
                 (canonical_name,),
             ).fetchone()[0]
             asset_count = connection.execute(
@@ -770,7 +777,7 @@ class Database:
             rows = connection.execute("""
                 SELECT id, name, key_prefix AS keyPrefix, project_name AS projectName, status,
                     created_at AS createdAt, last_used_at AS lastUsedAt
-                FROM api_keys ORDER BY created_at DESC
+                FROM api_keys WHERE status != 'deleted' ORDER BY created_at DESC
             """).fetchall()
         return [dict(row) for row in rows]
 
@@ -791,7 +798,7 @@ class Database:
     def enable_api_key(self, key_id: str) -> str | None:
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT status FROM api_keys WHERE id = ?",
+                "SELECT status FROM api_keys WHERE id = ? AND status != 'deleted'",
                 (key_id,),
             ).fetchone()
             if row is None:
@@ -807,23 +814,49 @@ class Database:
     def delete_api_key(self, key_id: str) -> str | None:
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT status FROM api_keys WHERE id = ?",
+                "SELECT status FROM api_keys WHERE id = ? AND status != 'deleted'",
                 (key_id,),
             ).fetchone()
             if row is None:
                 return None
             if row["status"] != "disabled":
                 return "active"
-            connection.execute("DELETE FROM request_logs WHERE api_key_id = ?", (key_id,))
-            connection.execute("DELETE FROM video_usage WHERE api_key_id = ?", (key_id,))
-            connection.execute("DELETE FROM video_tasks WHERE api_key_id = ?", (key_id,))
-            connection.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
+            has_inference_history = connection.execute(
+                "SELECT EXISTS(SELECT 1 FROM inference_tasks WHERE api_key_id=?) OR "
+                "EXISTS(SELECT 1 FROM inference_usage WHERE api_key_id=?)",
+                (key_id, key_id),
+            ).fetchone()[0]
+            connection.execute(
+                "DELETE FROM quota_reservations WHERE scope_type='key' AND scope_id=?", (key_id,)
+            )
+            connection.execute(
+                "DELETE FROM quota_usage_windows WHERE scope_type='key' AND scope_id=?", (key_id,)
+            )
+            if has_inference_history:
+                # Inference tasks and usage intentionally retain their API Key identity
+                # for audit and billing, so their foreign keys use ON DELETE RESTRICT.
+                # Revoke the credential irreversibly and hide the tombstone instead of
+                # deleting history or violating those constraints.
+                connection.execute(
+                    "UPDATE api_keys SET status='deleted', deleted_at=CURRENT_TIMESTAMP, key_hash=? "
+                    "WHERE id=?",
+                    (f"deleted:{key_id}", key_id),
+                )
+                connection.execute(
+                    "DELETE FROM api_key_model_permissions WHERE api_key_id = ?", (key_id,)
+                )
+                connection.execute("DELETE FROM api_key_quotas WHERE api_key_id = ?", (key_id,))
+            else:
+                connection.execute("DELETE FROM request_logs WHERE api_key_id = ?", (key_id,))
+                connection.execute("DELETE FROM video_usage WHERE api_key_id = ?", (key_id,))
+                connection.execute("DELETE FROM video_tasks WHERE api_key_id = ?", (key_id,))
+                connection.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
         return "deleted"
 
     def bind_api_key_project(self, key_id: str, project_name: str) -> bool:
         with self.connect() as connection:
             cursor = connection.execute(
-                "UPDATE api_keys SET project_name = ? WHERE id = ?",
+                "UPDATE api_keys SET project_name = ? WHERE id = ? AND status != 'deleted'",
                 (project_name, key_id),
             )
         return cursor.rowcount > 0

@@ -119,6 +119,7 @@ def test_real_legacy_schema_upgrades_idempotently_and_preserves_rows(tmp_path: P
     } <= tables
     assert key["project_name"] == "default"
     assert key["status"] == "disabled"
+    assert "deleted_at" in key.keys()
     assert request["project_name"] == usage["project_name"] == task["project_name"] == "default"
     assert usage["total_tokens"] == 123
     assert [row["name"] for row in projects] == ["default"]

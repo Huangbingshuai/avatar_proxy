@@ -459,6 +459,80 @@ def test_api_key_can_only_be_deleted_after_it_is_disabled(tmp_path: Path) -> Non
     assert auth_after_delete.status_code == 401
 
 
+def test_api_key_with_inference_history_can_be_deleted_without_losing_usage(tmp_path: Path) -> None:
+    database_path = tmp_path / "test.db"
+    app = create_app(settings(database_path))
+    with TestClient(app) as client:
+        create_project(client)
+        key_id, secret = create_key(client)
+        with app.state.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO provider_channels(id,project_name,name,provider) VALUES (?,?,?,?)",
+                ("channel-1", "drama_prod", "production", "volcengine_ark"),
+            )
+            connection.execute(
+                "INSERT INTO provider_credentials(id,channel_id,secret_ciphertext,secret_hint) "
+                "VALUES (?,?,?,?)",
+                ("credential-1", "channel-1", "encrypted-test-secret", "test"),
+            )
+            connection.execute(
+                "INSERT INTO inference_tasks("
+                "id,api_key_id,project_name,model_alias,channel_id,credential_id,upstream_model,"
+                "operation,status,request_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "task-1", key_id, "drama_prod", "seedance-2.0", "channel-1",
+                    "credential-1", "doubao-seedance-2-0-260128", "video.create",
+                    "succeeded", "request-hash", 1,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO inference_usage("
+                "id,request_id,task_id,api_key_id,project_name,model_alias,channel_id,status,"
+                "video_seconds) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    "usage-1", "request-1", "task-1", key_id, "drama_prod",
+                    "seedance-2.0", "channel-1", "succeeded", 5.0,
+                ),
+            )
+
+        client.put(
+            "/api/internal/apikey/disable",
+            headers=ADMIN_HEADERS,
+            json={"keyId": key_id},
+        )
+        deleted = client.request(
+            "DELETE",
+            "/api/internal/apikey/delete",
+            headers=ADMIN_HEADERS,
+            json={"keyId": key_id},
+        )
+        keys = client.get("/api/internal/apikey/list", headers=ADMIN_HEADERS).json()["apiKeys"]
+        auth_after_delete = client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {secret}"},
+        )
+
+    with sqlite3.connect(database_path) as connection:
+        tombstone = connection.execute(
+            "SELECT status,deleted_at,key_hash FROM api_keys WHERE id=?", (key_id,)
+        ).fetchone()
+        task_count = connection.execute(
+            "SELECT COUNT(*) FROM inference_tasks WHERE api_key_id=?", (key_id,)
+        ).fetchone()[0]
+        usage_count = connection.execute(
+            "SELECT COUNT(*) FROM inference_usage WHERE api_key_id=?", (key_id,)
+        ).fetchone()[0]
+
+    assert deleted.status_code == 200
+    assert all(key["id"] != key_id for key in keys)
+    assert auth_after_delete.status_code == 401
+    assert tombstone is not None
+    assert tombstone[0] == "deleted"
+    assert tombstone[1]
+    assert tombstone[2] == f"deleted:{key_id}"
+    assert task_count == usage_count == 1
+
+
 def test_disabled_api_key_can_be_enabled_and_use_its_original_secret(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "test.db"))
     with TestClient(app) as client:
