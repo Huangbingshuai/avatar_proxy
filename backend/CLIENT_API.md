@@ -475,7 +475,6 @@ curl "$BASE_URL/v1/models" \
 | `seedance-2.0` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `seedance-2.0-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `seedance-1.5-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 

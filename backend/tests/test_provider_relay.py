@@ -458,7 +458,6 @@ def test_all_volcengine_image_models_translate_openai_image_requests(
         ("seedance-2.0", "doubao-seedance-2-0-260128", None),
         ("seedance-2.0-fast", "doubao-seedance-2-0-fast-260128", None),
         ("seedance-2.0-mini", "doubao-seedance-2-0-mini-260615", None),
-        ("seedance-1.5-pro", "doubao-seedance-1-5-pro-251215", None),
         ("seedance-1.0-pro", "doubao-seedance-1-0-pro-250528", None),
         ("seedance-1.0-pro-fast", "doubao-seedance-1-0-pro-fast-251015", None),
     ],
@@ -548,17 +547,17 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
         _, secret, channel = provision(
             client,
             provider="volcengine_ark",
-            alias="seedance-1.5-pro",
+            alias="seedance-2.5",
             upstream_model="ignored-model",
         )
         relay = client.app.state.provider_relay
         relay.transport = httpx.MockTransport(handler)
         headers = {"Authorization": f"Bearer {secret}"}
-        pro_15 = client.post(
+        pro_25 = client.post(
             "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
-                "model": "seedance-1.5-pro",
+                "model": "seedance-2.5",
                 "duration": 6,
                 "seed": 42,
                 "content": [
@@ -572,7 +571,6 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
                 "resolution": "1080p",
                 "ratio": "16:9",
                 "generate_audio": True,
-                "draft": True,
                 "watermark": False,
                 "return_last_frame": True,
                 "service_tier": "flex",
@@ -599,10 +597,10 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
             },
         )
 
-    assert pro_15.status_code == pro_10.status_code == 200
+    assert pro_25.status_code == pro_10.status_code == 200
     assert submitted == [
         {
-            "model": "doubao-seedance-1-5-pro-251215",
+            "model": "doubao-seedance-2-5-260628",
             "content": [
                 {"type": "text", "text": "cinematic sunrise"},
                 {
@@ -615,7 +613,6 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
             "resolution": "1080p",
             "ratio": "16:9",
             "generate_audio": True,
-            "draft": True,
             "watermark": False,
             "return_last_frame": True,
             "service_tier": "flex",
@@ -836,6 +833,12 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
             "VALUES ('seedance-1.0-lite-t2v','Retired Lite','volcengine_ark','video',"
             "'async_video','retired-lite','{}')"
         )
+        connection.execute(
+            "INSERT INTO model_catalog "
+            "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
+            "VALUES ('seedance-1.5-pro','Unavailable 1.5 Pro','volcengine_ark','video',"
+            "'async_video','doubao-seedance-1-5-pro-251215','{}')"
+        )
         connection.executemany(
             "INSERT INTO model_catalog "
             "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
@@ -857,7 +860,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         ]
         retired_status = dict(connection.execute(
             "SELECT alias,enabled FROM model_catalog WHERE alias IN ("
-            "'seedance-1.0-lite-t2v','seedream-3.0-t2i','seededit-3.0-i2i',"
+            "'seedance-1.0-lite-t2v','seedance-1.5-pro','seedream-3.0-t2i','seededit-3.0-i2i',"
             "'doubao-seed-1.8','doubao-seed-1.6-vision')"
         ))
         bindings = connection.execute("SELECT COUNT(*) FROM project_model_bindings").fetchone()[0]
@@ -869,7 +872,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "doubao-seed-2.1-pro", "doubao-seed-2.1-turbo", "doubao-seed-2.0-pro", "doubao-seed-2.0-lite",
         "doubao-seed-2.0-mini",
         "seedance-2.5", "seedance-2.0", "seedance-2.0-fast", "seedance-2.0-mini",
-        "seedance-1.5-pro", "seedance-1.0-pro", "seedance-1.0-pro-fast",
+        "seedance-1.0-pro", "seedance-1.0-pro-fast",
         "wan3.0-video",
     ])
     with app.state.database.connect() as connection:
@@ -897,7 +900,6 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "seedance-2.0": "doubao-seedance-2-0-260128",
         "seedance-2.0-fast": "doubao-seedance-2-0-fast-260128",
         "seedance-2.0-mini": "doubao-seedance-2-0-mini-260615",
-        "seedance-1.5-pro": "doubao-seedance-1-5-pro-251215",
         "seedance-1.0-pro": "doubao-seedance-1-0-pro-250528",
         "seedance-1.0-pro-fast": "doubao-seedance-1-0-pro-fast-251015",
         "wan3.0-video": "wan3.0-video",
@@ -905,6 +907,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
     assert bindings == permissions == 0
     assert retired_status == {
         "seedance-1.0-lite-t2v": 0,
+        "seedance-1.5-pro": 0,
         "seedream-3.0-t2i": 0,
         "seededit-3.0-i2i": 0,
         "doubao-seed-1.8": 0,

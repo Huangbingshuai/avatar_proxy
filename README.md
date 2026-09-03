@@ -51,7 +51,7 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 - 统一 `429` 限流协议、额度事件、审计与失败清理。
 - 可选的模型中转：使用同一枚 `vap_live_*` 调用 OpenAI 兼容文本与图片接口，以及火山兼容的 Seedance 异步视频接口。
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
-- 对外模型包含 `deepseek-v4-flash`、`glm-5.2`，方舟 Seedream 5.0 Pro/5.0 Lite/4.5/4.0 生图、改图模型，Doubao Seed 2.1/2.0 Vision 识图模型，方舟当前可调用的 7 个 Seedance 视频模型，以及 `image2.0`。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
+- 对外模型包含 `deepseek-v4-flash`、`glm-5.2`，方舟 Seedream 5.0 Pro/5.0 Lite/4.5/4.0 生图、改图模型，Doubao Seed 2.1/2.0 Vision 识图模型，方舟当前可调用的 6 个 Seedance 视频模型，以及 `image2.0`。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
 
 客户 HTTP 接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。
 
@@ -92,7 +92,7 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 
 #### Seedance 中转验证基线
 
-截至 2026-09-02，使用业务 Key、素材库 `asset://` 图片以及最低分辨率完成了真实异步链路验证。以下别名由服务端固定映射，客户不能覆盖真实 Model ID：
+截至 2026-09-03，使用业务 Key、素材库 `asset://` 图片以及最低分辨率完成了真实异步链路验证。以下别名由服务端固定映射，客户不能覆盖真实 Model ID：
 
 | 对外别名 | 火山 Model ID | 最小验证规格 | 本地实测 |
 |---|---|---:|---|
@@ -100,11 +100,10 @@ Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入�
 | `seedance-2.0` | `doubao-seedance-2-0-260128` | 4 秒 / 480p | 成功 |
 | `seedance-2.0-fast` | `doubao-seedance-2-0-fast-260128` | 4 秒 / 480p | 成功 |
 | `seedance-2.0-mini` | `doubao-seedance-2-0-mini-260615` | 4 秒 / 480p | 成功 |
-| `seedance-1.5-pro` | `doubao-seedance-1-5-pro-251215` | 4 秒 / 480p | 模型存在，但测试渠道被上游拒绝创建任务 |
 | `seedance-1.0-pro` | `doubao-seedance-1-0-pro-250528` | 2 秒 / 480p | 成功 |
 | `seedance-1.0-pro-fast` | `doubao-seedance-1-0-pro-fast-251015` | 2 秒 / 480p | 成功 |
 
-模型出现在火山 API Key 权限页或 `/v1/models` 列表中，不代表其始终可以创建新任务；例如供应商状态为 `Retiring` 时仍可能保留在列表，但任务创建会被拒绝。系统继续保留这类目录项，实际可用性以当前渠道权限和任务创建响应为准。视频创建响应只返回中转站任务 ID；查询响应返回模型别名、状态及火山结果，不暴露渠道 ID、凭证版本、真实上游 Model ID 或内部请求哈希。
+表中视频模型均已通过真实 `asset://` 素材完成生成验证。视频创建响应只返回中转站任务 ID；查询响应返回模型别名、状态及火山结果，不暴露渠道 ID、凭证版本、真实上游 Model ID 或内部请求哈希。
 
 ### 备份与恢复
 

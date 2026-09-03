@@ -12,7 +12,6 @@
 - `doubao-seed-2.1-pro`、`doubao-seed-2.0-pro`、`doubao-seed-2.0-lite`、`doubao-seed-2.0-mini`：火山方舟图文理解模型。
 - `seedance-2.5`：火山方舟 Seedance 2.5 视频模型。
 - `seedance-2.0`、`seedance-2.0-fast`、`seedance-2.0-mini`：火山方舟 Seedance 2.0 视频模型。
-- `seedance-1.5-pro`：火山方舟 Seedance 1.5 Pro 视频模型。
 - `seedance-1.0-pro`、`seedance-1.0-pro-fast`：火山方舟 Seedance 1.0 Pro 视频模型。
 - `wan3.0-video`：阿里百炼异步视频模型。
 - `minimax-h3`：MiniMax 异步视频模型。

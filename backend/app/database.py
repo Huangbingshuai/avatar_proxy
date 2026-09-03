@@ -22,7 +22,6 @@ BUILTIN_MODEL_CATALOG = (
     ("seedance-2.0", "Seedance 2.0", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 20, "maxN": 1}),
     ("seedance-2.0-fast", "Seedance 2.0 Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-fast-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
     ("seedance-2.0-mini", "Seedance 2.0 Mini", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-mini-260615", {"text": True, "image": True, "video": True, "audio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
-    ("seedance-1.5-pro", "Seedance 1.5 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-5-pro-251215", {"text": True, "image": True, "generateAudio": True, "draft": True, "durationMin": 4, "durationMax": 12, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
     ("seedance-1.0-pro", "Seedance 1.0 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-250528", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
     ("seedance-1.0-pro-fast", "Seedance 1.0 Pro Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-fast-251015", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
     ("wan3.0-video", "Wan 3.0 Video", "aliyun_bailian", "video", "async_video", "wan3.0-video", {"image": True, "maxN": 1}),
@@ -724,6 +723,7 @@ class Database:
                 "UPDATE model_catalog SET enabled=0,updated_at=CURRENT_TIMESTAMP "
                 "WHERE alias IN ("
                 "'seedance-1.0-lite-t2v','seedance-1.0-lite-i2v',"
+                "'seedance-1.5-pro',"
                 "'seedream-3.0-t2i','seededit-3.0-i2i',"
                 "'doubao-seed-1.8','doubao-seed-1.6-vision'"
                 ")"

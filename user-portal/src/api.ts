@@ -14,10 +14,14 @@ const DEFAULT_VIDEO_MODELS: VideoModelOption[] = [
   { id: "seedance-2.0", label: "Doubao-Seedance-2.0" },
   { id: "seedance-2.0-fast", label: "Doubao-Seedance-2.0-Fast" },
   { id: "seedance-2.0-mini", label: "Doubao-Seedance-2.0-Mini" },
-  { id: "seedance-1.5-pro", label: "Seedance-1.5-Pro" },
   { id: "seedance-1.0-pro", label: "Seedance-1.0-Pro" },
   { id: "seedance-1.0-pro-fast", label: "Seedance-1.0-Pro-Fast" },
 ];
+
+const RETIRED_VIDEO_MODELS = new Set([
+  "seedance-1.5-pro",
+  "doubao-seedance-1-5-pro-251215",
+]);
 
 function readVideoModels(): VideoModelOption[] {
   const configured = String(import.meta.env.VITE_VIDEO_MODELS || "")
@@ -26,7 +30,7 @@ function readVideoModels(): VideoModelOption[] {
     .filter(Boolean)
     .flatMap((item) => {
       const [id, label] = item.split("|").map((part) => part.trim());
-      return id ? [{ id, label: label || id }] : [];
+      return id && !RETIRED_VIDEO_MODELS.has(id) ? [{ id, label: label || id }] : [];
     });
   const models = new Map(DEFAULT_VIDEO_MODELS.map((model) => [model.id, model]));
   for (const model of configured) models.set(model.id, model);
