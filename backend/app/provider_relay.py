@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -73,6 +75,45 @@ def _secret_hint(secret: str) -> str:
 def _request_hash(operation: str, payload: dict[str, Any]) -> str:
     canonical = _json({"operation": operation, "payload": payload})
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _decoded_image_data_url_size(value: str, maximum: int | None) -> int:
+    header, separator, encoded = value.partition(",")
+    parameters = header[5:].split(";") if header.lower().startswith("data:") else []
+    if (
+        not separator
+        or not parameters
+        or not parameters[0].lower().startswith("image/")
+        or "base64" not in {item.lower() for item in parameters[1:]}
+        or not encoded
+    ):
+        raise ApiError("参考图片Data URL格式无效", 422, "image_input_invalid")
+
+    # Reject obviously oversized payloads before decoding so an authenticated
+    # caller cannot force a large temporary allocation. The exact decoded size
+    # is checked again after strict Base64 validation.
+    padding = min(len(encoded) - len(encoded.rstrip("=")), 2)
+    estimated_size = max(0, (len(encoded) * 3) // 4 - padding)
+    if maximum is not None and estimated_size > maximum:
+        raise ApiError(
+            "参考图片超过当前模型允许的单张大小",
+            422,
+            "image_input_too_large",
+            details={"maxBytes": maximum, "actualBytes": estimated_size},
+        )
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ApiError("参考图片Data URL格式无效", 422, "image_input_invalid") from error
+    actual_size = len(decoded)
+    if maximum is not None and actual_size > maximum:
+        raise ApiError(
+            "参考图片超过当前模型允许的单张大小",
+            422,
+            "image_input_too_large",
+            details={"maxBytes": maximum, "actualBytes": actual_size},
+        )
+    return actual_size
 
 
 def _contains_image_input(value: Any) -> bool:
@@ -929,14 +970,16 @@ class ProviderRelay:
                 "image_input_count_invalid",
                 details={"maxImages": maximum},
             )
+        configured_maximum = route.capabilities.get("maxInputImageBytes")
+        maximum_bytes = int(configured_maximum) if configured_maximum is not None else None
         for source in sources:
             stripped = source.strip()
-            if not stripped or len(stripped) > 2_000_000 or not (
-                stripped.startswith("https://")
-                or stripped.startswith("http://")
-                or stripped.startswith("data:image/")
+            if not stripped or not (
+                stripped.startswith("https://") or stripped.startswith("http://") or stripped.startswith("data:image/")
             ):
                 raise ApiError("参考图片必须是HTTP(S) URL或图片Data URL", 422, "image_input_invalid")
+            if stripped.startswith("data:image/"):
+                _decoded_image_data_url_size(stripped, maximum_bytes)
         return normalized
 
     def _image_upstream_payload(self, route: ModelRoute, payload: dict[str, Any]) -> dict[str, Any]:

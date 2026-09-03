@@ -5,14 +5,17 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
+SEEDREAM_MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024
+
+
 BUILTIN_MODEL_CATALOG = (
     ("deepseek-v4-flash", "DeepSeek V4 Flash", "volcengine_ark", "text", "openai_text", "deepseek-v4-flash-260425", {"chat": True, "responses": True, "stream": True}),
     ("glm-5.2", "GLM 5.2", "volcengine_ark", "text", "openai_text", "glm-5-2-260617", {"chat": True, "responses": True, "stream": True}),
-    ("seedream-5.0-pro", "Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-pro-260628", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxN": 1}),
-    ("seedream-5.0-lite", "Seedream 5.0 Lite", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-lite-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15, "outputFormat": True, "webSearch": True}),
-    ("seedream-5.0", "Seedream 5.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxN": 1, "outputFormat": True, "webSearch": True}),
-    ("seedream-4.5", "Seedream 4.5", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-5-251128", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15}),
-    ("seedream-4.0", "Seedream 4.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-0-250828", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15}),
+    ("seedream-5.0-pro", "Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-pro-260628", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "maxN": 1}),
+    ("seedream-5.0-lite", "Seedream 5.0 Lite", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-lite-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15, "outputFormat": True, "webSearch": True}),
+    ("seedream-5.0", "Seedream 5.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "maxN": 1, "outputFormat": True, "webSearch": True}),
+    ("seedream-4.5", "Seedream 4.5", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-5-251128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15}),
+    ("seedream-4.0", "Seedream 4.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-0-250828", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15}),
     ("doubao-seed-2.1-pro", "Doubao Seed 2.1 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-1-pro-260628", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.1-turbo", "Doubao Seed 2.1 Turbo", "volcengine_ark", "text", "openai_text", "doubao-seed-2-1-turbo-260628", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-pro", "Doubao Seed 2.0 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-pro-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),

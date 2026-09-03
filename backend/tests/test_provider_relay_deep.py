@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ from app.errors import ApiError
 from app.provider_relay import (
     CredentialVault,
     ModelRoute,
+    ProviderRelay,
     _loaded,
     _provider_request_id,
     _secret_hint,
@@ -26,6 +28,50 @@ def error_code(callable_value) -> str:
     with pytest.raises(ApiError) as captured:
         callable_value()
     return captured.value.code
+
+
+def image_route(**capability_overrides: object) -> ModelRoute:
+    capabilities = {
+        "imageInput": True,
+        "maxInputImages": 10,
+        "maxInputImageBytes": 10 * 1024 * 1024,
+        **capability_overrides,
+    }
+    return ModelRoute(
+        alias="seedream-test",
+        display_name="Seedream Test",
+        provider="volcengine_ark",
+        modality="image",
+        protocol="openai_image",
+        capabilities=capabilities,
+        upstream_model="seedream-test-upstream",
+        channel_id="channel",
+        channel_name="channel",
+        channel_config={},
+        credential_id="credential",
+        secret="secret-value",
+    )
+
+
+def test_seedream_data_urls_use_decoded_model_limit_not_encoded_string_length() -> None:
+    # The old two-million-character guard rejected this valid 1.6 MB image.
+    content = b"x" * 1_600_000
+    source = "data:image/jpeg;base64," + base64.b64encode(content).decode("ascii")
+    assert len(source) > 2_000_000
+    assert ProviderRelay._validated_image_sources(image_route(), source) == source
+
+    too_large = "data:image/png;base64," + base64.b64encode(b"12345").decode("ascii")
+    with pytest.raises(ApiError) as captured:
+        ProviderRelay._validated_image_sources(image_route(maxInputImageBytes=4), too_large)
+    assert captured.value.code == "image_input_too_large"
+    assert captured.value.details == {"maxBytes": 4, "actualBytes": 5}
+
+    with pytest.raises(ApiError) as malformed:
+        ProviderRelay._validated_image_sources(image_route(), "data:image/png;base64,%%%")
+    assert malformed.value.code == "image_input_invalid"
+
+    url = "https://customer.example.com/reference.png"
+    assert ProviderRelay._validated_image_sources(image_route(), url) == url
 
 
 def test_vault_and_provider_config_validation_branches(tmp_path: Path) -> None:

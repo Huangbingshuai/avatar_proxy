@@ -8,6 +8,7 @@ const nginxTemplate = readFileSync(
   "utf8",
 );
 const compose = readFileSync(resolve(root, "deploy/volcengine/compose.yaml"), "utf8");
+const edgeNginx = readFileSync(resolve(root, "deploy/volcengine/nginx.conf"), "utf8");
 
 function callbackLocation(): string {
   const start = nginxTemplate.indexOf(
@@ -73,5 +74,12 @@ describe("LocalMiniDrama WeChat callback gateway", () => {
     );
     expect(compose).toContain('"host.docker.internal:host-gateway"');
     expect(compose).not.toMatch(/lens-rhyme_default|minidrama.*network/i);
+  });
+});
+
+describe("model request body limits", () => {
+  it("does not let the user edge impose a lower Base64 limit than the HTTPS gateway", () => {
+    expect(nginxTemplate).toContain("client_max_body_size 210m;");
+    expect(edgeNginx).toContain("client_max_body_size 210m;");
   });
 });

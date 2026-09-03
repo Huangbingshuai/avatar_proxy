@@ -1043,6 +1043,13 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
                 "SELECT alias,upstream_model FROM model_catalog WHERE enabled=1"
             )
         )
+        seedream_capabilities = {
+            row["alias"]: json.loads(row["capabilities_json"])
+            for row in connection.execute(
+                "SELECT alias,capabilities_json FROM model_catalog "
+                "WHERE alias LIKE 'seedream-%' AND enabled=1"
+            )
+        }
     assert upstream_models == {
         "deepseek-v4-flash": "deepseek-v4-flash-260425",
         "glm-5.2": "glm-5-2-260617",
@@ -1066,6 +1073,11 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "seedance-1.0-pro-fast": "doubao-seedance-1-0-pro-fast-251015",
         "wan3.0-video": "wan3.0-video",
     }
+    assert seedream_capabilities
+    assert all(
+        capabilities["maxInputImageBytes"] == 10 * 1024 * 1024
+        for capabilities in seedream_capabilities.values()
+    )
     assert bindings == permissions == 0
     assert retired_status == {
         "seedance-1.0-lite-t2v": 0,

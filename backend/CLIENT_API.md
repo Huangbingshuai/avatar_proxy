@@ -330,6 +330,65 @@ curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
 
 相同业务 Key 使用相同 `Idempotency-Key` 和相同请求体会复用同一任务；同一个键对应不同请求体时返回 `409 idempotency_key_conflict`。
 
+### 10.1.1 各视频模型的字段支持
+
+对外路径保持一致，但不同供应商实际支持的素材和参数不同。客户端应先调用 `/v1/models`，只使用当前项目实际返回的模型。
+
+| 模型 | `content` | 支持的创建参数 | 当前默认值 |
+|---|---|---|---|
+| `seedance-*` | 文本；能力允许的图片、视频、音频 | `duration`、`frames`、`resolution`、`ratio`、`generate_audio`、`draft`、`seed`、`camera_fixed`、`watermark`、`return_last_frame`、`service_tier`、`execution_expires_after`、`task_type`；具体以模型能力为准 | 由对应 Seedance 模型决定 |
+| `wan3.0-video` | 文本；最多一张 HTTP(S) 首帧图片，角色必须为 `first_frame` | `duration`、`resolution`、`ratio`、`generate_audio`、`watermark` | `resolution=1080P`、`ratio=adaptive`、`generate_audio=true`；服务端固定启用提示词扩写 |
+| `minimax-h3` | 文本和 HTTP(S) 图片；总计不超过 20 项 | `duration`、`resolution`、`ratio`、`seed`、`watermark` | `resolution=768P`、`ratio=adaptive` |
+
+公共字段不代表所有模型都支持。比如给 `wan3.0-video` 传 `seed`，或给 `minimax-h3` 传 `generate_audio`，会返回 `422 video_parameter_unsupported`，不会把未知参数直接传给供应商。
+
+阿里百炼示例：
+
+```bash
+curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: wan-video-order-001" \
+  -d '{
+    "model": "wan3.0-video",
+    "content": [
+      {"type": "text", "text": "海边日出，镜头缓慢推进"},
+      {
+        "type": "image_url",
+        "image_url": {"url": "https://example.com/first-frame.jpg"},
+        "role": "first_frame"
+      }
+    ],
+    "resolution": "1080P",
+    "ratio": "16:9",
+    "duration": 8,
+    "generate_audio": false,
+    "watermark": false
+  }'
+```
+
+MiniMax 示例：
+
+```bash
+curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: minimax-video-order-001" \
+  -d '{
+    "model": "minimax-h3",
+    "content": [
+      {"type": "text", "text": "人物向镜头走来，电影感运镜"}
+    ],
+    "resolution": "768P",
+    "ratio": "adaptive",
+    "duration": 6,
+    "seed": 12,
+    "watermark": false
+  }'
+```
+
+供应商参数转换在中转站内部完成。客户不能也不需要提交阿里的 `input` / `parameters`、MiniMax 的真实任务路径或任何供应商 API Key。
+
 ### 10.2 查询任务
 
 ```bash
@@ -359,6 +418,8 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 ```
 
 状态为 `queued`、`running`、`succeeded`、`failed` 或 `cancelled`。只有创建任务的同一枚业务 Key 可以查询；同项目的另一枚 Key 也不能读取该任务。供应商结果 URL 可能过期，中转站不会自动转存 TOS，请及时下载。
+
+无论上游是火山方舟、阿里百炼还是 MiniMax，查询都使用中转站任务 ID 和上述统一响应结构。不要拿创建响应里的中转站任务 ID 直接请求供应商接口。
 
 ### 10.3 取消任务
 
@@ -573,6 +634,8 @@ curl "$BASE_URL/v1/chat/completions" \
 
 ### 13.3 图片生成
 
+Seedream 参考图片支持 HTTP(S) URL 或 `data:image/*;base64,...`。Base64 输入按解码后的真实文件大小校验，而不是按编码字符串长度估算；当前火山 Seedream 模型单张参考图上限为 10 MiB，最多 10 张。HTTP(S) 图片由火山读取并执行最终格式、尺寸和内容校验，中转站不会设置更小的文件限制。这里是生图模型的参考图规则，与素材库 `/api/asset/upload-file` 的本地文件上传规则不同；素材库还可以不上传文件，直接登记符合方舟要求的公网 HTTP(S) URL。
+
 ```bash
 curl "$BASE_URL/v1/images/generations" \
   -H "Authorization: Bearer $API_KEY" \
@@ -645,6 +708,7 @@ curl "$BASE_URL/v1/images/generations" \
 | `422` | `model_image_input_unsupported` | 当前文本或生图模型不接受参考图片 |
 | `422` | `image_input_required` | 当前图片编辑模型缺少必需的参考图片 |
 | `422` | `image_input_invalid` / `image_input_count_invalid` | 参考图片格式或数量不符合模型能力 |
+| `422` | `image_input_too_large` | Base64 参考图解码后的真实大小超过当前模型限制 |
 | `422` | `image_count_unsupported` / `image_sequence_unsupported` | 当前图片模型不支持请求的单次数量或组图参数 |
 | `422` | `image_stream_unsupported` | 当前中转图片接口不提供流式响应 |
 | `422` | `text_parameter_unsupported` / `image_parameter_unsupported` | 请求包含当前接口未开放的字段 |
