@@ -53,7 +53,7 @@ Star Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
 - 对外模型包含 `deepseek-v4-flash`、`glm-5.2`，方舟 Seedream 5.0 Pro/5.0 Lite/4.5/4.0 生图、改图模型，Doubao Seed 2.1/2.0 Vision 识图模型，方舟当前可调用的 6 个 Seedance 视频模型、阿里百炼 `wan3.0-video`、MiniMax `minimax-h3`，以及 `image2.0`。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
 
-客户 HTTP 接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。
+模型中转调用方可直接使用 [模型中转接口文档](backend/MODEL_RELAY_API.md)；素材库及完整客户接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。
 
 ### 管理员安全
 
@@ -305,6 +305,7 @@ PAYMENT_ORIGIN_HOST=drama.richbest.cn
 ## 相关文档
 
 - [客户 API 接入文档](backend/CLIENT_API.md)
+- [模型中转接口文档](backend/MODEL_RELAY_API.md)
 - [管理端计费账单 API 文档](backend/ADMIN_BILLING_API.md)
 - [多供应商模型中转实施与安全边界](backend/MULTI_PROVIDER_RELAY_PLAN.md)
 - [后端生产部署说明](backend/DEPLOYMENT.md)
