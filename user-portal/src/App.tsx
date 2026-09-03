@@ -3,7 +3,6 @@ import {
   ArrowUp,
   AtSign,
   AudioLines,
-  BarChart3,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -44,24 +43,16 @@ import {
   assetTypeOf,
   authenticateApiKey,
   cancelVideoTask,
-  clearVideoHistory,
   generateVideo,
-  getArkVideoUsage,
   getLastFrameUrl,
-  getVideoHistory,
   getVideoTask,
-  getVideoUsage,
   getVideoUrl,
-  importVideoHistory,
   isAssetActive,
-  removeVideoHistoryTask,
   type Asset,
-  type ArkUsageStats,
   type VideoTask,
-  type UsageStats,
 } from "./api";
 
-type Workspace = "create" | "library" | "models" | "tasks" | "usage";
+type Workspace = "create" | "library" | "models" | "tasks";
 type BusyAction = "generate" | "query" | "cancel" | null;
 type TaskAsset = Pick<Asset, "id" | "groupId" | "name" | "status" | "assetType" | "previewUrl">;
 
@@ -101,181 +92,7 @@ const workspaceItems: Array<{ id: Workspace; label: string; icon: typeof WandSpa
   { id: "library", label: "素材库", icon: Layers3 },
   { id: "models", label: "模型测试", icon: Sparkles },
   { id: "tasks", label: "任务记录", icon: Clock3 },
-  { id: "usage", label: "用量统计", icon: BarChart3 },
 ];
-
-function compactTokens(value: number) {
-  if (value >= 10000) return `${(value / 10000).toLocaleString("zh-CN", { maximumFractionDigits: 1 })}万`;
-  return value.toLocaleString("zh-CN");
-}
-
-function shortDate(value: string) {
-  const [, month, day] = value.split("-");
-  return `${month}/${day}`;
-}
-
-function dateInputValue(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function defaultArkUsageStart() {
-  const value = new Date();
-  value.setDate(value.getDate() - 13);
-  return dateInputValue(value);
-}
-
-function UsagePanel({ apiKey, apiKeyValid }: { apiKey: string; apiKeyValid: boolean }) {
-  const [days, setDays] = useState(14);
-  const [usage, setUsage] = useState<UsageStats | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [refreshToken, setRefreshToken] = useState(0);
-  const [arkApiKey, setArkApiKey] = useState("");
-  const [showArkApiKey, setShowArkApiKey] = useState(false);
-  const [arkStart, setArkStart] = useState(defaultArkUsageStart);
-  const [arkEnd, setArkEnd] = useState(() => dateInputValue(new Date()));
-  const [arkInterval, setArkInterval] = useState<"Day" | "Hour">("Day");
-  const [arkUsage, setArkUsage] = useState<ArkUsageStats | null>(null);
-  const [arkModelFilter, setArkModelFilter] = useState("all");
-  const [arkLoading, setArkLoading] = useState(false);
-  const [arkError, setArkError] = useState("");
-
-  const arkModelNames = useMemo(() => Array.from(new Set(
-    (arkUsage?.records ?? []).map((record) => record.modelName).filter(Boolean),
-  )).sort((left, right) => left.localeCompare(right, "zh-CN")), [arkUsage]);
-
-  const visibleArkRecords = useMemo(() => (arkUsage?.records ?? [])
-    .filter((record) => arkModelFilter === "all" || record.modelName === arkModelFilter)
-    .map((record, originalIndex) => ({ record, originalIndex }))
-    .sort((left, right) => {
-      const leftDate = left.record.date || "";
-      const rightDate = right.record.date || "";
-      if (!leftDate && rightDate) return 1;
-      if (leftDate && !rightDate) return -1;
-      const dateOrder = leftDate.localeCompare(rightDate);
-      if (dateOrder !== 0) return dateOrder;
-      const modelOrder = left.record.modelName.localeCompare(right.record.modelName, "zh-CN");
-      if (modelOrder !== 0) return modelOrder;
-      return left.originalIndex - right.originalIndex;
-    })
-    .map(({ record }) => record), [arkModelFilter, arkUsage]);
-
-  useEffect(() => {
-    if (!apiKeyValid) return undefined;
-    let disposed = false;
-    async function loadUsage() {
-      await Promise.resolve();
-      if (disposed) return;
-      setUsage(null);
-      setLoading(true);
-      setLoadError("");
-      try {
-        const result = await getVideoUsage(apiKey, days);
-        if (!disposed) setUsage(result);
-      } catch (caught) {
-        if (!disposed) setLoadError(caught instanceof Error ? caught.message : "用量加载失败");
-      } finally {
-        if (!disposed) setLoading(false);
-      }
-    }
-    void loadUsage();
-    return () => { disposed = true; };
-  }, [apiKey, apiKeyValid, days, refreshToken]);
-
-  async function queryArkUsage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const key = arkApiKey.trim();
-    setArkError("");
-    setArkUsage(null);
-    setArkModelFilter("all");
-    if (!key) {
-      setArkError("请输入火山方舟 API Key");
-      return;
-    }
-    if (!arkStart || !arkEnd || arkEnd < arkStart) {
-      setArkError("请选择有效的开始和结束日期");
-      return;
-    }
-    const rangeDays = Math.round((Date.parse(arkEnd) - Date.parse(arkStart)) / 86_400_000);
-    if (rangeDays > 31) {
-      setArkError("单次最多查询 31 天");
-      return;
-    }
-    setArkLoading(true);
-    try {
-      setArkUsage(await getArkVideoUsage(apiKey, key, arkStart, arkEnd, arkInterval));
-    } catch (caught) {
-      setArkError(caught instanceof Error ? caught.message : "方舟用量查询失败");
-    } finally {
-      setArkLoading(false);
-    }
-  }
-
-  if (!apiKeyValid) return <div className="officialEmpty usageLocked"><KeyRound size={28} /><b>请先连接服务</b><p>输入业务 API Key 后，仅显示这个 Key 的视频生成用量。</p></div>;
-
-  const summary = usage?.summary || { inputTokens: 0, outputTokens: 0, totalTokens: 0, requestCount: 0 };
-  const daily = usage?.daily || [];
-  const maxTokens = Math.max(1, ...daily.map((item) => item.totalTokens));
-  const range = daily.length ? `${daily[0].date} — ${daily[daily.length - 1].date}` : "正在读取统计区间";
-
-  return <section className="usageWorkspace" aria-labelledby="usage-title">
-    <div className="usageHeader">
-      <div><span className="usageEyebrow">CURRENT API KEY</span><h1 id="usage-title">用量统计</h1><p>按视频任务去重统计，任务完成并刷新状态后更新 token 用量。</p></div>
-      <div className="usageControls"><span className="usageRange">{range}</span><div className="usagePeriod" aria-label="统计周期">{[7, 14, 30].map((value) => <button key={value} type="button" className={days === value ? "active" : ""} onClick={() => setDays(value)}>{value}天</button>)}</div><button type="button" className="usageRefresh" disabled={loading} onClick={() => setRefreshToken((value) => value + 1)} aria-label="刷新用量">{loading ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}</button></div>
-    </div>
-    {loadError ? <div className="officialMessage error" role="alert"><CircleAlert size={17} /><span>{loadError}</span></div> : null}
-    <div className="usageCard">
-      <div className="usageMetrics">
-        <article className="usageMetric primaryMetric"><span>调用总量 tokens</span><strong>{compactTokens(summary.totalTokens)}</strong></article>
-        <article className="usageMetric"><span>输出 tokens</span><strong>{compactTokens(summary.outputTokens)}</strong></article>
-        <article className="usageMetric"><span>调用次数</span><strong>{summary.requestCount.toLocaleString("zh-CN")}</strong></article>
-      </div>
-      <div className="usageChartHead"><span>单位：tokens</span><span><i />每日用量</span></div>
-      <div className="usageChart" role="img" aria-label={`${days}天 token 用量柱状图`}>
-        <div className="usageGridLines" aria-hidden="true"><i /><i /><i /><i /></div>
-        <div className="usageBars">{daily.map((item, index) => {
-          const height = item.totalTokens ? Math.max(4, item.totalTokens / maxTokens * 100) : 0;
-          const showLabel = days <= 14 || index % 3 === 0 || index === daily.length - 1;
-          return <div className="usageBarSlot" key={item.date} title={`${item.date}：${item.totalTokens.toLocaleString("zh-CN")} tokens`}><div className="usageBarTrack"><span style={{ height: `${height}%` }} /></div><small>{showLabel ? shortDate(item.date) : ""}</small></div>;
-        })}</div>
-      </div>
-      {!loading && summary.requestCount === 0 ? <div className="usageEmptyNote"><BarChart3 size={18} /><span>这个周期还没有视频生成记录；创建任务后会从这里开始累计。</span></div> : null}
-    </div>
-    <section className="arkUsageCard" aria-labelledby="ark-usage-title">
-      <div className="arkUsageHeading">
-        <div><span className="usageEyebrow">VOLCENGINE ARK</span><h2 id="ark-usage-title">查询火山方舟 Key 用量</h2><p>查询这个方舟 Key 直接调用 Seedance 产生的聚合用量，与上方业务 Key 统计相互独立。</p></div>
-        <span className="arkPrivacyBadge"><ShieldCheck size={15} />仅随本次请求发送</span>
-      </div>
-      <form className="arkUsageForm" onSubmit={queryArkUsage}>
-        <label className="arkKeyField"><span>方舟 API Key</span><div><input type={showArkApiKey ? "text" : "password"} value={arkApiKey} onChange={(event) => setArkApiKey(event.target.value)} placeholder="请输入客户自己的方舟 API Key" autoComplete="off" spellCheck={false} aria-describedby="ark-key-security" /><button type="button" onClick={() => setShowArkApiKey((value) => !value)} aria-label={showArkApiKey ? "隐藏方舟 API Key" : "显示方舟 API Key"}>{showArkApiKey ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
-        <label><span>开始日期</span><input type="date" value={arkStart} max={arkEnd} onChange={(event) => setArkStart(event.target.value)} /></label>
-        <label><span>结束日期</span><input type="date" value={arkEnd} min={arkStart} onChange={(event) => setArkEnd(event.target.value)} /></label>
-        <label><span>统计粒度</span><select value={arkInterval} onChange={(event) => setArkInterval(event.target.value as "Day" | "Hour")}><option value="Day">按天</option><option value="Hour">按小时</option></select></label>
-        <button className="primaryButton arkUsageSubmit" type="submit" disabled={arkLoading}>{arkLoading ? <LoaderCircle size={16} className="spin" /> : <BarChart3 size={16} />}{arkLoading ? "查询中" : "查询用量"}</button>
-      </form>
-      <p className="arkSecurityNote" id="ark-key-security"><KeyRound size={14} />系统会先校验方舟 Key 与当前业务 Key 属于同一个火山项目；完整 Key 不会写入浏览器存储或本系统数据库，响应只显示末 12 位。聚合数据通常延迟 5～30 分钟，且不包含人民币账单金额。</p>
-      {arkError ? <div className="officialMessage error" role="alert"><CircleAlert size={17} /><span>{arkError}</span></div> : null}
-      {arkUsage ? <div className="arkUsageResult">
-        <div className="arkUsageResultHead"><div><span>查询结果</span><strong>Key ····{arkUsage.keySuffix}</strong></div><span>{arkUsage.start} — {arkUsage.end} · {arkUsage.interval === "Day" ? "按天" : "按小时"}</span></div>
-        <div className="arkUsageMetrics">
-          <article><span>总 tokens</span><strong>{compactTokens(arkUsage.summary.totalTokens)}</strong></article>
-          <article><span>输出 tokens</span><strong>{compactTokens(arkUsage.summary.outputTokens)}</strong></article>
-          <article><span>调用次数</span><strong>{arkUsage.summary.requestCount.toLocaleString("zh-CN")}</strong></article>
-        </div>
-        {arkUsage.records.length ? <>
-          <div className="arkUsageTableToolbar">
-            <label><span>模型名称</span><select value={arkModelFilter} onChange={(event) => setArkModelFilter(event.target.value)}><option value="all">全部模型</option>{arkModelNames.map((modelName) => <option value={modelName} key={modelName}>{modelName}</option>)}</select></label>
-            <span>共 {visibleArkRecords.length} 条 · 时间升序</span>
-          </div>
-          <div className="arkUsageTableWrap"><table className="arkUsageTable"><thead><tr><th>时间</th><th>Seedance 模型</th><th>接入点</th><th>调用次数</th><th>总 tokens</th></tr></thead><tbody>{visibleArkRecords.map((record, index) => <tr key={`${record.date || "unknown"}-${record.modelName}-${record.endpointId || index}`}><td>{record.date || "—"}</td><td>{record.modelName}</td><td>{record.endpointId || "—"}</td><td>{record.requestCount.toLocaleString("zh-CN")}</td><td>{record.totalTokens.toLocaleString("zh-CN")}</td></tr>)}</tbody></table></div>
-        </> : <div className="usageEmptyNote arkUsageEmpty"><BarChart3 size={18} /><span>查询区间内没有匹配到这个 Key 的 Seedance 聚合用量。</span></div>}
-      </div> : null}
-    </section>
-  </section>;
-}
 
 function readTaskAssets(value: unknown): TaskAsset[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -346,14 +163,7 @@ function readTaskHistory(apiKey: string): TaskRecord[] {
 }
 
 async function loadPersistentTaskHistory(apiKey: string) {
-  const cached = readTaskHistory(apiKey);
-  if (cached.length) await importVideoHistory(cached, apiKey);
-  try {
-    const response = await getVideoHistory(apiKey);
-    return response.tasks as TaskRecord[];
-  } catch {
-    return cached;
-  }
+  return readTaskHistory(apiKey);
 }
 
 function taskLabel(status?: string) {
@@ -976,8 +786,8 @@ function App() {
     if (!keyValid) return setError("请先填写有效的业务 API Key");
     if (!hasPrompt) return setError("请至少输入两个字描述要生成的视频");
     if (!selectedAssetsReady) return setError("所选素材中有暂不可用的内容，请重新选择");
-    if (selectedAssets.some((asset) => assetTypeOf(asset) !== "Image") && !model.includes("seedance-2-0")) {
-      return setError("视频和音频参考素材仅支持 Seedance 2.0，请先切换模型");
+    if (selectedAssets.some((asset) => assetTypeOf(asset) !== "Image") && !model.startsWith("seedance-2.")) {
+      return setError("视频和音频参考素材仅支持 Seedance 2.x，请先切换模型");
     }
     setBusy("generate");
     let createdCount = 0;
@@ -1080,32 +890,19 @@ function App() {
     void queryTask(record.id);
   }
 
-  async function removeTask(record: TaskRecord) {
+  function removeTask(record: TaskRecord) {
     if (!window.confirm("从任务记录中移除这条视频？已生成的视频文件不会被删除。")) return;
-    try {
-      await removeVideoHistoryTask(record.id, normalizedKey);
-      persistTaskHistory((current) => current.filter((item) => item.id !== record.id));
-      setConversationTaskIds((current) => current.filter((id) => id !== record.id));
-      setDetailTaskId(null);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "移除任务记录失败");
-    }
+    persistTaskHistory((current) => current.filter((item) => item.id !== record.id));
+    setConversationTaskIds((current) => current.filter((id) => id !== record.id));
+    setDetailTaskId(null);
   }
 
-  async function clearTaskHistory() {
+  function clearTaskHistory() {
     if (!window.confirm("清空当前 API Key 的全部任务记录？已生成的视频文件不会被删除。")) return;
-    setHistoryRefreshing(true);
-    try {
-      await clearVideoHistory(normalizedKey);
-      persistTaskHistory([]);
-      setConversationTaskIds([]);
-      setCurrentTask(null);
-      setDetailTaskId(null);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "清空任务记录失败");
-    } finally {
-      setHistoryRefreshing(false);
-    }
+    persistTaskHistory([]);
+    setConversationTaskIds([]);
+    setCurrentTask(null);
+    setDetailTaskId(null);
   }
 
   if (authStatus !== "signed-in") {
@@ -1235,7 +1032,7 @@ function App() {
         {workspace === "models" ? <ModelPlayground apiKey={normalizedKey} apiKeyValid={keyValid} /> : null}
 
         {workspace === "tasks" ? <section className="officialSection taskSection" aria-labelledby="tasks-title">
-          <div className="sectionTitleRow"><div><h1 id="tasks-title">任务记录</h1><p>任务保存在服务端，使用同一个 API Key 登录即可继续查看。</p></div><div className="taskHeaderActions"><button type="button" className="secondaryButton" disabled={!keyValid || historyRefreshing} onClick={() => setHistoryRefreshToken((value) => value + 1)}>{historyRefreshing ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}刷新状态</button>{taskHistory.length ? <button type="button" className="quietDanger" disabled={historyRefreshing} onClick={() => void clearTaskHistory()}><Trash2 size={14} />清空</button> : null}</div></div>
+          <div className="sectionTitleRow"><div><h1 id="tasks-title">任务记录</h1><p>任务索引保存在当前浏览器，任务状态通过中转站实时查询。</p></div><div className="taskHeaderActions"><button type="button" className="secondaryButton" disabled={!keyValid || historyRefreshing} onClick={() => setHistoryRefreshToken((value) => value + 1)}>{historyRefreshing ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}刷新状态</button>{taskHistory.length ? <button type="button" className="quietDanger" disabled={historyRefreshing} onClick={clearTaskHistory}><Trash2 size={14} />清空</button> : null}</div></div>
           {!keyValid ? <div className="officialEmpty"><KeyRound size={28} /><b>请先连接服务</b><p>输入业务 API Key 后会自动加载对应项目的任务状态。</p></div> : null}
           {keyValid && !taskHistory.length ? <div className="officialEmpty"><Video size={30} /><b>还没有视频任务</b><p>创建的视频会自动出现在这里。</p><button type="button" className="primaryButton" onClick={() => changeWorkspace("create")}><Play size={15} />创建视频</button></div> : null}
           {keyValid && taskHistory.length ? <div className="taskListLayout"><div className="officialTaskList">{taskHistory.map((record) => {
@@ -1244,7 +1041,6 @@ function App() {
           })}</div><ResultPanel task={currentTask} busy={busy} onRefresh={(id) => void queryTask(id)} onCancel={() => void cancelTask()} /></div> : null}
         </section> : null}
 
-        {workspace === "usage" ? <UsagePanel apiKey={normalizedKey} apiKeyValid={keyValid} /> : null}
       </main>
       <footer className="officialFooter"><span>瑞池创作空间</span><p>素材与视频任务按项目隔离</p></footer>
     </div>

@@ -1,10 +1,9 @@
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Header, Request
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..errors import ApiError
-from ..schemas import OpenAIVideoRequest
 from ..security import PrincipalDependency
 
 
@@ -140,38 +139,3 @@ async def images_generations(
         principal, alias, payload, idempotency_key
     )
     return JSONResponse(content=data)
-
-
-@router.post("/videos")
-async def create_video(
-    payload: OpenAIVideoRequest,
-    request: Request,
-    principal: PrincipalDependency,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-):
-    if idempotency_key is not None and not (1 <= len(idempotency_key) <= 128):
-        raise ApiError("Idempotency-Key长度无效", 422, "idempotency_key_invalid")
-    body = payload.model_dump(by_alias=False, exclude_none=True)
-    data = await request.app.state.provider_relay.create_video(
-        principal, payload.model, body, idempotency_key
-    )
-    return JSONResponse(status_code=202, content=data)
-
-
-@router.get("/videos/{task_id}")
-async def get_video(task_id: str, request: Request, principal: PrincipalDependency):
-    return await request.app.state.provider_relay.refresh_video(principal, task_id)
-
-
-@router.get("/videos/{task_id}/content")
-def get_video_content(task_id: str, request: Request, principal: PrincipalDependency):
-    return RedirectResponse(
-        request.app.state.provider_relay.content_url(principal, task_id), status_code=307
-    )
-
-
-@router.head("/videos/{task_id}/content")
-def head_video_content(task_id: str, request: Request, principal: PrincipalDependency):
-    return RedirectResponse(
-        request.app.state.provider_relay.content_url(principal, task_id), status_code=307
-    )

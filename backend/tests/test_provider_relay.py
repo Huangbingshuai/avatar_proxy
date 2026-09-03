@@ -288,65 +288,6 @@ def test_image_idempotency_prevents_duplicates_and_conflicts(tmp_path: Path) -> 
     assert calls == task_count == usage == 1
 
 
-def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp_path: Path) -> None:
-    auth_headers: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        auth_headers.append(request.headers["authorization"])
-        if request.method == "POST":
-            assert request.url.host == "workspace-a.cn-beijing.maas.aliyuncs.com"
-            assert request.headers["x-dashscope-async"] == "enable"
-            payload = json.loads(request.content)
-            assert payload["model"] == "wan3.0-video"
-            return httpx.Response(200, json={"output": {"task_id": "ali-task-1"}})
-        return httpx.Response(
-            200,
-            json={
-                "output": {
-                    "task_status": "SUCCEEDED",
-                    "video_url": "https://video.example.com/result.mp4",
-                    "video_duration": 8,
-                }
-            },
-        )
-
-    with relay_client(tmp_path) as client:
-        key_id, secret, channel = provision(
-            client,
-            provider="aliyun_bailian",
-            alias="wan3.0-video",
-            upstream_model="ignored-model",
-            config={"workspaceId": "workspace-a", "region": "cn-beijing"},
-        )
-        relay = client.app.state.provider_relay
-        relay.transport = httpx.MockTransport(handler)
-        headers = {"Authorization": f"Bearer {secret}", "Idempotency-Key": "video-one"}
-        created = client.post(
-            "/v1/videos",
-            headers=headers,
-            json={"model": "wan3.0-video", "prompt": "ocean", "duration": 8},
-        )
-        relay.rotate_channel_secret(channel["id"], "new-aliyun-secret-abcdefgh", "owner")
-        finished = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
-        repeated = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
-        content = client.head(f"/v1/videos/{created.json()['id']}/content", headers=headers, follow_redirects=False)
-        with client.app.state.database.connect() as connection:
-            usage_count = connection.execute("SELECT COUNT(*) FROM inference_usage").fetchone()[0]
-            task = dict(connection.execute("SELECT * FROM inference_tasks").fetchone())
-
-    assert created.status_code == 202
-    assert set(created.json()) == {"id", "object", "model", "status", "progress", "created_at"}
-    assert created.json()["model"] == "wan3.0-video"
-    assert finished.json()["status"] == repeated.json()["status"] == "succeeded"
-    assert content.status_code == 307
-    assert content.headers["location"] == "https://video.example.com/result.mp4"
-    assert auth_headers == ["Bearer secret-aliyun_bailian-abcdefgh"] * 2
-    assert usage_count == 1
-    assert task["credential_id"] != relay.get_channel(channel["id"])["credentialId"]
-    assert task["upstream_model"] == "wan3.0-video"
-    assert key_id == task["api_key_id"]
-
-
 @pytest.mark.parametrize(
     ("alias", "upstream_model"),
     [
@@ -569,18 +510,26 @@ def test_all_volcengine_video_models_submit_and_refresh(
         headers = {"Authorization": f"Bearer {secret}"}
         payload: dict[str, object] = {
             "model": alias,
-            "prompt": "sunrise over the sea",
+            "content": [{"type": "text", "text": "sunrise over the sea"}],
             "duration": 5,
         }
         if image:
-            payload["image"] = image
-        created = client.post("/v1/videos", headers=headers, json=payload)
-        finished = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
+            payload["content"].append({
+                "type": "image_url",
+                "image_url": {"url": image},
+                "role": "first_frame",
+            })
+        created = client.post("/api/v3/contents/generations/tasks", headers=headers, json=payload)
+        finished = client.get(
+            f"/api/v3/contents/generations/tasks/{created.json()['id']}", headers=headers
+        )
 
-    assert created.status_code == 202
+    assert created.status_code == 200
+    assert set(created.json()) == {"id"}
     assert finished.status_code == 200
     assert finished.json()["status"] == "succeeded"
-    assert finished.json()["url"] == "https://video.example.com/seedance.mp4"
+    assert finished.json()["model"] == alias
+    assert finished.json()["content"]["video_url"] == "https://video.example.com/seedance.mp4"
     assert [request.url.path for request in requests] == [
         "/api/v3/contents/generations/tasks",
         "/api/v3/contents/generations/tasks/cgt-test",
@@ -606,31 +555,28 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
         relay.transport = httpx.MockTransport(handler)
         headers = {"Authorization": f"Bearer {secret}"}
         pro_15 = client.post(
-            "/v1/videos",
+            "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
                 "model": "seedance-1.5-pro",
-                "prompt": "ignored because native content is supplied",
                 "duration": 6,
                 "seed": 42,
-                "metadata": {
-                    "content": [
-                        {"type": "text", "text": "cinematic sunrise"},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": "asset://asset-example"},
-                            "role": "first_frame",
-                        },
-                    ],
-                    "resolution": "1080p",
-                    "ratio": "16:9",
-                    "generate_audio": True,
-                    "draft": True,
-                    "watermark": False,
-                    "return_last_frame": True,
-                    "service_tier": "flex",
-                    "execution_expires_after": 3600,
-                },
+                "content": [
+                    {"type": "text", "text": "cinematic sunrise"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "asset://asset-example"},
+                        "role": "first_frame",
+                    },
+                ],
+                "resolution": "1080p",
+                "ratio": "16:9",
+                "generate_audio": True,
+                "draft": True,
+                "watermark": False,
+                "return_last_frame": True,
+                "service_tier": "flex",
+                "execution_expires_after": 3600,
             },
         )
 
@@ -640,22 +586,20 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
             "admin",
         )
         pro_10 = client.post(
-            "/v1/videos",
+            "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
                 "model": "seedance-1.0-pro",
-                "prompt": "fixed camera",
-                "metadata": {
-                    "frames": 29,
-                    "resolution": "720p",
-                    "ratio": "adaptive",
-                    "camera_fixed": True,
-                    "service_tier": "default",
-                },
+                "content": [{"type": "text", "text": "fixed camera"}],
+                "frames": 29,
+                "resolution": "720p",
+                "ratio": "adaptive",
+                "camera_fixed": True,
+                "service_tier": "default",
             },
         )
 
-    assert pro_15.status_code == pro_10.status_code == 202
+    assert pro_15.status_code == pro_10.status_code == 200
     assert submitted == [
         {
             "model": "doubao-seedance-1-5-pro-251215",
@@ -690,6 +634,96 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
     ]
 
 
+def test_ark_native_video_contract_is_owned_idempotent_and_cancellable(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "POST":
+            payload = json.loads(request.content)
+            assert payload["model"] == "doubao-seedance-2-5-260628"
+            assert payload["task_type"] == "i2v"
+            assert payload["content"] == [
+                {"type": "text", "text": "RichiDrama native request"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,AA=="},
+                    "role": "reference_image",
+                },
+                {
+                    "type": "video_url",
+                    "video_url": {"url": "asset://asset-video"},
+                    "role": "reference_video",
+                },
+                {
+                    "type": "audio_url",
+                    "audio_url": {"url": "data:audio/wav;base64,AA=="},
+                    "role": "reference_audio",
+                },
+            ]
+            return httpx.Response(200, json={"id": "cgt-native"})
+        return httpx.Response(204)
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias="seedance-2.5",
+            upstream_model="ignored-model",
+        )
+        _, other_secret = create_key(client, "relay_project", "other-key")
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        headers = {
+            "Authorization": f"Bearer {secret}",
+            "Idempotency-Key": "richidrama-video-1",
+        }
+        payload = {
+            "model": "seedance-2.5",
+            "content": [
+                {"type": "text", "text": "RichiDrama native request"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,AA=="},
+                    "role": "reference_image",
+                },
+                {
+                    "type": "video_url",
+                    "video_url": {"url": "asset://asset-video"},
+                    "role": "reference_video",
+                },
+                {
+                    "type": "audio_url",
+                    "audio_url": {"url": "data:audio/wav;base64,AA=="},
+                    "role": "reference_audio",
+                },
+            ],
+            "task_type": "i2v",
+            "duration": 5,
+        }
+        created = client.post("/api/v3/contents/generations/tasks", headers=headers, json=payload)
+        replayed = client.post("/api/v3/contents/generations/tasks", headers=headers, json=payload)
+        forbidden = client.get(
+            f"/api/v3/contents/generations/tasks/{created.json()['id']}",
+            headers={"Authorization": f"Bearer {other_secret}"},
+        )
+        cancelled = client.delete(
+            f"/api/v3/contents/generations/tasks/{created.json()['id']}", headers=headers
+        )
+        legacy_fixed = client.post("/api/video/generate", headers=headers, json=payload)
+        legacy_openai = client.post("/v1/videos", headers=headers, json=payload)
+
+    assert created.status_code == replayed.status_code == 200
+    assert created.json() == replayed.json()
+    assert forbidden.status_code == 404
+    assert cancelled.status_code == 204
+    assert legacy_fixed.status_code == legacy_openai.status_code == 404
+    assert [request.method for request in requests] == ["POST", "DELETE"]
+    assert [request.url.path for request in requests] == [
+        "/api/v3/contents/generations/tasks",
+        "/api/v3/contents/generations/tasks/cgt-native",
+    ]
+
+
 def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
     with relay_client(tmp_path) as client:
         _, secret, channel = provision(
@@ -701,24 +735,24 @@ def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
         headers = {"Authorization": f"Bearer {secret}"}
         relay = client.app.state.provider_relay
         unsupported_resolution = client.post(
-            "/v1/videos",
+            "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
                 "model": "seedance-2.0-fast",
-                "prompt": "x",
+                "content": [{"type": "text", "text": "x"}],
                 "duration": 5,
-                "metadata": {"resolution": "1080p"},
+                "resolution": "1080p",
             },
         )
         assert unsupported_resolution.json()["error"]["code"] == "video_resolution_invalid"
         fixed_camera_20 = client.post(
-            "/v1/videos",
+            "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
                 "model": "seedance-2.0-fast",
-                "prompt": "x",
+                "content": [{"type": "text", "text": "x"}],
                 "duration": 5,
-                "metadata": {"camera_fixed": True},
+                "camera_fixed": True,
             },
         )
         assert fixed_camera_20.json()["error"]["code"] == "video_camera_unsupported"
@@ -729,75 +763,22 @@ def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
             "admin",
         )
         invalid_frames = client.post(
-            "/v1/videos",
+            "/api/v3/contents/generations/tasks",
             headers=headers,
-            json={"model": "seedance-1.0-pro", "prompt": "x", "metadata": {"frames": 30}},
+            json={"model": "seedance-1.0-pro", "content": [{"type": "text", "text": "x"}], "frames": 30},
         )
         unsupported_audio = client.post(
-            "/v1/videos",
+            "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
                 "model": "seedance-1.0-pro",
-                "prompt": "x",
+                "content": [{"type": "text", "text": "x"}],
                 "duration": 5,
-                "metadata": {"generate_audio": True},
+                "generate_audio": True,
             },
         )
         assert invalid_frames.json()["error"]["code"] == "video_frames_invalid"
         assert unsupported_audio.json()["error"]["code"] == "video_audio_unsupported"
-
-
-def test_minimax_payload_status_and_forbidden_override(tmp_path: Path) -> None:
-    requests: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        if request.method == "POST":
-            payload = json.loads(request.content)
-            assert payload["model"] == "MiniMax-H3"
-            assert payload["content"][0] == {"type": "text", "text": "camera move"}
-            return httpx.Response(200, json={"task_id": "mini-task"})
-        return httpx.Response(
-            200,
-            json={
-                "task": {
-                    "status": "succeeded",
-                    "content": {"url": "https://mini.example.com/video.mp4"},
-                    "usage": {"output_seconds": 6},
-                }
-            },
-        )
-
-    with relay_client(tmp_path) as client:
-        _, secret, _ = provision(
-            client,
-            provider="minimax",
-            alias="minimax-h3",
-            upstream_model="MiniMax-H3",
-        )
-        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
-        headers = {"Authorization": f"Bearer {secret}"}
-        forbidden = client.post(
-            "/v1/videos",
-            headers=headers,
-            json={"model": "minimax-h3", "prompt": "x", "base_url": "http://127.0.0.1"},
-        )
-        created = client.post(
-            "/v1/videos",
-            headers=headers,
-            json={"model": "minimax-h3", "prompt": "camera move", "duration": 6},
-        )
-        finished = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
-
-    assert forbidden.status_code == 422
-    assert forbidden.json()["error"]["code"] == "invalid_request_parameter"
-    assert forbidden.json()["error"]["param"] == "base_url"
-    assert created.status_code == 202
-    assert finished.json()["url"] == "https://mini.example.com/video.mp4"
-    assert [request.url.path for request in requests] == [
-        "/v2/video_generation",
-        "/v2/query/video_generation/mini-task",
-    ]
 
 
 def test_channel_delete_protection_and_business_admin_cannot_manage_secrets(tmp_path: Path) -> None:

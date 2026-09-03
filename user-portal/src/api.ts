@@ -2,7 +2,7 @@ export const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
-export const DEFAULT_MODEL = "doubao-seedance-2-0-260128";
+export const DEFAULT_MODEL = "seedance-2.0";
 
 export type VideoModelOption = {
   id: string;
@@ -10,9 +10,13 @@ export type VideoModelOption = {
 };
 
 const DEFAULT_VIDEO_MODELS: VideoModelOption[] = [
-  { id: "doubao-seedance-2-0-260128", label: "Doubao-Seedance-2.0" },
-  { id: "doubao-seedance-1-5-pro-251215", label: "Seedance-1.5-Pro" },
-  { id: "doubao-seedance-1-0-pro-250528", label: "Seedance-1.0-Pro" },
+  { id: "seedance-2.5", label: "Doubao-Seedance-2.5" },
+  { id: "seedance-2.0", label: "Doubao-Seedance-2.0" },
+  { id: "seedance-2.0-fast", label: "Doubao-Seedance-2.0-Fast" },
+  { id: "seedance-2.0-mini", label: "Doubao-Seedance-2.0-Mini" },
+  { id: "seedance-1.5-pro", label: "Seedance-1.5-Pro" },
+  { id: "seedance-1.0-pro", label: "Seedance-1.0-Pro" },
+  { id: "seedance-1.0-pro-fast", label: "Seedance-1.0-Pro-Fast" },
 ];
 
 function readVideoModels(): VideoModelOption[] {
@@ -43,53 +47,6 @@ export type VideoTask = {
   output?: { video_url?: string; last_frame_url?: string };
   video_url?: string;
   last_frame_url?: string;
-};
-
-export type UsageDay = {
-  date: string;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  requestCount: number;
-};
-
-export type UsageStats = {
-  summary: Omit<UsageDay, "date">;
-  daily: UsageDay[];
-};
-
-export type ArkUsageMetric = number;
-
-export type ArkUsageRecord = {
-  date?: string;
-  modelName: string;
-  modelUnitId?: string;
-  endpointId?: string;
-  inputTokens: ArkUsageMetric;
-  outputTokens: ArkUsageMetric;
-  totalTokens: ArkUsageMetric;
-  requestCount: ArkUsageMetric;
-  metrics?: Record<string, ArkUsageMetric>;
-};
-
-export type ArkUsageStats = {
-  source: "volcengine_ark";
-  scope: "ark_api_key";
-  keySuffix: string;
-  start: string;
-  end: string;
-  interval: "Day" | "Hour";
-  dataDelayMinutes: { min: number; max: number };
-  billingAmountIncluded: false;
-  summary: {
-    inputTokens: ArkUsageMetric;
-    outputTokens: ArkUsageMetric;
-    totalTokens: ArkUsageMetric;
-    requestCount: ArkUsageMetric;
-    metrics: Record<string, ArkUsageMetric>;
-  };
-  records: ArkUsageRecord[];
-  upstreamRequestId?: string;
 };
 
 export type ApiSession = {
@@ -132,26 +89,6 @@ export type VideoGeneratePayload = {
     durationMode?: "seconds" | "smart";
     generationCount?: number;
   };
-};
-
-export type VideoHistoryRecord = {
-  id: string;
-  createdAt: number;
-  prompt: string;
-  promptDocument?: string;
-  assetName?: string;
-  assetNames?: string[];
-  assets?: Array<Pick<Asset, "id" | "groupId" | "name" | "status" | "assetType" | "previewUrl">>;
-  model?: string;
-  ratio?: string;
-  duration?: number;
-  durationMode?: "seconds" | "smart";
-  resolution?: string;
-  generationCount?: number;
-  generateAudio?: boolean;
-  status?: string;
-  videoUrl?: string;
-  lastFrameUrl?: string;
 };
 
 export type AssetType = "Image" | "Video" | "Audio";
@@ -551,15 +488,23 @@ export function testRelayVideo(
   payload: { model: string; prompt: string; image?: string; duration?: number },
   idempotencyKey: string,
 ) {
-  return relayRequest("/v1/videos", apiKey, {
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: payload.prompt }];
+  if (payload.image) {
+    content.push({ type: "image_url", image_url: { url: payload.image }, role: "first_frame" });
+  }
+  return relayRequest("/api/v3/contents/generations/tasks", apiKey, {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ ...payload, n: 1, response_format: "url" }),
+    body: JSON.stringify({
+      model: payload.model,
+      content,
+      ...(payload.duration != null ? { duration: payload.duration } : {}),
+    }),
   });
 }
 
 export function getRelayVideoTask(apiKey: string, taskId: string) {
-  return relayRequest(`/v1/videos/${encodeURIComponent(taskId)}`, apiKey);
+  return relayRequest(`/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`, apiKey);
 }
 
 async function apiRead<T>(path: string, apiKey: string): Promise<T> {
@@ -795,54 +740,24 @@ export function assetContentItem(asset: ReferenceAsset): Record<string, unknown>
 }
 
 export function generateVideo(payload: VideoGeneratePayload, apiKey: string) {
-  return apiRequest<VideoTask>("/api/video/generate", apiKey, {
+  const { metadata: _localMetadata, generateAudio, returnLastFrame, ...nativePayload } = payload;
+  void _localMetadata;
+  return apiRequest<VideoTask>("/api/v3/contents/generations/tasks", apiKey, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      ...nativePayload,
+      generate_audio: generateAudio,
+      return_last_frame: returnLastFrame,
+    }),
   });
 }
 
 export function getVideoTask(taskId: string, apiKey: string, signal?: AbortSignal) {
-  return apiRequest<VideoTask>(`/api/video/task/${encodeURIComponent(taskId)}`, apiKey, { signal });
-}
-
-export function getVideoHistory(apiKey: string, limit = 100) {
-  return apiRequest<{ tasks: VideoHistoryRecord[] }>(`/api/video/history?limit=${limit}`, apiKey);
-}
-
-export function importVideoHistory(tasks: VideoHistoryRecord[], apiKey: string) {
-  return apiRequest<{ imported: number }>("/api/video/history/import", apiKey, {
-    method: "POST",
-    body: JSON.stringify({ tasks }),
-  });
-}
-
-export function removeVideoHistoryTask(taskId: string, apiKey: string) {
-  return apiRequest<{ removed: boolean }>(`/api/video/history/${encodeURIComponent(taskId)}`, apiKey, { method: "DELETE" });
-}
-
-export function clearVideoHistory(apiKey: string) {
-  return apiRequest<{ removed: number }>("/api/video/history", apiKey, { method: "DELETE" });
-}
-
-export function getVideoUsage(apiKey: string, days = 14) {
-  return apiRequest<UsageStats>(`/api/video/usage?days=${days}`, apiKey);
-}
-
-export function getArkVideoUsage(
-  apiKey: string,
-  arkApiKey: string,
-  start: string,
-  end: string,
-  interval: "Day" | "Hour" = "Day",
-) {
-  const parameters = new URLSearchParams({ start, end, interval });
-  return apiRequest<ArkUsageStats>(`/api/video/ark-usage?${parameters.toString()}`, apiKey, {
-    headers: { "X-Ark-Api-Key": arkApiKey.trim() },
-  });
+  return apiRequest<VideoTask>(`/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`, apiKey, { signal });
 }
 
 export function cancelVideoTask(taskId: string, apiKey: string) {
-  return apiRequest<void>(`/api/video/task/${encodeURIComponent(taskId)}/cancel`, apiKey, { method: "POST" });
+  return apiRequest<void>(`/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`, apiKey, { method: "DELETE" });
 }
 
 export function getVideoUrl(task: VideoTask | null) {

@@ -16,8 +16,7 @@ from .errors import install_error_handlers
 from .maintenance import MaintenanceGate
 from .provider_relay import ProviderRelay
 from .quota import QuotaManager
-from .routers import admin, assets, auth, billing, internal, openai_compat, providers, video
-from .seedance import SeedanceClient
+from .routers import admin, ark_compat, assets, auth, billing, internal, openai_compat, providers
 from .storage import TosStorage
 from .system_monitor import DiskMonitor
 from .volcengine import VolcengineClient
@@ -45,7 +44,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.billing = BillingManager(database)
         app.state.provider_relay = ProviderRelay(resolved, database)
         app.state.volcengine = volcengine
-        app.state.seedance = SeedanceClient(resolved, database)
         app.state.storage = TosStorage(
             resolved, database, app.state.quota, app.state.maintenance_gate
         )
@@ -94,7 +92,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "Content-Type",
             "Idempotency-Key",
             "X-CSRF-Token",
-            "X-Ark-Api-Key",
         ],
         expose_headers=["X-Request-Id", "X-Upstream-Service", "Retry-After"],
     )
@@ -133,8 +130,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(providers.router)
     app.include_router(billing.router)
     app.include_router(assets.router)
-    app.include_router(video.router)
     app.include_router(openai_compat.router)
+    app.include_router(ark_compat.router)
 
     @app.get("/health", tags=["系统"])
     def health() -> dict[str, str | bool]:

@@ -334,101 +334,70 @@ def test_image_failure_in_progress_failed_replay_and_modality(tmp_path: Path) ->
 def test_video_validation_and_task_access_boundaries(tmp_path: Path) -> None:
     with relay_client(tmp_path) as client:
         key_id, secret, _ = provision(
-            client, provider="minimax", alias="minimax-h3", upstream_model="MiniMax-H3"
+            client,
+            provider="volcengine_ark",
+            alias="seedance-2.0",
+            upstream_model="doubao-seedance-2-0-260128",
         )
         _, second_secret = create_key(client, "relay_project", "other-key")
         headers = {"Authorization": f"Bearer {secret}"}
+        invalid_body = client.post(
+            "/api/v3/contents/generations/tasks", headers=headers, json=[]
+        )
+        missing_model = client.post(
+            "/api/v3/contents/generations/tasks", headers=headers,
+            json={"content": [{"type": "text", "text": "x"}]},
+        )
+        invalid_idempotency = client.post(
+            "/api/v3/contents/generations/tasks",
+            headers={**headers, "Idempotency-Key": "x" * 129},
+            json={"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}]},
+        )
+        assert invalid_body.json()["error"]["code"] == "invalid_request_body"
+        assert missing_model.json()["error"]["code"] == "model_required"
+        assert invalid_idempotency.json()["error"]["code"] == "idempotency_key_invalid"
         invalid_cases = [
-            ({"model": "minimax-h3"}, "video_input_required"),
-            ({"model": "minimax-h3", "prompt": "x", "metadata": {"audio": True}}, "video_metadata_forbidden"),
-            ({"model": "minimax-h3", "prompt": "x", "width": 1920}, "video_parameter_unsupported"),
-            ({"model": "minimax-h3", "metadata": {"content": []}}, "video_input_required"),
-            ({"model": "minimax-h3", "metadata": {"content": [{"type": "audio"}]}}, "video_content_invalid"),
-            ({"model": "minimax-h3", "metadata": {"content": [{"type": "text", "text": "x", "extra": 1}]}}, "video_content_invalid"),
-            ({"model": "minimax-h3", "metadata": {"content": [{"type": "image_url", "image_url": {"url": "file:///x"}}]}}, "video_content_invalid"),
+            ({"model": "seedance-2.0"}, "video_input_required"),
+            ({"model": "seedance-2.0", "prompt": "x"}, "video_parameter_unsupported"),
+            ({"model": "seedance-2.0", "content": []}, "video_input_required"),
+            ({"model": "seedance-2.0", "content": [{"type": "audio"}]}, "video_content_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x", "extra": 1}]}, "video_content_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "image_url", "image_url": {"url": "file:///x"}, "role": "first_frame"}]}, "video_content_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "provider": "x"}, "route_override_forbidden"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": 5, "frames": 29}, "video_duration_conflict"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": True}, "video_duration_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": 4.5}, "video_duration_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "ratio": "wide"}, "video_ratio_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "watermark": "yes"}, "video_parameter_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "service_tier": "priority"}, "video_service_tier_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "execution_expires_after": 60}, "video_expiration_invalid"),
+            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "task_type": "v2v"}, "video_task_type_invalid"),
         ]
         for payload, code in invalid_cases:
-            response = client.post("/v1/videos", headers=headers, json=payload)
+            response = client.post("/api/v3/contents/generations/tasks", headers=headers, json=payload)
             assert response.status_code == 422
             assert response.json()["error"]["code"] == code
 
         relay = client.app.state.provider_relay
         relay.transport = httpx.MockTransport(lambda request: httpx.Response(
             200,
-            json={"task_id": "mini-ok"} if request.method == "POST" else {
-                "task": {"status": "running", "resolution": "768P", "ratio": "16:9"}
+            json={"id": "cgt-ok"} if request.method == "POST" else {
+                "id": "cgt-ok", "status": "running", "resolution": "720p", "ratio": "16:9"
             },
         ))
         created = client.post(
-            "/v1/videos", headers=headers,
-            json={"model": "minimax-h3", "prompt": "x"},
+            "/api/v3/contents/generations/tasks", headers=headers,
+            json={"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}]},
         )
         task_id = created.json()["id"]
         forbidden = client.get(
-            f"/v1/videos/{task_id}", headers={"Authorization": f"Bearer {second_secret}"}
+            f"/api/v3/contents/generations/tasks/{task_id}",
+            headers={"Authorization": f"Bearer {second_secret}"},
         )
-        content = client.get(f"/v1/videos/{task_id}/content", headers=headers)
-        running = client.get(f"/v1/videos/{task_id}", headers=headers)
+        running = client.get(f"/api/v3/contents/generations/tasks/{task_id}", headers=headers)
         assert forbidden.status_code == 404
-        assert content.status_code == 409
         assert running.json()["status"] == "running"
         assert error_code(lambda: relay.get_local_task(ApiPrincipal(key_id, "relay_project"), "missing")) == "video_task_not_found"
-
-
-def test_aliyun_validation_usage_filters_and_management_routes(tmp_path: Path) -> None:
-    with relay_client(tmp_path) as client:
-        key_id, secret, channel = provision(
-            client,
-            provider="aliyun_bailian",
-            alias="wan3.0-video",
-            upstream_model="wan-real",
-            config={"workspaceId": "workspace", "region": "cn-beijing"},
-        )
-        headers = {"Authorization": f"Bearer {secret}"}
-        invalid_seed = client.post(
-            "/v1/videos", headers=headers,
-            json={"model": "wan3.0-video", "prompt": "x", "seed": 1},
-        )
-        assert invalid_seed.json()["error"]["code"] == "video_parameter_unsupported"
-        relay = client.app.state.provider_relay
-        relay.transport = httpx.MockTransport(lambda request: httpx.Response(
-            200,
-            json={"output": {"task_id": "ali-failed"}} if request.method == "POST" else {
-                "output": {"task_status": "FAILED", "message": "generation failed"}
-            },
-        ))
-        created = client.post(
-            "/v1/videos", headers=headers,
-            json={"model": "wan3.0-video", "prompt": "x", "metadata": {"aigc_watermark": True}},
-        )
-        failed = client.get(f"/v1/videos/{created.json()['id']}", headers=headers)
-        assert failed.json()["status"] == "failed"
-        assert failed.json()["error"]["message"] == "generation failed"
-
-        catalog = client.get("/api/internal/model/catalog", headers=ADMIN_HEADERS)
-        project_models = client.get("/api/internal/project/relay_project/models", headers=ADMIN_HEADERS)
-        legacy_key_models = client.get(f"/api/internal/apikey/{key_id}/models", headers=ADMIN_HEADERS)
-        usage = client.get(
-            "/api/internal/inference/usage?projectName=relay_project&keyId="
-            f"{key_id}&model=wan3.0-video&provider=aliyun_bailian&start=2020&end=2030",
-            headers=ADMIN_HEADERS,
-        )
-        tasks = client.get(
-            f"/api/internal/inference/tasks?projectName=relay_project&keyId={key_id}&model=wan3.0-video",
-            headers=ADMIN_HEADERS,
-        )
-        saved_project = client.put(
-            "/api/internal/project/relay_project/models",
-            headers=ADMIN_HEADERS,
-            json={"bindings": [{"model": "wan3.0-video", "channelId": channel["id"], "enabled": True}]},
-        )
-
-    assert all(item.status_code == 200 for item in [catalog, project_models, usage, tasks, saved_project])
-    assert legacy_key_models.status_code == 404
-    assert any(item["id"] == "wan3.0-video" for item in catalog.json()["models"])
-    assert next(item for item in catalog.json()["models"] if item["id"] == "wan3.0-video")["upstreamModel"] == "wan3.0-video"
-    assert next(item for item in saved_project.json()["models"] if item["model"] == "wan3.0-video")["upstreamModel"] == "wan3.0-video"
-    assert tasks.json()["tasks"][0]["status"] == "failed"
 
 
 def test_super_admin_provider_management_routes_cover_full_lifecycle(tmp_path: Path) -> None:

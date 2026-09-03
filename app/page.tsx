@@ -125,7 +125,7 @@ type Tab = "overview" | "projects" | "keys" | "models" | "billing" | "quotas" | 
 type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
-const DEFAULT_MODEL = "doubao-seedance-2-0-260128";
+const DEFAULT_MODEL = "seedance-2.0";
 const RUNNING_STATUSES = new Set(["queued", "running"]);
 
 const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
@@ -816,7 +816,7 @@ function VideoPlayground() {
   const refreshTask = useCallback(async (id = task?.id) => {
     if (!id) return;
     try {
-      const data = await userApi(`/api/video/task/${encodeURIComponent(id)}`);
+      const data = await userApi(`/api/v3/contents/generations/tasks/${encodeURIComponent(id)}`);
       setTask(data);
       setTaskIdDraft(data.id || id);
       setError("");
@@ -843,7 +843,7 @@ function VideoPlayground() {
     setPending(true);
     setError("");
     try {
-      const data = await userApi("/api/video/generate", { method: "POST", body: JSON.stringify({ model: DEFAULT_MODEL, content, ratio, duration: Number(duration), generateAudio, returnLastFrame: false }) });
+      const data = await userApi("/api/v3/contents/generations/tasks", { method: "POST", body: JSON.stringify({ model: DEFAULT_MODEL, content, ratio, duration: Number(duration), generate_audio: generateAudio, return_last_frame: false }) });
       setTask(data);
       setTaskIdDraft(data.id);
     } catch (caught) {
@@ -857,7 +857,7 @@ function VideoPlayground() {
     if (!task?.id) return;
     setPending(true);
     try {
-      await userApi(`/api/video/task/${encodeURIComponent(task.id)}/cancel`, { method: "POST" });
+      await userApi(`/api/v3/contents/generations/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" });
       await refreshTask(task.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "取消任务失败");
@@ -868,7 +868,7 @@ function VideoPlayground() {
 
   const output = videoUrl(task);
   return <div className="content playgroundLayout">
-    <section className="toolPanel"><div className="panelHead"><div><h2>Seedance 2.0 视频调试</h2><p>此页面仅供内部验收，调用的是独立公网 API 服务。</p></div><span className="modelBadge">{DEFAULT_MODEL}</span></div>
+    <section className="toolPanel"><div className="panelHead"><div><h2>Seedance 2.0 视频调试</h2><p>此页面仅供内部验收，使用业务 Key 调用中转站的火山兼容接口。</p></div><span className="modelBadge">{DEFAULT_MODEL}</span></div>
       <form className="generatorForm" onSubmit={generate}>
         <label>业务 API Key<input type="password" autoComplete="off" required value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="vap_live_..." /></label>
         <label>提示词<textarea required minLength={2} value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={6} /></label>
@@ -900,9 +900,9 @@ function VideoPlayground() {
 }
 
 function IntegrationPanel() {
-  const curl = `curl -X POST '${API_BASE_URL}/api/video/generate' \\\n+  -H 'Authorization: Bearer vap_live_xxx' \\\n+  -H 'Content-Type: application/json' \\\n+  -d '{\n    "model": "${DEFAULT_MODEL}",\n    "content": [{"type":"text","text":"一只橘猫坐在窗边看雨"}],\n    "ratio": "16:9",\n    "duration": 5,\n    "generateAudio": true\n  }'`;
+  const curl = `curl -X POST '${API_BASE_URL}/api/v3/contents/generations/tasks' \\\n+  -H 'Authorization: Bearer vap_live_xxx' \\\n+  -H 'Content-Type: application/json' \\\n+  -d '{\n    "model": "${DEFAULT_MODEL}",\n    "content": [{"type":"text","text":"一只橘猫坐在窗边看雨"}],\n    "ratio": "16:9",\n    "duration": 5,\n    "generate_audio": true\n  }'`;
   return <div className="content"><div className="pageIntro"><div><h2>交付给 API 用户</h2><p>用户只需要公网服务地址和业务 API Key，不需要控制台账号。</p></div><span className="version">API v1</span></div>
-    <section className="integrationGrid"><article className="panel docCard"><span className="step">1</span><h3>创建视频任务</h3><pre>{curl}</pre></article><article className="panel docCard"><span className="step">2</span><h3>查询任务</h3><pre>{`GET ${API_BASE_URL}/api/video/task/{taskId}\nAuthorization: Bearer vap_live_xxx`}</pre><p>状态为 <code>succeeded</code> 后读取返回的视频 URL。</p></article><article className="panel docCard"><span className="step">3</span><h3>取消任务</h3><pre>{`POST ${API_BASE_URL}/api/video/task/{taskId}/cancel\nAuthorization: Bearer vap_live_xxx`}</pre><p>建议只对 <code>queued</code> 或 <code>running</code> 状态调用。</p></article></section>
+    <section className="integrationGrid"><article className="panel docCard"><span className="step">1</span><h3>创建视频任务</h3><pre>{curl}</pre></article><article className="panel docCard"><span className="step">2</span><h3>查询任务</h3><pre>{`GET ${API_BASE_URL}/api/v3/contents/generations/tasks/{taskId}\nAuthorization: Bearer vap_live_xxx`}</pre><p>状态为 <code>succeeded</code> 后读取 <code>content.video_url</code>。</p></article><article className="panel docCard"><span className="step">3</span><h3>取消任务</h3><pre>{`DELETE ${API_BASE_URL}/api/v3/contents/generations/tasks/{taskId}\nAuthorization: Bearer vap_live_xxx`}</pre><p>建议只对 <code>queued</code> 或 <code>running</code> 状态调用。</p></article></section>
     <section className="deploymentNote"><Server size={21} /><div><h3>独立部署约束</h3><p>控制台构建时设置 <code>NEXT_PUBLIC_API_BASE_URL</code>；API 服务器设置 <code>CORS_ORIGINS</code> 为控制台域名。火山凭证只能配置在 API 服务器。</p></div></section>
   </div>;
 }

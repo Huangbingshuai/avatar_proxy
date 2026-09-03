@@ -11,8 +11,6 @@ class Settings(BaseSettings):
 
     volcengine_access_key: str = ""
     volcengine_secret_key: str = ""
-    seedance_ark_api_key: str = ""
-    seedance_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     multi_provider_enabled: bool = False
     provider_credential_encryption_key: SecretStr | None = None
     tos_access_key: str = ""

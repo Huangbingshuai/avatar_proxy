@@ -7,7 +7,6 @@
 复制 `.env.example` 为 `.env`，至少填写：
 
 - `VOLCENGINE_ACCESS_KEY`、`VOLCENGINE_SECRET_KEY`
-- `SEEDANCE_ARK_API_KEY`
 - `TOS_BUCKET`、`TOS_PUBLIC_BASE_URL`（需要文件中转时）
 - `ADMIN_COOKIE_SECURE=true`
 - `CORS_ORIGINS=https://你的用户门户域名`
@@ -55,7 +54,7 @@ curl https://api.example.com/health
 
 ## 3. 对外暴露
 
-使用 Nginx、Caddy 或云负载均衡器终止 HTTPS，再转发到容器的 `8000` 端口。用户业务接口为 `/api/asset-*` 和 `/api/video/*`。
+使用 Nginx、Caddy 或云负载均衡器终止 HTTPS，再转发到容器的 `8000` 端口。用户业务接口为 `/api/asset-*`、`/api/asset-group/*`、`/v1/*` 和 Seedance 的 `/api/v3/contents/generations/tasks*`。
 
 `/api/internal/*` 使用服务端 Session、`HttpOnly` Cookie 和 CSRF 校验。控制台必须通过 HTTPS 提供，并把 `/api/internal/*` 同源反向代理到 API 容器；当前火山部署由 `https://api.richbest.cn/` 同时提供控制台页面和客户 `/api/*`，管理 Cookie 仅作用于 `/api/internal`。
 

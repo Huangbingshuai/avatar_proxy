@@ -51,7 +51,6 @@ def build_settings(database_path: Path, **overrides: object) -> Settings:
     values: dict[str, object] = {
         "volcengine_access_key": "test-ak",
         "volcengine_secret_key": "test-sk",
-        "seedance_ark_api_key": "test-ark-key",
         "tos_bucket": "test-bucket",
         "tos_public_base_url": "https://cdn.example.com",
         "admin_cookie_secure": False,

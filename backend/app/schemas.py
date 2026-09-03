@@ -191,23 +191,6 @@ class ProjectModelsUpdate(ApiModel):
     bindings: list[ProjectModelBinding] = Field(default_factory=list, max_length=100)
 
 
-class OpenAIVideoRequest(ApiModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-    model: str = Field(min_length=1, max_length=128)
-    prompt: str = Field(default="", max_length=40000)
-    image: str | None = Field(default=None, max_length=2_000_000)
-    duration: float | None = Field(default=None, ge=-1, le=30)
-    width: int | None = Field(default=None, ge=128, le=8192)
-    height: int | None = Field(default=None, ge=128, le=8192)
-    fps: int | None = Field(default=None, ge=1, le=120)
-    seed: int | None = None
-    n: int = Field(default=1, ge=1, le=1)
-    response_format: str = Field(default="url", pattern=r"^url$")
-    user: str | None = Field(default=None, max_length=256)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
 class ProjectQuotaUpdate(ApiModel):
     project_name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
     enabled: bool = False
@@ -269,76 +252,3 @@ class AssetCreate(ApiModel):
 class AssetUpdate(ApiModel):
     asset_id: str = Field(min_length=1)
     name: str = Field(min_length=1, max_length=64)
-
-
-class VideoTaskMetadata(ApiModel):
-    prompt: str = Field(default="", max_length=2000)
-    prompt_document: str | None = Field(default=None, max_length=20000)
-    assets: list[dict[str, Any]] = Field(default_factory=list, max_length=9)
-    duration_mode: str | None = Field(default=None, pattern=r"^(seconds|smart)$")
-    generation_count: int | None = Field(default=None, ge=1, le=4)
-
-
-class VideoHistoryRecord(ApiModel):
-    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
-    created_at: int = Field(default=0, ge=0)
-    prompt: str = Field(default="视频生成任务", max_length=2000)
-    prompt_document: str | None = Field(default=None, max_length=20000)
-    asset_name: str | None = Field(default=None, max_length=128)
-    asset_names: list[str] | None = Field(default=None, max_length=9)
-    assets: list[dict[str, Any]] | None = Field(default=None, max_length=9)
-    model: str | None = Field(default=None, max_length=128)
-    ratio: str | None = Field(default=None, max_length=16)
-    duration: int | None = Field(default=None, ge=1, le=60)
-    duration_mode: str | None = Field(default=None, pattern=r"^(seconds|smart)$")
-    resolution: str | None = Field(default=None, max_length=16)
-    generation_count: int | None = Field(default=None, ge=1, le=4)
-    generate_audio: bool | None = None
-    status: str | None = Field(default=None, max_length=32)
-    video_url: str | None = Field(default=None, max_length=4096)
-    last_frame_url: str | None = Field(default=None, max_length=4096)
-
-
-class VideoHistoryImport(ApiModel):
-    tasks: list[VideoHistoryRecord] = Field(default_factory=list, max_length=100)
-
-
-class VideoGenerate(ApiModel):
-    model: str = Field(min_length=1)
-    content: list[dict[str, Any]] = Field(min_length=1)
-    callback_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://")
-    return_last_frame: bool | None = None
-    generate_audio: bool | None = None
-    ratio: str | None = Field(default=None, min_length=1, max_length=16)
-    duration: int | None = Field(default=None, ge=1, le=60)
-    resolution: str | None = Field(default=None, min_length=1, max_length=16)
-    seed: int | None = None
-    camera_fixed: bool | None = None
-    watermark: bool | None = None
-    service_tier: str | None = Field(default=None, min_length=1, max_length=32)
-    metadata: VideoTaskMetadata | None = None
-
-    @model_validator(mode="after")
-    def validate_content(self) -> "VideoGenerate":
-        text_items = [item for item in self.content if item.get("type") == "text"]
-        if not any(isinstance(item.get("text"), str) and item["text"].strip() for item in text_items):
-            raise ValueError("content 至少包含一项非空文本描述")
-
-        media_specs = {
-            "image_url": ("image_url", "参考图片", 9),
-            "video_url": ("video_url", "参考视频", 3),
-            "audio_url": ("audio_url", "参考音频", 3),
-        }
-        media_items = [item for item in self.content if item.get("type") in media_specs]
-        if len(media_items) > 9:
-            raise ValueError("单个视频任务最多使用 9 个参考素材")
-
-        for content_type, (url_field, label, maximum) in media_specs.items():
-            items = [item for item in media_items if item.get("type") == content_type]
-            if len(items) > maximum:
-                raise ValueError(f"单个视频任务最多使用 {maximum} 个{label}")
-            for item in items:
-                media_url = item.get(url_field)
-                if not isinstance(media_url, dict) or not isinstance(media_url.get("url"), str) or not media_url["url"].strip():
-                    raise ValueError(f"{label}缺少有效的 {url_field}.url")
-        return self

@@ -53,13 +53,13 @@
 - `backend/app/routers/admin.py`：超级管理员安全管理接口。
 - `backend/app/routers/internal.py`：项目、API Key、额度等普通管理接口。
 - `backend/app/routers/assets.py`：素材组、素材和上传接口。
-- `backend/app/routers/video.py`：Seedance 任务、历史和用量接口。
+- `backend/app/routers/ark_compat.py`：火山方舟兼容的 Seedance 创建、查询和取消接口。
 - `backend/app/quota.py`：项目/Key 额度与原子预占。
 - `backend/app/storage.py`：TOS 上传、删除和失败清理。
 - `backend/app/provider_relay.py`：多供应商渠道、加密凭证、模型路由、任务和真实用量账本。
 - `backend/app/billing.py`：真实用量归集、微元计价、账单冻结、迟到用量和 CSV 导出。
 - `backend/app/routers/providers.py`：供应商渠道、项目模型、Key 权限和中转用量管理接口。
-- `backend/app/routers/openai_compat.py`：客户 `/v1/*` OpenAI 兼容文本、图片和视频接口。
+- `backend/app/routers/openai_compat.py`：客户 `/v1/*` OpenAI 兼容文本和图片接口。
 - `backend/app/routers/billing.py`：普通管理员计费条款、价目、账单和支付登记接口。
 - `backend/app/backup.py`：SQLite 与审计备份、校验、恢复。
 - `backend/app/system_monitor.py`：磁盘采样、告警状态机、SMTP 队列和重试。
@@ -111,7 +111,7 @@
 ### 项目计费与账单
 
 - 项目计费默认关闭；启用、禁用和折扣均按自然月生效，不能误将历史项目自动纳入收费。
-- 收费来源只能是本地 `inference_usage` 和 `/api/video/*` 的真实成功用量；失败、取消、运行中任务不得产生费用。
+- 收费来源只能是本地 `inference_usage` 的真实成功用量；失败、取消、运行中任务不得产生费用。
 - 用量归集必须按来源记录唯一且可重放，后台失败不能影响客户模型调用主链路。
 - 金额使用整数微元持久化、`Decimal` 运算并以字符串返回；缺失单价和显式零元必须严格区分。
 - 当前月只提供实时预估；确认后的账单明细与金额不可修改，迟到用量进入下一开放账期的系统调整项。

@@ -1,11 +1,11 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：4.3
+版本：5.0
 
 更新日期：2026-09-03
 正式地址：`https://api.richbest.cn`
 
-本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、Seedance 聚合用量查询及可选的多供应商 OpenAI 兼容模型接口。
+本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、OpenAI 兼容文本与图片接口，以及火山方舟兼容的 Seedance 视频任务接口。
 
 客户业务 API 不返回模型价目、项目折扣、账单或支付信息。项目计费由管理员在内部控制台统一配置，不需要也不支持客户为每个 API Key 单独设置；内部管理接口另见 [管理端计费账单 API 文档](ADMIN_BILLING_API.md)。
 
@@ -21,8 +21,6 @@ Accept: application/json
 JSON 请求还需携带 `Content-Type: application/json`。
 
 业务 API Key 已在服务端绑定火山项目。请求中不需要、也不能覆盖 `projectName`。请只在服务端保存 API Key，不要写入网页代码、公开仓库、日志或 URL。
-
-`/api/video/ark-usage` 还需要通过 `X-Ark-Api-Key` 请求头携带客户自己的方舟 API Key。服务端会实时校验该方舟 Key 是否真实存在、处于可用状态，并且与业务 API Key 绑定的是同一个火山项目；方舟 Key 不得放在 URL 中。
 
 ## 2. 支持的素材规格
 
@@ -271,65 +269,94 @@ curl -X DELETE "$BASE_URL/api/asset/delete?assetId=asset-xxxxxxxx" \
 
 修改后的素材名称最多 64 个字符。删除成功后，本系统会同时清理与该登记记录关联的 TOS 对象；删除操作可能无法恢复。
 
-## 10. 使用方舟 API Key 查询 Seedance 用量
+## 10. Seedance 视频生成
 
-```bash
-curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "X-Ark-Api-Key: $ARK_API_KEY"
+视频接口采用火山方舟与漫剧一致的任务路径和请求结构，但鉴权、模型名称和任务 ID 由本中转站管理：
+
+```text
+POST   /api/v3/contents/generations/tasks
+GET    /api/v3/contents/generations/tasks/{taskId}
+DELETE /api/v3/contents/generations/tasks/{taskId}
 ```
 
-参数：
+调用方仍使用瑞池业务 API Key，不提交火山 API Key。`model` 必须填写 `/v1/models` 返回的稳定别名，例如 `seedance-2.0`；服务端会把别名转换为固定的火山 Model ID，并使用该项目绑定渠道的加密凭证请求火山。客户端不能覆盖真实模型 ID、供应商、渠道、项目或 Base URL。
 
-- `start`、`end`：必填，格式为 `YYYY-MM-DD`，单次跨度不能超过 31 天；
-- `interval`：可选，`Day` 或 `Hour`，默认 `Day`；
-- `Authorization` 必须传瑞池签发的业务 API Key；
-- 方舟 API Key 必须放在 `X-Ark-Api-Key` 请求头，不得放入 URL；
-- 两枚 Key 绑定的火山项目不一致时返回 `403 ark_key_project_mismatch`；
-- 方舟 Key 已禁用或不可用时返回 `403 ark_key_inactive`。
+### 10.1 创建任务
 
-成功响应：
+```bash
+curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: video-order-20260903-001" \
+  -d '{
+    "model": "seedance-2.0",
+    "content": [
+      {"type": "text", "text": "海边日出，镜头缓慢向前推进"},
+      {
+        "type": "image_url",
+        "image_url": {"url": "asset://asset-example"},
+        "role": "reference_image"
+      }
+    ],
+    "task_type": "i2v",
+    "ratio": "16:9",
+    "resolution": "720p",
+    "duration": 5,
+    "generate_audio": true,
+    "watermark": false
+  }'
+```
+
+`content` 支持文本以及模型能力允许的图片、视频和音频引用。素材 URL 可使用 HTTP(S) URL 或当前项目可访问的 `asset://` ID；图片和音频还支持合法 Data URL。图片角色为 `first_frame`、`last_frame` 或 `reference_image`，视频角色为 `reference_video`，音频角色为 `reference_audio`。各模型可用素材类型、条目数量、分辨率和时长以 `/v1/models` 返回的能力为准。
+
+可选字段包括 `duration`、`frames`、`resolution`、`ratio`、`generate_audio`、`draft`、`seed`、`camera_fixed`、`watermark`、`return_last_frame`、`service_tier`、`execution_expires_after` 和 `task_type`。不支持或不属于兼容契约的字段返回 `422`，不会盲目转发。
+
+成功响应只返回中转站任务 ID：
+
+```json
+{"id": "vid_0123456789abcdef"}
+```
+
+相同业务 Key 使用相同 `Idempotency-Key` 和相同请求体会复用同一任务；同一个键对应不同请求体时返回 `409 idempotency_key_conflict`。
+
+### 10.2 查询任务
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+成功任务示例：
 
 ```json
 {
-  "source": "volcengine_ark",
-  "scope": "ark_api_key",
-  "keySuffix": "123456789abc",
-  "start": "2026-08-01",
-  "end": "2026-08-18",
-  "interval": "Day",
-  "dataDelayMinutes": {"min": 5, "max": 30},
-  "billingAmountIncluded": false,
-  "summary": {
-    "inputTokens": 0,
-    "outputTokens": 35800,
-    "totalTokens": 35800,
-    "requestCount": 2,
-    "metrics": {}
+  "id": "vid_0123456789abcdef",
+  "model": "seedance-2.0",
+  "status": "succeeded",
+  "created_at": 1788422400,
+  "resolution": "720p",
+  "ratio": "16:9",
+  "duration": 5,
+  "content": {
+    "video_url": "https://provider.example.com/result.mp4"
   },
-  "records": [
-    {
-      "date": "2026-08-18",
-      "modelName": "doubao-seedance-2-5",
-      "endpointId": "ep-xxxxxxxx",
-      "requestCount": 2,
-      "inputTokens": 0,
-      "outputTokens": 35800,
-      "totalTokens": 35800
-    }
-  ]
+  "usage": {
+    "completion_tokens": 1200,
+    "total_tokens": 1200
+  }
 }
 ```
 
-安全与统计口径：
+状态为 `queued`、`running`、`succeeded`、`failed` 或 `cancelled`。只有创建任务的同一枚业务 Key 可以查询；同项目的另一枚 Key 也不能读取该任务。供应商结果 URL 可能过期，中转站不会自动转存 TOS，请及时下载。
 
-- 完整方舟 Key 只在当前请求内用于火山用量过滤，不落库、不写业务日志，响应只显示末 12 位；
-- 服务端使用 IAM AK/SK 签名查询，并按照方舟 Key 末 12 位过滤 `AuthToken`；AK/SK 不会返回给客户；
-- 仅能查到与服务端 IAM 身份处于同一火山账号范围、且该 IAM 身份有权读取的用量；
-- 只返回模型名包含 `seedance` 的记录；
-- 聚合用量通常延迟 5～30 分钟，不能用于实时限流；
-- `billingAmountIncluded: false` 表示不含人民币账单金额；
-- 零用量只表示查询区间暂无匹配记录，不能单独证明 Key 一定有效。
+### 10.3 取消任务
+
+```bash
+curl -X DELETE "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+取消成功返回 `204 No Content`。中转站会向原任务固定的火山渠道发送取消请求，不会因渠道凭证后续轮换而改用其他渠道。
 
 ## 11. 错误处理
 
@@ -381,14 +408,13 @@ curl "$BASE_URL/api/video/ark-usage?start=2026-08-01&end=2026-08-18&interval=Day
 | `GET` | `/api/asset/get` | 查询单个素材和状态 |
 | `PUT` | `/api/asset/update` | 修改素材名称 |
 | `DELETE` | `/api/asset/delete` | 删除素材 |
-| `GET` | `/api/video/ark-usage` | 使用业务 Key 鉴权并校验同项目后，查询客户方舟 Key 的 Seedance 聚合用量 |
 | `GET` | `/v1/models` | 查询当前业务 Key 可用模型 |
 | `POST` | `/v1/chat/completions` | OpenAI 兼容文本对话，支持 JSON/SSE |
 | `POST` | `/v1/responses` | OpenAI 兼容 Responses，支持 JSON/SSE |
 | `POST` | `/v1/images/generations` | OpenAI 兼容图片生成 |
-| `POST` | `/v1/videos` | 创建异步视频任务 |
-| `GET` | `/v1/videos/{taskId}` | 查询异步视频任务 |
-| `GET` / `HEAD` | `/v1/videos/{taskId}/content` | 获取成功视频的供应商结果地址 |
+| `POST` | `/api/v3/contents/generations/tasks` | 创建 Seedance 异步视频任务 |
+| `GET` | `/api/v3/contents/generations/tasks/{taskId}` | 查询 Seedance 视频任务 |
+| `DELETE` | `/api/v3/contents/generations/tasks/{taskId}` | 取消 Seedance 视频任务 |
 
 ## 13. 多供应商 OpenAI 兼容模型接口
 
@@ -445,17 +471,15 @@ curl "$BASE_URL/v1/models" \
 | `seedream-4.5` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `seedream-4.0` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `image2.0` | 生图；单次 1 张结果 | OpenAI | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
-| `seedance-2.5` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
-| `seedance-2.0` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
-| `seedance-2.0-fast` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
-| `seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
-| `seedance-1.5-pro` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
-| `seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
-| `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
-| `wan3.0-video` | 异步视频 | 阿里百炼 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
-| `minimax-h3` | 异步视频 | MiniMax | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `seedance-2.5` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `seedance-2.0` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `seedance-2.0-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `seedance-1.5-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 
-所有视频模型还支持 `HEAD /v1/videos/{taskId}/content`，用于只检查结果是否可下载而不获取响应正文。创建和查询视频任务时必须使用同一枚业务 API Key。
+创建、查询和取消视频任务必须使用同一枚业务 API Key。`wan3.0-video` 和 `minimax-h3` 不属于当前火山兼容视频接口的公开范围。
 
 模型是否已经对当前项目开放，以 `/v1/models` 的实时返回结果为准。请求未开通的模型会返回 `403 model_not_allowed`，请联系管理员确认项目授权和供应商渠道状态。
 
@@ -572,87 +596,9 @@ curl "$BASE_URL/v1/images/generations" \
 
 以实际响应为准：供应商没有返回的 `usage` 字段不会被补零。使用 `url` 时应及时下载结果；使用 `b64_json` 时，响应体可能明显增大。
 
-### 13.4 异步视频
+### 13.4 Seedance 视频
 
-创建任务：
-
-```bash
-curl "$BASE_URL/v1/videos" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: video-order-20260902-001" \
-  -d '{
-    "model": "wan3.0-video",
-    "prompt": "海边日出，镜头缓慢向前推进",
-    "image": "https://customer.example.com/first-frame.jpg",
-    "duration": 8,
-    "response_format": "url",
-    "metadata": {
-      "resolution": "1080P",
-      "ratio": "16:9",
-      "prompt_extend": true
-    }
-  }'
-```
-
-成功提交返回 HTTP `202` 和本系统任务 ID。查询及获取结果：
-
-```json
-{
-  "id": "vid_0123456789abcdef",
-  "object": "video",
-  "model": "seedance-2.0",
-  "status": "queued",
-  "progress": 0,
-  "created_at": 1788336000
-}
-```
-
-```bash
-curl "$BASE_URL/v1/videos/$TASK_ID" \
-  -H "Authorization: Bearer $API_KEY"
-
-curl -I "$BASE_URL/v1/videos/$TASK_ID/content" \
-  -H "Authorization: Bearer $API_KEY"
-```
-
-统一状态为 `queued`、`running`、`succeeded`、`failed`、`canceled`。`content` 在成功后返回 `307` 到供应商结果 URL；查询任务必须使用创建该任务的同一枚业务 Key。
-
-成功任务示例：
-
-```json
-{
-  "id": "vid_0123456789abcdef",
-  "object": "video",
-  "model": "seedance-2.0",
-  "status": "succeeded",
-  "progress": 100,
-  "created_at": 1788336000,
-  "completed_at": "2026-09-02 09:01:08",
-  "url": "https://provider.example.com/result.mp4",
-  "format": "mp4",
-  "metadata": {
-    "resolution": "720p",
-    "duration": 5
-  }
-}
-```
-
-失败任务会在响应中增加 `error.code` 和 `error.message`。轮询建议从 2～3 秒开始并逐步退避，不要高频请求；进入终态后应停止轮询。结果 URL 可能过期，业务系统应在成功后及时下载。
-
-视频字段支持 `model`、`prompt`、`image`、`duration`、`width`、`height`、`fps`、`seed`、`n=1`、`response_format=url`、`user` 和 `metadata`。`metadata` 只允许模型适配器声明的白名单字段，不能放入凭证、Base URL 或自定义转发参数。
-
-方舟 Seedance 模型使用统一的任务创建与查询接口。基础测试可直接使用顶层 `prompt`、`image` 和 `duration`；高级输入可通过 `metadata.content` 传入方舟原生的文本、图片、视频或音频条目，但中转层仍会根据具体模型能力过滤。支持的方舟元数据字段为 `resolution`、`ratio`、`generate_audio`、`watermark`、`camera_fixed`、`return_last_frame`、`service_tier`、`content`、`draft`、`frames` 和 `execution_expires_after`。
-
-| 模型 | 输入能力 | 时长 | 分辨率 | 特殊限制 |
-|---|---|---|---|---|
-| `seedance-2.5` | 文本、图片、视频、音频 | 4～30 秒或 `-1` | 480p / 720p / 1080p | 最多 50 项参考内容，支持生成音频 |
-| `seedance-2.0` | 文本、图片、视频、音频 | 4～15 秒或 `-1` | 480p / 720p / 1080p | 支持生成音频，不支持 `flex` |
-| `seedance-2.0-fast` | 文本、图片、视频、音频 | 4～15 秒或 `-1` | 480p / 720p | 支持生成音频，不支持 1080p 和 `flex` |
-| `seedance-2.0-mini` | 文本、图片、视频、音频 | 4～15 秒或 `-1` | 480p / 720p | 轻量低成本，不支持 1080p |
-| `seedance-1.5-pro` | 文本、图片 | 4～12 秒或 `-1` | 480p / 720p / 1080p | 支持生成音频和 `draft` |
-| `seedance-1.0-pro` | 文本、图片 | 2～12 秒 | 480p / 720p / 1080p | 支持 `frames` |
-| `seedance-1.0-pro-fast` | 文本、图片 | 2～12 秒 | 480p / 720p / 1080p | 支持 `frames` |
+Seedance 不使用 OpenAI `/v1/videos` 路径；创建、查询和取消统一使用第 10 节的火山兼容 `/api/v3/contents/generations/tasks` 接口。请求中的 `model` 仍使用中转站稳定别名，服务端负责转换为当前固定的火山 Model ID。
 
 ### 13.5 幂等与错误
 
@@ -692,11 +638,11 @@ curl -I "$BASE_URL/v1/videos/$TASK_ID/content" \
 | `422` | `text_parameter_unsupported` / `image_parameter_unsupported` | 请求包含当前接口未开放的字段 |
 | `422` | `stream_parameter_invalid` | `stream` 不是布尔值 |
 | `422` | `idempotency_key_invalid` | 幂等键为空或超过 128 个字符 |
-| `422` | `video_input_required` | 视频请求没有提示词、参考素材或 `metadata.content` |
-| `422` | `video_parameter_unsupported` / `video_metadata_forbidden` | 当前视频模型不支持请求参数 |
+| `422` | `video_input_required` / `video_content_invalid` | 视频请求缺少 `content` 或条目格式无效 |
+| `422` | `video_parameter_unsupported` / `video_duration_invalid` / `video_resolution_invalid` | 当前 Seedance 模型不支持请求参数 |
 | `422` | `route_override_forbidden` | 请求试图覆盖内部路由字段 |
 | `404` | `video_task_not_found` | 任务不存在，或任务不属于当前业务 Key |
 | `502` | `provider_unreachable` / `provider_request_failed` | 供应商不可达或拒绝请求 |
 | `503` | `multi_provider_disabled` | 多供应商功能尚未启用 |
 
-排查时请保留响应体中的 `request_id`，但不要提供业务 Key、供应商 Key 或完整图片/视频私有 URL。
+排查 `/v1/*` 时请保留响应体中的 `request_id`；排查 `/api/v3/*` 时请保留响应头 `X-Request-Id`。不要提供业务 Key、供应商 Key 或完整图片/视频私有 URL。
