@@ -82,4 +82,9 @@ describe("model request body limits", () => {
     expect(nginxTemplate).toContain("client_max_body_size 210m;");
     expect(edgeNginx).toContain("client_max_body_size 210m;");
   });
+
+  it("publishes stable relay aliases instead of upstream video model ids", () => {
+    expect(compose).toContain("seedance-2.0|Doubao-Seedance-2.0");
+    expect(compose).not.toContain("VITE_VIDEO_MODELS:-doubao-seedance-");
+  });
 });

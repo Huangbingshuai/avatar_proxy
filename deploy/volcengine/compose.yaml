@@ -35,7 +35,7 @@ services:
       dockerfile: deploy/volcengine/Dockerfile.edge
       args:
         VITE_API_BASE_URL: ${PUBLIC_BASE_URL}
-        VITE_VIDEO_MODELS: ${VITE_VIDEO_MODELS:-doubao-seedance-2-0-260128|Doubao-Seedance-2.0}
+        VITE_VIDEO_MODELS: ${VITE_VIDEO_MODELS:-seedance-2.5|Doubao-Seedance-2.5,seedance-2.0|Doubao-Seedance-2.0,seedance-2.0-fast|Doubao-Seedance-2.0-Fast,seedance-2.0-mini|Doubao-Seedance-2.0-Mini,seedance-1.0-pro|Seedance-1.0-Pro,seedance-1.0-pro-fast|Seedance-1.0-Pro-Fast}
     ports:
       - "8088:8080"
     restart: unless-stopped
