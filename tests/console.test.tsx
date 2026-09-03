@@ -197,6 +197,20 @@ describe("内部控制台", () => {
     expect(window.sessionStorage.length).toBe(0);
   });
 
+  it("移除视频调试入口并展示完整业务接入说明", async () => {
+    installFetch();
+    const user = await login();
+    expect(screen.queryByRole("button", { name: "视频调试" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "接入说明" }));
+    expect(await screen.findByRole("heading", { name: "业务 API 接入说明" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "准备鉴权与可用模型" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "创建 Seedance 视频任务" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "使用项目素材库" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "业务接口总览" })).toBeInTheDocument();
+    expect(screen.getAllByText("/api/v3/contents/generations/tasks", { exact: true }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("/api/asset/upload-file", { exact: true }).length).toBeGreaterThan(0);
+  });
+
   it("普通管理员可以查看项目计费预估、价目和月度账单", async () => {
     const { calls } = installFetch();
     const user = await login();

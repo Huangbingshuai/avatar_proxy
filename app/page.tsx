@@ -3,16 +3,18 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   Ban,
   BookOpen,
+  CheckCircle2,
   Clipboard,
+  CloudUpload,
   FolderKanban,
   Gauge,
   KeyRound,
   LoaderCircle,
   LockKeyhole,
   LogOut,
-  Play,
   Plus,
   RefreshCw,
   ReceiptText,
@@ -24,7 +26,6 @@ import {
   Smartphone,
   Trash2,
   UserRoundCog,
-  Video,
   X,
 } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -56,18 +57,6 @@ type ApiKey = {
 type Overview = {
   stats: { projects: number; activeKeys: number; requests24h: number; errors24h: number; assetsToday: number; uploadsToday: number; uploadBytesToday: number; limitedProjects: number; openQuotaEvents: number; cleanupPending: number };
   recent: Array<{ action: string; projectName: string; statusCode: number; durationMs: number; createdAt: string }>;
-};
-
-type VideoTask = {
-  id: string;
-  status: string;
-  model?: string;
-  created_at?: number;
-  updated_at?: number;
-  error?: { code?: string; message?: string };
-  content?: { video_url?: string; last_frame_url?: string };
-  output?: { video_url?: string };
-  video_url?: string;
 };
 
 type QuotaValues = {
@@ -121,12 +110,11 @@ type QuotaUsage = {
   cleanupObjects: CleanupObject[];
 };
 
-type Tab = "overview" | "projects" | "keys" | "models" | "billing" | "quotas" | "playground" | "integration" | "admins";
+type Tab = "overview" | "projects" | "keys" | "models" | "billing" | "quotas" | "integration" | "admins";
 type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
-const DEFAULT_MODEL = "seedance-2.0";
-const RUNNING_STATUSES = new Set(["queued", "running"]);
+const EXAMPLE_VIDEO_MODEL = "seedance-2.0";
 
 const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "概览", icon: Gauge },
@@ -135,26 +123,8 @@ const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "models", label: "项目模型", icon: Sparkles },
   { id: "billing", label: "计费账单", icon: ReceiptText },
   { id: "quotas", label: "额度与用量", icon: SlidersHorizontal },
-  { id: "playground", label: "视频调试", icon: Video },
   { id: "integration", label: "接入说明", icon: BookOpen },
 ];
-
-function errorMessage(value: unknown, fallback = "请求失败") {
-  if (!value || typeof value !== "object") return fallback;
-  const data = value as { error?: { message?: string }; detail?: string; message?: string };
-  return data.error?.message || data.detail || data.message || fallback;
-}
-
-function normalizeAssetUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("asset://")) return trimmed;
-  return `asset://${trimmed}`;
-}
-
-function videoUrl(task: VideoTask | null) {
-  return task?.content?.video_url || task?.output?.video_url || task?.video_url || "";
-}
 
 function formatTime(value?: string) {
   if (!value) return "从未";
@@ -514,13 +484,12 @@ export default function ConsolePage() {
 
         {error && authStatus === "authenticated" && <div className="errorBanner"><Ban size={17} />{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
 
-        {currentUser?.role !== "super_admin" && tab === "overview" && <OverviewPanel overview={overview} onOpenPlayground={() => setTab("playground")} />}
+        {currentUser?.role !== "super_admin" && tab === "overview" && <OverviewPanel overview={overview} onOpenIntegration={() => setTab("integration")} />}
         {currentUser?.role !== "super_admin" && tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
         {currentUser?.role !== "super_admin" && tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
         {currentUser?.role !== "super_admin" && tab === "models" && <ModelRelayPanel projects={projects} apiKeys={apiKeys} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "billing" && <BillingPanel projects={projects} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
-        {currentUser?.role !== "super_admin" && tab === "playground" && <VideoPlayground />}
         {currentUser?.role !== "super_admin" && tab === "integration" && <IntegrationPanel />}
         {tab === "admins" && currentUser?.role === "super_admin" && <AdminPanel currentUser={currentUser} adminApi={adminApi} onRestored={(message) => clearSession(message)} />}
       </section>
@@ -616,10 +585,10 @@ export default function ConsolePage() {
   );
 }
 
-function OverviewPanel({ overview, onOpenPlayground }: { overview: Overview | null; onOpenPlayground: () => void }) {
+function OverviewPanel({ overview, onOpenIntegration }: { overview: Overview | null; onOpenIntegration: () => void }) {
   return <div className="content">
     <section className="overviewHero">
-      <div><span className="heroTag">CONTROL PLANE</span><h2>控制台与公网 API<br />保持独立部署</h2><p>这里管理项目和业务 API Key。用户使用签发的 Key 直接请求独立 FastAPI 服务。</p><button className="primary" onClick={onOpenPlayground}><Play size={17} />测试视频接口</button></div>
+      <div><span className="heroTag">CONTROL PLANE</span><h2>控制台与公网 API<br />保持独立部署</h2><p>这里管理项目和业务 API Key。用户使用签发的 Key 直接请求独立 FastAPI 服务。</p><button className="primary" onClick={onOpenIntegration}><BookOpen size={17} />查看接入说明</button></div>
       <div className="architectureCard"><div><span><ShieldCheck size={18} /></span><div><b>内部控制台</b><small>独立管理员会话 · 操作可审计</small></div></div><i /><div><span><Server size={18} /></span><div><b>公网 API 服务器</b><small>Bearer vap_live_...</small></div></div><i /><div><span><Sparkles size={18} /></span><div><b>火山服务</b><small>服务端 AK/SK · Ark Key</small></div></div></div>
     </section>
     <div className="statGrid">
@@ -790,121 +759,166 @@ function QuotaPanel({ projects, apiKeys, events, audits, adminApi, onChanged }: 
   </div>;
 }
 
-function VideoPlayground() {
-  const [apiKey, setApiKey] = useState("");
-  const [prompt, setPrompt] = useState("一只橘猫坐在窗边看雨，镜头缓慢推进，电影感光影，画面稳定");
-  const [asset, setAsset] = useState("");
-  const [ratio, setRatio] = useState("16:9");
-  const [duration, setDuration] = useState("5");
-  const [generateAudio, setGenerateAudio] = useState(true);
-  const [taskIdDraft, setTaskIdDraft] = useState("");
-  const [task, setTask] = useState<VideoTask | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+function IntegrationPanel() {
+  const [copied, setCopied] = useState("");
+  const modelList = `curl "${API_BASE_URL}/v1/models" \\
+  -H "Authorization: Bearer $API_KEY"`;
+  const createVideo = `curl -X POST "${API_BASE_URL}/api/v3/contents/generations/tasks" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: video-order-001" \\
+  -d '{
+    "model": "${EXAMPLE_VIDEO_MODEL}",
+    "content": [
+      {"type": "text", "text": "人物面向镜头介绍产品，画面稳定"},
+      {
+        "type": "image_url",
+        "image_url": {"url": "asset://asset-example"},
+        "role": "reference_image"
+      }
+    ],
+    "ratio": "16:9",
+    "resolution": "720p",
+    "duration": 5,
+    "generate_audio": true,
+    "watermark": false
+  }'`;
+  const queryVideo = `curl "${API_BASE_URL}/api/v3/contents/generations/tasks/$TASK_ID" \\
+  -H "Authorization: Bearer $API_KEY"`;
+  const cancelVideo = `curl -X DELETE "${API_BASE_URL}/api/v3/contents/generations/tasks/$TASK_ID" \\
+  -H "Authorization: Bearer $API_KEY"`;
+  const uploadAsset = `curl -X POST "${API_BASE_URL}/api/asset/upload-file" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -F "file=@./reference.png;type=image/png"`;
+  const registerAsset = `curl -X POST "${API_BASE_URL}/api/asset/create" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "groupId": "group-example",
+    "url": "<上传响应中的 url>",
+    "uploadId": "<上传响应中的 uploadId>",
+    "assetType": "Image",
+    "name": "人物参考图"
+  }'`;
 
-  const userApi = useCallback(async (path: string, init?: RequestInit) => {
-    if (!apiKey.trim()) throw new Error("请先输入业务 API Key");
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      ...init,
-      headers: { "content-type": "application/json", Authorization: `Bearer ${apiKey.trim()}`, ...init?.headers },
-    });
-    const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(errorMessage(data, `请求失败（${response.status}）`));
-    return data as VideoTask;
-  }, [apiKey]);
-
-  const refreshTask = useCallback(async (id = task?.id) => {
-    if (!id) return;
+  async function copyExample(id: string, value: string) {
     try {
-      const data = await userApi(`/api/v3/contents/generations/tasks/${encodeURIComponent(id)}`);
-      setTask(data);
-      setTaskIdDraft(data.id || id);
-      setError("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "查询任务失败");
-    }
-  }, [task?.id, userApi]);
-
-  useEffect(() => {
-    if (!task?.id || !RUNNING_STATUSES.has(task.status)) return;
-    const timer = window.setInterval(() => void refreshTask(task.id), 8000);
-    return () => window.clearInterval(timer);
-  }, [refreshTask, task?.id, task?.status]);
-
-  const content = useMemo(() => {
-    const items: Array<Record<string, unknown>> = [{ type: "text", text: prompt.trim() }];
-    const reference = normalizeAssetUrl(asset);
-    if (reference) items.push({ type: "image_url", image_url: { url: reference } });
-    return items;
-  }, [asset, prompt]);
-
-  async function generate(event: FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    try {
-      const data = await userApi("/api/v3/contents/generations/tasks", { method: "POST", body: JSON.stringify({ model: DEFAULT_MODEL, content, ratio, duration: Number(duration), generate_audio: generateAudio, return_last_frame: false }) });
-      setTask(data);
-      setTaskIdDraft(data.id);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "创建视频任务失败");
-    } finally {
-      setPending(false);
+      await navigator.clipboard.writeText(value);
+      setCopied(id);
+      window.setTimeout(() => setCopied((current) => current === id ? "" : current), 1800);
+    } catch {
+      setCopied("");
     }
   }
 
-  async function cancel() {
-    if (!task?.id) return;
-    setPending(true);
-    try {
-      await userApi(`/api/v3/contents/generations/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" });
-      await refreshTask(task.id);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "取消任务失败");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  const output = videoUrl(task);
-  return <div className="content playgroundLayout">
-    <section className="toolPanel"><div className="panelHead"><div><h2>Seedance 2.0 视频调试</h2><p>此页面仅供内部验收，使用业务 Key 调用中转站的火山兼容接口。</p></div><span className="modelBadge">{DEFAULT_MODEL}</span></div>
-      <form className="generatorForm" onSubmit={generate}>
-        <label>业务 API Key<input type="password" autoComplete="off" required value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="vap_live_..." /></label>
-        <label>提示词<textarea required minLength={2} value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={6} /></label>
-        <label>参考素材 ID 或图片 URL（可选）<input value={asset} onChange={(event) => setAsset(event.target.value)} placeholder="asset-2026... 或 https://..." /><small>素材 ID 会自动转换为 asset://asset-2026...，不要重复添加 asset- 前缀。</small></label>
-        <div className="formGrid"><label>画面比例<select value={ratio} onChange={(event) => setRatio(event.target.value)}><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option></select></label><label>时长<select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">5 秒</option><option value="10">10 秒</option></select></label></div>
-        <label className="toggleRow"><input aria-label="生成音频" type="checkbox" checked={generateAudio} onChange={(event) => setGenerateAudio(event.target.checked)} /><span><b>生成音频</b><small>由 Seedance 根据画面和提示词生成声音</small></span></label>
-        {error && <div className="formError">{error}</div>}
-        <button className="primary wide" disabled={pending || !prompt.trim() || !apiKey.trim()}>{pending ? <><LoaderCircle size={17} className="spin" />提交中</> : <><Sparkles size={17} />创建视频任务</>}</button>
-      </form>
+  return <div className="content integrationPage">
+    <section className="integrationHero">
+      <div className="integrationHeroCopy">
+        <span className="heroTag">PUBLIC API GUIDE</span>
+        <h2>业务 API 接入说明</h2>
+        <p>交付给客户的只有公网 API 地址和一枚 <code>vap_live_...</code> 业务 Key。模型路由、项目归属和火山凭证全部由服务端管理。</p>
+      </div>
+      <dl className="integrationFacts">
+        <div><dt>API 地址</dt><dd><code>{API_BASE_URL}</code></dd></div>
+        <div><dt>鉴权方式</dt><dd>Bearer API Key</dd></div>
+        <div><dt>项目隔离</dt><dd>按 Key 自动绑定</dd></div>
+      </dl>
     </section>
 
-    <aside className="taskPanel"><div className="panelHead"><div><h3>任务状态</h3><p>运行中每 8 秒自动刷新。</p></div>{task?.status && <i className={`taskStatus ${task.status}`}>{task.status}</i>}</div>
-      <div className="resumeRow"><input value={taskIdDraft} onChange={(event) => setTaskIdDraft(event.target.value)} placeholder="输入已有 taskId" /><button className="secondary" disabled={!taskIdDraft || !apiKey} onClick={() => void refreshTask(taskIdDraft)}><RotateCcw size={16} />查询</button></div>
-      {!task && <div className="taskEmpty"><Video size={34} /><h4>还没有视频任务</h4><p>左侧创建任务，或输入已有 taskId 继续查询。</p></div>}
-      {task && <div className="taskResult">
-        <div className="taskMeta"><span>任务 ID</span><code>{task.id}</code><span>模型</span><code>{task.model || DEFAULT_MODEL}</code></div>
-        {RUNNING_STATUSES.has(task.status) && <div className="progressCard"><LoaderCircle size={22} className="spin" /><div><b>{task.status === "queued" ? "等待调度" : "正在生成视频"}</b><p>任务由火山方舟异步处理，可以离开页面后用 taskId 继续查询。</p></div></div>}
-        {task.status === "failed" && <div className="errorCard"><Ban size={20} /><div><b>{task.error?.code || "生成失败"}</b><p>{task.error?.message || "请检查模型、素材权限和提示词后重试。"}</p></div></div>}
-        {output && <div className="videoResult">
-          {/* Generated videos do not provide a separate caption track. */}
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <video aria-label="生成的视频" controls playsInline src={output} />
-          <a className="secondary" href={output} target="_blank" rel="noreferrer">打开视频文件</a>
-        </div>}
-        <div className="taskActions"><button className="secondary" onClick={() => void refreshTask()}><RefreshCw size={16} />刷新状态</button>{RUNNING_STATUSES.has(task.status) && <button className="dangerButton" disabled={pending} onClick={() => void cancel()}><Ban size={16} />取消任务</button>}</div>
-      </div>}
-    </aside>
+    <section className="integrationFlow" aria-label="推荐接入流程">
+      {[
+        ["01", "验证密钥", "GET /api/auth/me"],
+        ["02", "获取模型", "GET /v1/models"],
+        ["03", "提交任务", "POST /api/v3/.../tasks"],
+        ["04", "轮询结果", "GET /api/v3/.../tasks/{id}"],
+      ].map((item, index) => <div className="integrationFlowItem" key={item[0]}><span>{item[0]}</span><div><b>{item[1]}</b><code>{item[2]}</code></div>{index < 3 && <ArrowRight size={16} />}</div>)}
+    </section>
+
+    <div className="integrationLayout">
+      <main className="integrationMain">
+        <section className="panel integrationSection">
+          <header><span className="docIcon"><KeyRound size={18} /></span><div><small>STEP 1</small><h3>准备鉴权与可用模型</h3><p>所有业务请求使用同一枚业务 Key。先读取模型列表，再使用返回的模型别名发起调用。</p></div></header>
+          <div className="authContract"><code>Authorization: Bearer vap_live_xxx</code><span>JSON 请求还需 Content-Type: application/json</span></div>
+          <DocCode id="models" label="查询当前项目可用模型" value={modelList} copied={copied} onCopy={copyExample} />
+          <p className="docHint">若 <code>data</code> 为空，表示当前项目尚未启用模型；不要猜测或硬编码列表中未返回的模型。</p>
+        </section>
+
+        <section className="panel integrationSection">
+          <header><span className="docIcon coral"><Sparkles size={18} /></span><div><small>STEP 2</small><h3>创建 Seedance 视频任务</h3><p>创建接口是异步任务。成功响应仅返回 <code>{"{\"id\":\"vid_...\"}"}</code>，请保存任务 ID。</p></div></header>
+          <DocCode id="create-video" label="文本 + 素材生成视频" value={createVideo} copied={copied} onCopy={copyExample} />
+          <div className="mediaContract">
+            <div><b>图片</b><code>image_url</code><span>reference_image / first_frame / last_frame</span></div>
+            <div><b>视频</b><code>video_url</code><span>reference_video</span></div>
+            <div><b>音频</b><code>audio_url</code><span>reference_audio</span></div>
+          </div>
+          <p className="docHint"><code>content</code> 必须包含文本。素材数量、类型、分辨率和时长应以 <code>/v1/models</code> 返回的模型能力为准；素材库引用统一使用 <code>asset://&lt;assetId&gt;</code>。</p>
+        </section>
+
+        <section className="panel integrationSection">
+          <header><span className="docIcon"><Activity size={18} /></span><div><small>STEP 3</small><h3>轮询、读取结果与取消</h3><p>建议按 5～10 秒间隔轮询，不要并发高频查询。</p></div></header>
+          <div className="integrationCodePair">
+            <DocCode id="query-video" label="查询任务" value={queryVideo} copied={copied} onCopy={copyExample} />
+            <DocCode id="cancel-video" label="取消任务" value={cancelVideo} copied={copied} onCopy={copyExample} />
+          </div>
+          <div className="statusRail">
+            <span className="queued">queued</span><ArrowRight size={14} /><span className="running">running</span><ArrowRight size={14} /><span className="succeeded">succeeded</span>
+            <i>或</i><span className="failed">failed / cancelled</span>
+          </div>
+          <p className="docHint">成功后读取 <code>content.video_url</code>。结果 URL 可能过期，请由客户服务器及时下载；创建、查询和取消必须使用创建任务时的同一枚业务 Key。</p>
+        </section>
+
+        <section className="panel integrationSection">
+          <header><span className="docIcon coral"><CloudUpload size={18} /></span><div><small>OPTIONAL</small><h3>使用项目素材库</h3><p>本地文件需要先上传到对象存储，再登记到素材组；只有 <code>Active</code> 素材才能用于视频任务。</p></div></header>
+          <ol className="assetSteps">
+            <li><span>1</span><div><b>创建素材组</b><code>POST /api/asset-group/create</code></div></li>
+            <li><span>2</span><div><b>上传文件</b><code>POST /api/asset/upload-file</code></div></li>
+            <li><span>3</span><div><b>登记素材</b><code>POST /api/asset/create</code></div></li>
+            <li><span>4</span><div><b>等待可用</b><code>GET /api/asset/get?assetId=...</code></div></li>
+          </ol>
+          <div className="integrationCodePair">
+            <DocCode id="upload-asset" label="上传图片、视频或音频" value={uploadAsset} copied={copied} onCopy={copyExample} />
+            <DocCode id="register-asset" label="登记到素材组" value={registerAsset} copied={copied} onCopy={copyExample} />
+          </div>
+          <p className="docHint">上传响应中的 <code>url</code>、<code>uploadId</code> 和 <code>assetType</code> 必须原样传给登记接口。上传成功不等于登记完成。</p>
+        </section>
+      </main>
+
+      <aside className="integrationAside">
+        <section className="panel deliveryCard">
+          <span className="docIcon"><CheckCircle2 size={19} /></span><h3>客户交付清单</h3>
+          <ul><li>公网 HTTPS API 地址</li><li>单独签发的业务 API Key</li><li>允许调用的模型名称</li><li>错误排查与技术支持渠道</li></ul>
+        </section>
+        <section className="panel securityCard">
+          <ShieldCheck size={20} /><div><h3>必须服务端调用</h3><p>业务 Key 不得写入网页、App 安装包、公开仓库、日志或 URL。不要向客户提供管理员账号、<code>projectName</code>、火山 AK/SK 或 Ark API Key。</p></div>
+        </section>
+        <section className="panel errorGuide">
+          <h3>常见响应</h3>
+          <dl><div><dt>401</dt><dd>Key 缺失、无效或已禁用</dd></div><div><dt>403</dt><dd>项目未开通模型或渠道不可用</dd></div><div><dt>409</dt><dd>幂等键对应了不同请求体</dd></div><div><dt>422</dt><dd>字段、素材或模型能力不匹配</dd></div><div><dt>429</dt><dd>项目或 Key 额度不足</dd></div><div><dt>502</dt><dd>供应商不可达或拒绝请求</dd></div></dl>
+          <p>排查时保留响应体和 <code>X-Request-Id</code>，不要发送完整业务 Key。</p>
+        </section>
+      </aside>
+    </div>
+
+    <section className="panel endpointReference">
+      <div className="panelHead"><div><h3>业务接口总览</h3><p>以下接口全部使用业务 Bearer Key；只有 <code>/health</code> 无需鉴权。</p></div><span className="version">API v5.1</span></div>
+      <div className="endpointTable">
+        <div className="endpointRow endpointHead"><span>模块</span><span>方法</span><span>路径</span><span>说明</span></div>
+        {[
+          ["基础", "GET", "/health", "服务健康检查"], ["基础", "GET", "/api/auth/me", "验证业务 Key"], ["模型", "GET", "/v1/models", "查询当前项目可用模型"],
+          ["文本", "POST", "/v1/chat/completions", "OpenAI 兼容对话，支持 JSON / SSE"], ["文本", "POST", "/v1/responses", "OpenAI 兼容 Responses，支持 JSON / SSE"], ["图片", "POST", "/v1/images/generations", "图片生成或参考图改图"],
+          ["素材组", "POST", "/api/asset-group/create", "创建素材组"], ["素材组", "GET", "/api/asset-group/list", "查询素材组列表"], ["素材组", "GET", "/api/asset-group/get", "查询素材组详情"], ["素材组", "PUT", "/api/asset-group/update", "修改素材组"], ["素材组", "DELETE", "/api/asset-group/delete", "删除素材组"],
+          ["素材", "POST", "/api/asset/upload-file", "上传图片、视频或音频"], ["素材", "POST", "/api/asset/create", "登记素材"], ["素材", "GET", "/api/asset/list", "查询素材列表"], ["素材", "GET", "/api/asset/get", "查询素材详情与状态"], ["素材", "PUT", "/api/asset/update", "修改素材名称"], ["素材", "DELETE", "/api/asset/delete", "删除素材"],
+          ["视频", "POST", "/api/v3/contents/generations/tasks", "创建异步视频任务"], ["视频", "GET", "/api/v3/contents/generations/tasks/{taskId}", "查询任务状态与结果"], ["视频", "DELETE", "/api/v3/contents/generations/tasks/{taskId}", "取消运行中的任务"],
+        ].map((row) => <div className="endpointRow" key={row.join("-")}><span>{row[0]}</span><span><code>{row[1]}</code></span><span><code>{row[2]}</code></span><span>{row[3]}</span></div>)}
+      </div>
+    </section>
+
+    <section className="deploymentNote"><Server size={21} /><div><h3>服务部署边界</h3><p>客户只访问公网 API 服务，不访问本控制台。控制台使用管理员 Session 与 CSRF；客户业务接口仅接受 <code>Authorization: Bearer vap_live_...</code>。火山凭证和供应商凭证只能保存在 API 服务器。</p></div></section>
   </div>;
 }
 
-function IntegrationPanel() {
-  const curl = `curl -X POST '${API_BASE_URL}/api/v3/contents/generations/tasks' \\\n+  -H 'Authorization: Bearer vap_live_xxx' \\\n+  -H 'Content-Type: application/json' \\\n+  -d '{\n    "model": "${DEFAULT_MODEL}",\n    "content": [{"type":"text","text":"一只橘猫坐在窗边看雨"}],\n    "ratio": "16:9",\n    "duration": 5,\n    "generate_audio": true\n  }'`;
-  return <div className="content"><div className="pageIntro"><div><h2>交付给 API 用户</h2><p>用户只需要公网服务地址和业务 API Key，不需要控制台账号。</p></div><span className="version">API v1</span></div>
-    <section className="integrationGrid"><article className="panel docCard"><span className="step">1</span><h3>创建视频任务</h3><pre>{curl}</pre></article><article className="panel docCard"><span className="step">2</span><h3>查询任务</h3><pre>{`GET ${API_BASE_URL}/api/v3/contents/generations/tasks/{taskId}\nAuthorization: Bearer vap_live_xxx`}</pre><p>状态为 <code>succeeded</code> 后读取 <code>content.video_url</code>。</p></article><article className="panel docCard"><span className="step">3</span><h3>取消任务</h3><pre>{`DELETE ${API_BASE_URL}/api/v3/contents/generations/tasks/{taskId}\nAuthorization: Bearer vap_live_xxx`}</pre><p>建议只对 <code>queued</code> 或 <code>running</code> 状态调用。</p></article></section>
-    <section className="deploymentNote"><Server size={21} /><div><h3>独立部署约束</h3><p>控制台构建时设置 <code>NEXT_PUBLIC_API_BASE_URL</code>；API 服务器设置 <code>CORS_ORIGINS</code> 为控制台域名。火山凭证只能配置在 API 服务器。</p></div></section>
-  </div>;
+function DocCode({ id, label, value, copied, onCopy }: { id: string; label: string; value: string; copied: string; onCopy: (id: string, value: string) => Promise<void> }) {
+  return <div className="docCode"><div><span>{label}</span><button type="button" onClick={() => void onCopy(id, value)} aria-label={`复制${label}`}><Clipboard size={14} />{copied === id ? "已复制" : "复制"}</button></div><pre>{value}</pre></div>;
 }
 
 function Stat({ label, value, note, warn }: { label: string; value: number; note: string; warn?: boolean }) {

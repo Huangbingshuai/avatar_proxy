@@ -1,6 +1,6 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.0
+版本：5.1
 
 更新日期：2026-09-03
 正式地址：`https://api.richbest.cn`
@@ -34,12 +34,23 @@ JSON 请求还需携带 `Content-Type: application/json`。
 
 ## 3. 推荐接入流程
 
+### 3.1 模型与视频
+
 1. 调用 `/api/auth/me` 验证业务 API Key；
-2. 调用 `/api/asset-group/create` 创建素材组并保存素材组 ID；
-3. 调用 `/api/asset/upload-file` 上传本地文件，保存 `url`、`uploadId` 和 `assetType`；
-4. 调用 `/api/asset/create`，使用上一步的三个字段登记素材；
-5. 使用 `/api/asset/get` 或 `/api/asset/list` 轮询方舟处理状态；
-6. 状态为 `Active` 后再使用该素材；状态为 `Failed` 时读取方舟返回的失败信息；
+2. 调用 `/v1/models` 获取当前项目实际可用的模型，后续只使用返回的模型别名；
+3. 调用 `POST /api/v3/contents/generations/tasks` 创建视频任务，并为每次业务操作提供唯一的 `Idempotency-Key`；
+4. 保存创建响应中的中转站任务 ID，使用同一枚业务 Key 每 5～10 秒查询一次；
+5. 状态变为 `succeeded` 后读取 `content.video_url` 并及时下载；`failed` 或 `cancelled` 为终态；
+6. 仅在任务仍为 `queued` 或 `running` 时按需调用删除接口取消任务。
+
+### 3.2 素材库
+
+1. 调用 `/api/asset-group/create` 创建素材组并保存素材组 ID；
+2. 调用 `/api/asset/upload-file` 上传本地文件，保存 `url`、`uploadId` 和 `assetType`；
+3. 调用 `/api/asset/create`，使用上一步的三个字段登记素材；
+4. 使用 `/api/asset/get` 或 `/api/asset/list` 轮询方舟处理状态；
+5. 状态为 `Active` 后再使用该素材；状态为 `Failed` 时读取方舟返回的失败信息；
+6. 视频请求通过 `asset://<assetId>` 引用素材，并根据素材类型填写正确的 `content.type` 和 `role`；
 7. 不再使用时调用 `/api/asset/delete` 删除素材。
 
 上传文件和登记素材是两个独立步骤。只调用上传接口不会自动创建方舟素材。
