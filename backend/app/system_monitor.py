@@ -355,9 +355,9 @@ class DiskMonitor:
         level = str(details.get("level") or "info")
         label = LEVEL_LABELS.get(level, "通知")
         timestamp = datetime.fromtimestamp(now, UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-        subject = f"[Avatar Proxy][{label}] 磁盘空间监控"
+        subject = f"[Star Proxy][{label}] 磁盘空间监控"
         body = (
-            "Avatar Proxy 系统监控\n\n"
+            "Star Proxy 系统监控\n\n"
             f"告警状态：{label}\n"
             f"告警内容：{message}\n"
             f"监控路径：{self.path}\n"

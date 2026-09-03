@@ -415,13 +415,13 @@ def test_smtp_message_uses_tls_authentication_and_expected_recipients(
         smtp_security=security,
     )
     monitor = DiskMonitor(Database(settings.database_path), settings)
-    monitor._send_email_sync("[Avatar Proxy] 测试", "测试正文")
+    monitor._send_email_sync("[Star Proxy] 测试", "测试正文")
 
     assert events["host"] == "smtp.example.test"
     assert events["login"] == ("alerts@example.test", "mail-authorization-secret")
     assert events["from_addr"] == "alerts@example.test"
     assert events["to_addrs"] == ["ops@example.test", "owner@example.test"]
-    assert str(events["message"]["Subject"]) == "[Avatar Proxy] 测试"
+    assert str(events["message"]["Subject"]) == "[Star Proxy] 测试"
     assert events["starttls"] == (1 if security == "starttls" else 0)
     assert events["ehlo"] == (2 if security == "starttls" else 0)
 

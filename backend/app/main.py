@@ -73,7 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await volcengine.aclose()
 
     app = FastAPI(
-        title="Avatar Proxy API",
+        title="Star Proxy API",
         version="1.0.0",
         description="独立部署的虚拟人像素材库与 Seedance 视频生成代理服务。",
         lifespan=lifespan,

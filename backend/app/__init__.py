@@ -1,1 +1,1 @@
-"""Avatar Proxy backend package."""
+"""Star Proxy backend package."""

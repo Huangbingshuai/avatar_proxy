@@ -10,15 +10,15 @@ async function render(path = "/") {
   }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("server-renders the internal Avatar Proxy console", async () => {
+test("server-renders the internal Star Proxy console", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>Avatar Proxy · 内部控制台<\/title>/i);
+  assert.match(html, /<title>Star Proxy · 内部控制台<\/title>/i);
   assert.match(html, /正在验证会话/);
   assert.doesNotMatch(html, /CONSOLE_ADMIN_TOKEN|X-Admin-Token/i);
-  assert.match(html, /控制台与公网 API/);
+  assert.match(html, /API 接入与项目治理中心/);
   assert.match(html, /http:\/\/(?:localhost|127\.0\.0\.1):8000/);
   assert.doesNotMatch(
     html,

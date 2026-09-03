@@ -1,6 +1,6 @@
-# Avatar Proxy
+# Star Proxy
 
-Avatar Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系统。系统用我方签发的业务 API Key 隔离客户项目，并提供内部管理控制台、客户工具前端和独立 FastAPI 服务。
+Star Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系统。系统用我方签发的业务 API Key 隔离客户项目，并提供内部管理控制台、客户工具前端和独立 FastAPI 服务。
 
 ## 系统组成
 

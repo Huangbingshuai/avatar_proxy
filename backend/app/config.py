@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     admin_argon2_time_cost: int = Field(default=3, ge=1, le=10)
     admin_argon2_memory_cost: int = Field(default=65536, ge=8192, le=262144)
     admin_argon2_parallelism: int = Field(default=4, ge=1, le=16)
-    admin_totp_issuer: str = Field(default="Avatar Proxy", min_length=1, max_length=64)
+    admin_totp_issuer: str = Field(default="Star Proxy", min_length=1, max_length=64)
     admin_totp_encryption_key: SecretStr | None = None
     admin_totp_valid_window: int = Field(default=1, ge=0, le=2)
     admin_backup_enabled: bool = True

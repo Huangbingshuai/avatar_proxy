@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the public Avatar Proxy ingress for LocalMiniDrama WeChat callbacks."""
+"""Verify the public Star Proxy ingress for LocalMiniDrama WeChat callbacks."""
 
 from __future__ import annotations
 
