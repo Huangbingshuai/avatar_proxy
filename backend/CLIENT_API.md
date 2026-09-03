@@ -1,6 +1,6 @@
-# 瑞池多类型素材 API 接入文档
+# 瑞池 AI 模型与素材 API 接入文档
 
-版本：4.1
+版本：4.2
 
 更新日期：2026-09-02
 正式地址：`https://api.richbest.cn`
@@ -428,28 +428,32 @@ curl "$BASE_URL/v1/models" \
 
 `data` 为空不代表业务 Key 无效，而是该 Key 所属项目尚未开通可用模型。客户端应使用返回的 `id` 作为后续请求的 `model`，不要缓存或猜测未返回的模型。如需使用其他模型，请联系管理员为当前项目开通；开通后项目下现有业务 Key 可直接使用，无需重新签发。
 
-| 对外模型别名 | 类型 | 初始供应商 |
-|---|---|---|
-| `deepseek-v4-flash` | 文本 | 火山方舟 |
-| `glm-5.2` | 文本 | 火山方舟 |
-| `doubao-seed-2.1-pro` | 文本、识图 | 火山方舟 |
-| `doubao-seed-2.0-pro` | 文本、识图 | 火山方舟 |
-| `doubao-seed-2.0-lite` | 文本、识图 | 火山方舟 |
-| `doubao-seed-2.0-mini` | 文本、识图 | 火山方舟 |
-| `seedream-5.0-pro` | 生图、参考图改图 | 火山方舟 |
-| `seedream-5.0-lite` | 生图、参考图改图、组图 | 火山方舟 |
-| `seedream-4.5` | 生图、参考图改图、组图 | 火山方舟 |
-| `seedream-4.0` | 生图、参考图改图、组图 | 火山方舟 |
-| `seedance-2.5` | 异步视频 | 火山方舟 |
-| `seedance-2.0` | 异步视频 | 火山方舟 |
-| `seedance-2.0-fast` | 异步视频 | 火山方舟 |
-| `seedance-2.0-mini` | 异步视频 | 火山方舟 |
-| `seedance-1.5-pro` | 异步视频 | 火山方舟 |
-| `seedance-1.0-pro` | 异步视频 | 火山方舟 |
-| `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 |
-| `wan3.0-video` | 异步视频 | 阿里百炼 |
-| `minimax-h3` | 异步视频 | MiniMax |
-| `image2.0` | 图片 | OpenAI |
+| 对外模型别名 | 能力 | 供应商 | 发起请求接口 | 响应方式或结果接口 |
+|---|---|---|---|---|
+| `deepseek-v4-flash` | 文本对话 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `glm-5.2` | 文本对话 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-2.1-pro` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-2.1-turbo` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-2.0-pro` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-2.0-lite` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-2.0-mini` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `seedream-5.0-pro` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `seedream-5.0-lite` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `seedream-5.0` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `seedream-4.5` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `seedream-4.0` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `image2.0` | 生图；单次 1 张结果 | OpenAI | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `seedance-2.5` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `seedance-2.0` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `seedance-2.0-fast` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `seedance-1.5-pro` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `wan3.0-video` | 异步视频 | 阿里百炼 | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+| `minimax-h3` | 异步视频 | MiniMax | `POST /v1/videos` | `GET /v1/videos/{taskId}`<br>`GET /v1/videos/{taskId}/content` |
+
+所有视频模型还支持 `HEAD /v1/videos/{taskId}/content`，用于只检查结果是否可下载而不获取响应正文。创建和查询视频任务时必须使用同一枚业务 API Key。
 
 模型是否已经对当前项目开放，以 `/v1/models` 的实时返回结果为准。请求未开通的模型会返回 `403 model_not_allowed`，请联系管理员确认项目授权和供应商渠道状态。
 
@@ -545,7 +549,7 @@ curl "$BASE_URL/v1/images/generations" \
   }'
 ```
 
-`image` 可填写单个 HTTP(S) 图片 URL、图片 Data URL 或 URL 数组，具体数量由 `/v1/models` 的 `maxInputImages` 决定。`n>1` 只在支持组图的 Seedream 模型上生效，中转层会转换为方舟组图参数。还可按模型能力使用 `size`、`output_format`、`watermark`、`sequential_image_generation`、`sequential_image_generation_options`、`optimize_prompt_options` 和 `tools`。不支持的模型能力会返回明确的 `422`，不会盲目透传。
+`image` 可填写单个 HTTP(S) 图片 URL、图片 Data URL 或 URL 数组，具体数量由 `/v1/models` 的 `maxInputImages` 决定。`n` 必须是 1～15 的整数，并且不能超过该模型返回的 `maxN`；`n>1` 只在支持组图的 Seedream 模型上生效，中转层会转换为方舟组图参数。还可按模型能力使用 `size`、`output_format`、`watermark`、`sequential_image_generation`、`sequential_image_generation_options`、`optimize_prompt_options` 和 `tools`。不支持的模型能力会返回明确的 `422`，不会盲目透传。
 
 图片接口不会把 OpenAI 的 `quality`、`style`、`user` 等供应商无关字段转发给方舟。当前公开接口只提供非流式 JSON 响应；传入 `stream=true` 会返回 `image_stream_unsupported`。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
 

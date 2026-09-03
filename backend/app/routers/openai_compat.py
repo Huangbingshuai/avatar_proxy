@@ -127,8 +127,8 @@ async def images_generations(
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 32000:
         raise ApiError("prompt不能为空或过长", 422, "image_prompt_invalid")
-    if "n" in payload and (not isinstance(payload["n"], int) or isinstance(payload["n"], bool) or not 1 <= payload["n"] <= 10):
-        raise ApiError("n必须是1到10的整数", 422, "image_count_invalid", details={"param": "n"})
+    if "n" in payload and (not isinstance(payload["n"], int) or isinstance(payload["n"], bool) or not 1 <= payload["n"] <= 15):
+        raise ApiError("n必须是1到15的整数", 422, "image_count_invalid", details={"param": "n"})
     if payload.get("response_format", "url") not in {"url", "b64_json"}:
         raise ApiError("response_format仅支持url或b64_json", 422, "image_response_format_invalid")
     if "stream" in payload and not isinstance(payload["stream"], bool):

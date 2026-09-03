@@ -11,11 +11,13 @@ BUILTIN_MODEL_CATALOG = (
     ("glm-5.2", "GLM 5.2", "volcengine_ark", "text", "openai_text", "glm-5-2-260617", {"chat": True, "responses": True, "stream": True}),
     ("seedream-5.0-pro", "Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-pro-260628", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxN": 1}),
     ("seedream-5.0-lite", "Seedream 5.0 Lite", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-lite-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15, "outputFormat": True, "webSearch": True}),
+    ("seedream-5.0", "Seedream 5.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxN": 1, "outputFormat": True, "webSearch": True}),
     ("seedream-4.5", "Seedream 4.5", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-5-251128", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15}),
     ("seedream-4.0", "Seedream 4.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-0-250828", {"generations": True, "imageInput": True, "maxInputImages": 10, "sequentialImages": True, "maxN": 15}),
     ("doubao-seed-2.1-pro", "Doubao Seed 2.1 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-1-pro-260628", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
+    ("doubao-seed-2.1-turbo", "Doubao Seed 2.1 Turbo", "volcengine_ark", "text", "openai_text", "doubao-seed-2-1-turbo-260628", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-pro", "Doubao Seed 2.0 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-pro-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
-    ("doubao-seed-2.0-lite", "Doubao Seed 2.0 Lite", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-lite-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
+    ("doubao-seed-2.0-lite", "Doubao Seed 2.0 Lite", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-lite-260428", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-mini", "Doubao Seed 2.0 Mini", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-mini-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("seedance-2.5", "Seedance 2.5", "volcengine_ark", "video", "async_video", "doubao-seedance-2-5-260628", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 30, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 50, "maxN": 1}),
     ("seedance-2.0", "Seedance 2.0", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 20, "maxN": 1}),
@@ -396,6 +398,7 @@ CREATE TABLE IF NOT EXISTS inference_tasks (
     error_message TEXT,
     provider_request_id TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}',
+    billing_metadata_json TEXT NOT NULL DEFAULT '{}',
     created_at INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TEXT,
@@ -430,6 +433,122 @@ CREATE TABLE IF NOT EXISTS inference_usage (
     FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE RESTRICT,
     FOREIGN KEY(model_alias) REFERENCES model_catalog(alias) ON DELETE RESTRICT,
     FOREIGN KEY(channel_id) REFERENCES provider_channels(id) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS billing_model_rates (
+    id TEXT PRIMARY KEY,
+    model_alias TEXT NOT NULL,
+    metric TEXT NOT NULL CHECK(metric IN ('input_tokens','output_tokens','image','video_second')),
+    resolution TEXT NOT NULL DEFAULT '',
+    effective_month TEXT NOT NULL,
+    unit_size INTEGER NOT NULL CHECK(unit_size > 0),
+    unit_price_micros INTEGER NOT NULL CHECK(unit_price_micros >= 0),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(model_alias) REFERENCES model_catalog(alias) ON DELETE RESTRICT,
+    UNIQUE(model_alias,metric,resolution,effective_month)
+);
+CREATE TABLE IF NOT EXISTS project_billing_terms (
+    id TEXT PRIMARY KEY,
+    project_name TEXT NOT NULL,
+    effective_month TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    discount_bps INTEGER NOT NULL DEFAULT 10000 CHECK(discount_bps BETWEEN 0 AND 10000),
+    updated_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE RESTRICT,
+    UNIQUE(project_name,effective_month)
+);
+CREATE TABLE IF NOT EXISTS billing_statements (
+    id TEXT PRIMARY KEY,
+    statement_number TEXT NOT NULL UNIQUE,
+    project_name TEXT NOT NULL,
+    billing_month TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','confirmed','paid')),
+    currency TEXT NOT NULL DEFAULT 'CNY' CHECK(currency='CNY'),
+    subtotal_micros INTEGER NOT NULL DEFAULT 0,
+    discount_micros INTEGER NOT NULL DEFAULT 0,
+    adjustment_micros INTEGER NOT NULL DEFAULT 0,
+    total_micros INTEGER NOT NULL DEFAULT 0,
+    pending_count INTEGER NOT NULL DEFAULT 0,
+    generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at TEXT,
+    confirmed_by TEXT,
+    paid_at TEXT,
+    paid_by TEXT,
+    payment_reference TEXT,
+    payment_note TEXT,
+    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE RESTRICT,
+    UNIQUE(project_name,billing_month)
+);
+CREATE TABLE IF NOT EXISTS billing_usage_items (
+    id TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL CHECK(source_type IN ('relay','legacy_video')),
+    source_id TEXT NOT NULL,
+    api_key_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    model_alias TEXT NOT NULL,
+    usage_month TEXT NOT NULL,
+    billing_month TEXT NOT NULL,
+    late_from_month TEXT,
+    occurred_at TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('rated','pending','excluded')),
+    pending_reason TEXT,
+    discount_bps INTEGER NOT NULL DEFAULT 10000,
+    list_amount_micros INTEGER,
+    net_amount_micros INTEGER,
+    statement_id TEXT,
+    rated_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(api_key_id) REFERENCES api_keys(id) ON DELETE RESTRICT,
+    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE RESTRICT,
+    FOREIGN KEY(statement_id) REFERENCES billing_statements(id) ON DELETE RESTRICT,
+    UNIQUE(source_type,source_id)
+);
+CREATE TABLE IF NOT EXISTS billing_usage_components (
+    item_id TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    resolution TEXT NOT NULL DEFAULT '',
+    quantity TEXT NOT NULL,
+    unit_size INTEGER NOT NULL,
+    rate_id TEXT,
+    unit_price_micros INTEGER,
+    list_amount_micros INTEGER,
+    net_amount_micros INTEGER,
+    PRIMARY KEY(item_id,metric,resolution),
+    FOREIGN KEY(item_id) REFERENCES billing_usage_items(id) ON DELETE CASCADE,
+    FOREIGN KEY(rate_id) REFERENCES billing_model_rates(id) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS billing_statement_lines (
+    id TEXT PRIMARY KEY,
+    statement_id TEXT NOT NULL,
+    model_alias TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    resolution TEXT NOT NULL DEFAULT '',
+    quantity TEXT NOT NULL,
+    unit_size INTEGER NOT NULL,
+    unit_price_micros INTEGER NOT NULL,
+    list_amount_micros INTEGER NOT NULL,
+    net_amount_micros INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(statement_id) REFERENCES billing_statements(id) ON DELETE CASCADE,
+    UNIQUE(statement_id,model_alias,metric,resolution,unit_price_micros)
+);
+CREATE TABLE IF NOT EXISTS billing_adjustments (
+    id TEXT PRIMARY KEY,
+    statement_id TEXT NOT NULL,
+    amount_micros INTEGER NOT NULL CHECK(amount_micros != 0),
+    reason TEXT NOT NULL,
+    adjustment_type TEXT NOT NULL DEFAULT 'manual' CHECK(adjustment_type IN ('manual','late_usage')),
+    source_item_id TEXT,
+    source_statement_id TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(statement_id) REFERENCES billing_statements(id) ON DELETE CASCADE,
+    FOREIGN KEY(source_statement_id) REFERENCES billing_statements(id) ON DELETE RESTRICT,
+    FOREIGN KEY(source_item_id) REFERENCES billing_usage_items(id) ON DELETE RESTRICT,
+    UNIQUE(source_item_id)
 );
 CREATE INDEX IF NOT EXISTS idx_quota_events_open ON quota_events(acknowledged, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_asset_records_project_status ON asset_records(project_name, status);
@@ -468,6 +587,14 @@ CREATE INDEX IF NOT EXISTS idx_inference_tasks_channel_status
     ON inference_tasks(channel_id, status);
 CREATE INDEX IF NOT EXISTS idx_inference_usage_project_created
     ON inference_usage(project_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_rates_lookup
+    ON billing_model_rates(model_alias,metric,resolution,effective_month DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_terms_lookup
+    ON project_billing_terms(project_name,effective_month DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_items_month
+    ON billing_usage_items(project_name,billing_month,status);
+CREATE INDEX IF NOT EXISTS idx_billing_statements_month
+    ON billing_statements(billing_month,status);
 """
 
 
@@ -544,6 +671,28 @@ class Database:
             if model_catalog_columns and "upstream_model" not in model_catalog_columns:
                 connection.execute(
                     "ALTER TABLE model_catalog ADD COLUMN upstream_model TEXT NOT NULL DEFAULT ''"
+                )
+            if inference_task_columns and "billing_metadata_json" not in inference_task_columns:
+                connection.execute(
+                    "ALTER TABLE inference_tasks ADD COLUMN billing_metadata_json TEXT NOT NULL DEFAULT '{}'"
+                )
+            billing_item_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(billing_usage_items)").fetchall()
+            }
+            if billing_item_columns and "late_from_month" not in billing_item_columns:
+                connection.execute("ALTER TABLE billing_usage_items ADD COLUMN late_from_month TEXT")
+            billing_adjustment_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(billing_adjustments)").fetchall()
+            }
+            if billing_adjustment_columns and "adjustment_type" not in billing_adjustment_columns:
+                connection.execute(
+                    "ALTER TABLE billing_adjustments ADD COLUMN adjustment_type TEXT NOT NULL DEFAULT 'manual'"
+                )
+            if billing_adjustment_columns and "source_item_id" not in billing_adjustment_columns:
+                connection.execute("ALTER TABLE billing_adjustments ADD COLUMN source_item_id TEXT")
+                connection.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_adjustments_source_item "
+                    "ON billing_adjustments(source_item_id) WHERE source_item_id IS NOT NULL"
                 )
             connection.execute(
                 "INSERT OR IGNORE INTO system_monitor_settings(id) VALUES (1)"
@@ -740,13 +889,18 @@ class Database:
                 "SELECT COUNT(*) FROM provider_channels WHERE project_name = ? AND deleted_at IS NULL",
                 (canonical_name,),
             ).fetchone()[0]
-            if key_count or asset_count or channel_count:
+            billing_count = connection.execute(
+                "SELECT COUNT(*) FROM billing_statements WHERE project_name=?",
+                (canonical_name,),
+            ).fetchone()[0]
+            if key_count or asset_count or channel_count or billing_count:
                 return {
                     "deleted": False,
                     "projectName": canonical_name,
                     "keyCount": key_count,
                     "assetCount": asset_count,
                     "channelCount": channel_count,
+                    "billingCount": billing_count,
                 }
             connection.execute(
                 "DELETE FROM quota_reservations WHERE scope_type='project' AND scope_id=?",
@@ -756,6 +910,12 @@ class Database:
                 "DELETE FROM quota_usage_windows WHERE scope_type='project' AND scope_id=?",
                 (canonical_name,),
             )
+            # Billing terms are mutable configuration, not invoice history. They
+            # must not leave a foreign-key tombstone when a never-billed project
+            # is intentionally removed.
+            connection.execute(
+                "DELETE FROM project_billing_terms WHERE project_name=?", (canonical_name,)
+            )
             connection.execute("DELETE FROM projects WHERE name = ?", (canonical_name,))
         return {
             "deleted": True,
@@ -763,6 +923,7 @@ class Database:
             "keyCount": 0,
             "assetCount": 0,
             "channelCount": 0,
+            "billingCount": 0,
         }
 
     def project_exists(self, name: str) -> bool:
@@ -823,8 +984,11 @@ class Database:
                 return "active"
             has_inference_history = connection.execute(
                 "SELECT EXISTS(SELECT 1 FROM inference_tasks WHERE api_key_id=?) OR "
-                "EXISTS(SELECT 1 FROM inference_usage WHERE api_key_id=?)",
-                (key_id, key_id),
+                "EXISTS(SELECT 1 FROM inference_usage WHERE api_key_id=?) OR "
+                "EXISTS(SELECT 1 FROM video_tasks WHERE api_key_id=?) OR "
+                "EXISTS(SELECT 1 FROM video_usage WHERE api_key_id=?) OR "
+                "EXISTS(SELECT 1 FROM billing_usage_items WHERE api_key_id=?)",
+                (key_id, key_id, key_id, key_id, key_id),
             ).fetchone()[0]
             connection.execute(
                 "DELETE FROM quota_reservations WHERE scope_type='key' AND scope_id=?", (key_id,)

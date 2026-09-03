@@ -863,19 +863,32 @@ class ProviderRelay:
             if existing:
                 return existing, False
         task_id = f"vid_{uuid.uuid4().hex}" if operation == "video" else f"img_{uuid.uuid4().hex}"
+        billing_metadata: dict[str, Any] = {}
+        if operation == "video":
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            resolution = metadata.get("resolution")
+            if resolution is None and route.provider == "aliyun_bailian":
+                resolution = "1080p"
+            elif resolution is None and route.provider == "minimax":
+                resolution = "768p"
+            if resolution is not None:
+                billing_metadata["resolution"] = str(resolution).lower()
+            duration = payload.get("duration")
+            if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration > 0:
+                billing_metadata["requestedDuration"] = duration
         with self.database.connect() as connection:
             try:
                 connection.execute(
                     """
                     INSERT INTO inference_tasks
                     (id,api_key_id,project_name,model_alias,channel_id,credential_id,upstream_model,
-                     operation,status,request_hash,idempotency_key,created_at)
-                    VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)
+                     operation,status,request_hash,idempotency_key,billing_metadata_json,created_at)
+                    VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?,?)
                     """,
                     (
                         task_id, principal.id, principal.project_name, route.alias,
                         route.channel_id, route.credential_id, route.upstream_model, operation, request_hash,
-                        idempotency_key, _now_epoch(),
+                        idempotency_key, _json(billing_metadata), _now_epoch(),
                     ),
                 )
             except Exception as error:
@@ -891,6 +904,7 @@ class ProviderRelay:
             "status": "queued",
             "request_hash": request_hash,
             "metadata_json": "{}",
+            "billing_metadata_json": _json(billing_metadata),
         }, True
 
     @staticmethod

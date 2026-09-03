@@ -111,6 +111,13 @@ def delete_project(payload: ProjectDelete, request: Request, admin: AdminDepende
             "project_has_provider_channels",
             details={"channelCount": result["channelCount"]},
         )
+    if result.get("billingCount"):
+        raise ApiError(
+            "项目已有计费账单历史，为保证财务记录不能删除",
+            409,
+            "project_has_billing_history",
+            details={"billingCount": result["billingCount"]},
+        )
     audit_action(
         request, admin, "project.delete", "project", result["projectName"],
         before={"projectName": result["projectName"]}, after={"deleted": True},

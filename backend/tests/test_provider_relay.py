@@ -351,8 +351,9 @@ def test_aliyun_video_task_is_pinned_to_original_credential_and_settled_once(tmp
     ("alias", "upstream_model"),
     [
         ("doubao-seed-2.1-pro", "doubao-seed-2-1-pro-260628"),
+        ("doubao-seed-2.1-turbo", "doubao-seed-2-1-turbo-260628"),
         ("doubao-seed-2.0-pro", "doubao-seed-2-0-pro-260215"),
-        ("doubao-seed-2.0-lite", "doubao-seed-2-0-lite-260215"),
+        ("doubao-seed-2.0-lite", "doubao-seed-2-0-lite-260428"),
         ("doubao-seed-2.0-mini", "doubao-seed-2-0-mini-260215"),
     ],
 )
@@ -432,7 +433,8 @@ def test_non_vision_text_model_rejects_image_input(tmp_path: Path) -> None:
     ("alias", "upstream_model", "count", "sequential", "reference_image", "legacy_controls"),
     [
         ("seedream-5.0-pro", "doubao-seedream-5-0-pro-260628", 1, False, True, False),
-        ("seedream-5.0-lite", "doubao-seedream-5-0-lite-260128", 2, True, True, False),
+        ("seedream-5.0-lite", "doubao-seedream-5-0-lite-260128", 15, True, True, False),
+        ("seedream-5.0", "doubao-seedream-5-0-260128", 1, False, True, False),
         ("seedream-4.5", "doubao-seedream-4-5-251128", 2, True, True, False),
         ("seedream-4.0", "doubao-seedream-4-0-250828", 2, True, True, False),
     ],
@@ -882,8 +884,8 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
 
     assert aliases == sorted([
         "deepseek-v4-flash", "glm-5.2", "image2.0", "minimax-h3", "seedream-5.0-pro",
-        "seedream-5.0-lite", "seedream-4.5", "seedream-4.0",
-        "doubao-seed-2.1-pro", "doubao-seed-2.0-pro", "doubao-seed-2.0-lite",
+        "seedream-5.0-lite", "seedream-5.0", "seedream-4.5", "seedream-4.0",
+        "doubao-seed-2.1-pro", "doubao-seed-2.1-turbo", "doubao-seed-2.0-pro", "doubao-seed-2.0-lite",
         "doubao-seed-2.0-mini",
         "seedance-2.5", "seedance-2.0", "seedance-2.0-fast", "seedance-2.0-mini",
         "seedance-1.5-pro", "seedance-1.0-pro", "seedance-1.0-pro-fast",
@@ -902,11 +904,13 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "minimax-h3": "MiniMax-H3",
         "seedream-5.0-pro": "doubao-seedream-5-0-pro-260628",
         "seedream-5.0-lite": "doubao-seedream-5-0-lite-260128",
+        "seedream-5.0": "doubao-seedream-5-0-260128",
         "seedream-4.5": "doubao-seedream-4-5-251128",
         "seedream-4.0": "doubao-seedream-4-0-250828",
         "doubao-seed-2.1-pro": "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2.1-turbo": "doubao-seed-2-1-turbo-260628",
         "doubao-seed-2.0-pro": "doubao-seed-2-0-pro-260215",
-        "doubao-seed-2.0-lite": "doubao-seed-2-0-lite-260215",
+        "doubao-seed-2.0-lite": "doubao-seed-2-0-lite-260428",
         "doubao-seed-2.0-mini": "doubao-seed-2-0-mini-260215",
         "seedance-2.5": "doubao-seedance-2-5-260628",
         "seedance-2.0": "doubao-seedance-2-0-260128",

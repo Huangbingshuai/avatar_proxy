@@ -277,6 +277,7 @@ def test_public_parameter_validation_and_openai_error_contract(tmp_path: Path) -
             ({"model": "image2.0", "prompt": "x", "unknown": 1}, "image_parameter_unsupported"),
             ({"model": "image2.0", "prompt": ""}, "image_prompt_invalid"),
             ({"model": "image2.0", "prompt": "x", "n": 0}, "image_count_invalid"),
+            ({"model": "image2.0", "prompt": "x", "n": 16}, "image_count_invalid"),
             ({"model": "image2.0", "prompt": "x", "response_format": "raw"}, "image_response_format_invalid"),
         ]
         for payload, code in images:

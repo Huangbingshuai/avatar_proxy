@@ -618,6 +618,44 @@ class AdminAuthService:
             )
         raise ApiError("超级管理员密码不正确", 401, "admin_reauthentication_failed")
 
+    def verify_current_password(
+        self,
+        actor: AdminPrincipal,
+        current_password: str,
+        source_ip: str | None,
+        user_agent: str | None,
+        action: str,
+    ) -> None:
+        """Reauthenticate the current administrator without changing role boundaries."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT password_hash,status FROM admin_users WHERE id=?", (actor.id,)
+            ).fetchone()
+        try:
+            valid = (
+                row is not None
+                and row["status"] == "active"
+                and self.password_hasher.verify(row["password_hash"], current_password)
+            )
+        except (VerifyMismatchError, VerificationError):
+            valid = False
+        if valid:
+            return
+        with self.database.connect() as connection:
+            self._audit(
+                actor=actor.username,
+                actor_id=actor.id,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                action="admin.auth.reauthenticate",
+                target_type="sensitive_action",
+                target_id=action,
+                after={"result": "failed"},
+                outcome="failure",
+                connection=connection,
+            )
+        raise ApiError("当前管理员密码不正确", 401, "admin_reauthentication_failed")
+
     def verify_sensitive_totp(
         self,
         actor: AdminPrincipal,

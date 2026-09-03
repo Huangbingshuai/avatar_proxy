@@ -39,6 +39,7 @@
 - `app/page.tsx`：主要业务控制台、项目和 Key 管理入口。
 - `app/admin-panel.tsx`：超级管理员、安全、备份、TOTP 和磁盘监控界面。
 - `app/admin-api.ts`：管理 Session/CSRF 请求封装。
+- `app/billing-panel.tsx`：项目计费、模型价目、月度账单、调整和导出界面。
 - `app/globals.css`：控制台样式。
 - `tests/console.test.tsx`：控制台交互与认证回归。
 - `tests/rendered-html.test.mjs`：SSR 与敏感信息泄漏检查。
@@ -56,8 +57,10 @@
 - `backend/app/quota.py`：项目/Key 额度与原子预占。
 - `backend/app/storage.py`：TOS 上传、删除和失败清理。
 - `backend/app/provider_relay.py`：多供应商渠道、加密凭证、模型路由、任务和真实用量账本。
+- `backend/app/billing.py`：真实用量归集、微元计价、账单冻结、迟到用量和 CSV 导出。
 - `backend/app/routers/providers.py`：供应商渠道、项目模型、Key 权限和中转用量管理接口。
 - `backend/app/routers/openai_compat.py`：客户 `/v1/*` OpenAI 兼容文本、图片和视频接口。
+- `backend/app/routers/billing.py`：普通管理员计费条款、价目、账单和支付登记接口。
 - `backend/app/backup.py`：SQLite 与审计备份、校验、恢复。
 - `backend/app/system_monitor.py`：磁盘采样、告警状态机、SMTP 队列和重试。
 
@@ -104,6 +107,17 @@
 - 异步任务必须固定提交时的渠道、凭证版本和上游模型；凭证轮换后旧任务仍使用旧版本查询。
 - 用量只记录供应商真实返回值，未知 Token、图片数或视频秒数保存为 `NULL`，不得估算为零。
 - 图片和视频结果透传供应商 URL，不自动写入 TOS；文档必须提示 URL 可能过期。
+
+### 项目计费与账单
+
+- 项目计费默认关闭；启用、禁用和折扣均按自然月生效，不能误将历史项目自动纳入收费。
+- 收费来源只能是本地 `inference_usage` 和 `/api/video/*` 的真实成功用量；失败、取消、运行中任务不得产生费用。
+- 用量归集必须按来源记录唯一且可重放，后台失败不能影响客户模型调用主链路。
+- 金额使用整数微元持久化、`Decimal` 运算并以字符串返回；缺失单价和显式零元必须严格区分。
+- 当前月只提供实时预估；确认后的账单明细与金额不可修改，迟到用量进入下一开放账期的系统调整项。
+- 已有计费历史的 API Key 只能注销，项目不得物理删除；账单历史必须保留核对所需的 Key 用量关联。
+- 计费管理只允许普通管理员。修改价目、项目条款、调整项、确认和支付登记必须验证当前管理员密码并审计。
+- CSV 必须使用 UTF-8 BOM，并防护以 `= + - @` 开头的公式注入字段；打印页面不得包含导航和操作控件。
 
 ### 素材与 TOS
 

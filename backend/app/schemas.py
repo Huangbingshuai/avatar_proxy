@@ -110,6 +110,34 @@ class AdminSystemMonitorSettingsUpdate(ApiModel):
         return self
 
 
+class BillingRateUpdate(ApiModel):
+    effective_month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    prices: dict[str, Any]
+    current_password: str = Field(min_length=1, max_length=128)
+
+
+class ProjectBillingUpdate(ApiModel):
+    effective_month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    enabled: bool
+    discount_bps: int = Field(default=10000, ge=0, le=10000)
+    current_password: str = Field(min_length=1, max_length=128)
+
+
+class BillingSensitiveAction(ApiModel):
+    current_password: str = Field(min_length=1, max_length=128)
+
+
+class BillingAdjustmentCreate(BillingSensitiveAction):
+    amount_yuan: str = Field(min_length=1, max_length=40)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class BillingPaymentCreate(BillingSensitiveAction):
+    paid_at: str | None = Field(default=None, max_length=40)
+    reference: str | None = Field(default=None, max_length=100)
+    note: str | None = Field(default=None, max_length=500)
+
+
 class ProjectCreate(ApiModel):
     name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
     display_name: str | None = Field(default=None, min_length=1, max_length=64)

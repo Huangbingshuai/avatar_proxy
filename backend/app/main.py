@@ -9,13 +9,14 @@ from fastapi.responses import JSONResponse
 
 from .admin_auth import AdminAuthService
 from .backup import BackupManager
+from .billing import BillingManager
 from .config import Settings, get_settings
 from .database import Database
 from .errors import install_error_handlers
 from .maintenance import MaintenanceGate
 from .provider_relay import ProviderRelay
 from .quota import QuotaManager
-from .routers import admin, assets, auth, internal, openai_compat, providers, video
+from .routers import admin, assets, auth, billing, internal, openai_compat, providers, video
 from .seedance import SeedanceClient
 from .storage import TosStorage
 from .system_monitor import DiskMonitor
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.admin_auth.validate_encrypted_totp_secret,
         )
         app.state.quota = QuotaManager(database)
+        app.state.billing = BillingManager(database)
         app.state.provider_relay = ProviderRelay(resolved, database)
         app.state.volcengine = volcengine
         app.state.seedance = SeedanceClient(resolved, database)
@@ -53,18 +55,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         maintenance = asyncio.create_task(app.state.storage.maintenance_loop())
         backup_maintenance = asyncio.create_task(app.state.backup.maintenance_loop())
         system_monitor_maintenance = asyncio.create_task(app.state.system_monitor.maintenance_loop())
+        billing_maintenance = asyncio.create_task(app.state.billing.maintenance_loop())
         try:
             yield
         finally:
             maintenance.cancel()
             backup_maintenance.cancel()
             system_monitor_maintenance.cancel()
+            billing_maintenance.cancel()
             with suppress(asyncio.CancelledError):
                 await maintenance
             with suppress(asyncio.CancelledError):
                 await backup_maintenance
             with suppress(asyncio.CancelledError):
                 await system_monitor_maintenance
+            with suppress(asyncio.CancelledError):
+                await billing_maintenance
             await app.state.system_monitor.aclose()
             await volcengine.aclose()
 
@@ -125,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(internal.router)
     app.include_router(providers.router)
+    app.include_router(billing.router)
     app.include_router(assets.router)
     app.include_router(video.router)
     app.include_router(openai_compat.router)

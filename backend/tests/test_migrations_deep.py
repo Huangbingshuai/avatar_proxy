@@ -101,6 +101,7 @@ def test_real_legacy_schema_upgrades_idempotently_and_preserves_rows(tmp_path: P
         usage = connection.execute("SELECT * FROM video_usage WHERE api_key_id='legacy-key'").fetchone()
         task = connection.execute("SELECT * FROM video_tasks WHERE api_key_id='legacy-key'").fetchone()
         projects = connection.execute("SELECT name FROM projects ORDER BY name").fetchall()
+        billing_terms = connection.execute("SELECT COUNT(*) FROM project_billing_terms").fetchone()[0]
 
     assert {
         "project_quotas",
@@ -116,6 +117,13 @@ def test_real_legacy_schema_upgrades_idempotently_and_preserves_rows(tmp_path: P
         "admin_security_alerts",
         "admin_backup_runs",
         "admin_restore_runs",
+        "billing_model_rates",
+        "project_billing_terms",
+        "billing_usage_items",
+        "billing_usage_components",
+        "billing_statements",
+        "billing_statement_lines",
+        "billing_adjustments",
     } <= tables
     assert key["project_name"] == "default"
     assert key["status"] == "disabled"
@@ -123,6 +131,7 @@ def test_real_legacy_schema_upgrades_idempotently_and_preserves_rows(tmp_path: P
     assert request["project_name"] == usage["project_name"] == task["project_name"] == "default"
     assert usage["total_tokens"] == 123
     assert [row["name"] for row in projects] == ["default"]
+    assert billing_terms == 0
 
 
 def test_fresh_database_has_no_fallback_project(tmp_path: Path) -> None:

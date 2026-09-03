@@ -239,6 +239,10 @@ def sync_task_response(request: Request, principal: PrincipalDependency, data: d
             "id": task_id,
             "status": str(data.get("status") or "") or None,
             "model": str(data.get("model") or "") or None,
+            # Smart-duration tasks must be billed from the provider's final
+            # values when they are available, never from a local estimate.
+            "duration": data.get("duration"),
+            "resolution": data.get("resolution"),
             "videoUrl": first_url(data, "video_url"),
             "lastFrameUrl": first_url(data, "last_frame_url"),
         },

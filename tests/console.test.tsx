@@ -117,6 +117,16 @@ function installFetch(data: MockData = {}) {
     }
     if (url.pathname === "/api/internal/inference/usage") return jsonResponse({ usage: [{ id: "usage-1", projectName: "customer_a", apiKeyId: "key-a", model: "glm-5.2", provider: "volcengine_ark", status: "succeeded", inputTokens: 10, outputTokens: 20, generatedImages: null, videoSeconds: null, createdAt: "2026-09-02 08:00:00" }] });
     if (url.pathname === "/api/internal/inference/tasks") return jsonResponse({ tasks: [{ id: "task-1", object: "video", model: "wan3.0-video", status: "running", progress: 50, created_at: 1_788_000_000 }] });
+    if (url.pathname === "/api/internal/billing/rates") return jsonResponse({ month: url.searchParams.get("month"), rates: [
+      { model: "glm-5.2", displayName: "GLM 5.2", provider: "volcengine_ark", modality: "text", sourceMonths: ["2026-09"], prices: { inputPerMillionYuan: "1.200000", outputPerMillionYuan: "4.000000" } },
+      { model: "image2.0", displayName: "Image 2.0", provider: "openai", modality: "image", sourceMonths: [], prices: { perImageYuan: null } },
+    ] });
+    if (/\/api\/internal\/billing\/rates\/[^/]+$/.test(url.pathname) && init?.method === "PUT") return jsonResponse({ rate: {} });
+    if (/\/api\/internal\/billing\/projects\/[^/]+$/.test(url.pathname) && init?.method === "PUT") return jsonResponse({ billing: { projectName: "customer_a", month: "2026-09", enabled: true, discountBps: 8000, sourceMonth: "2026-09" } });
+    if (/\/api\/internal\/billing\/projects\/[^/]+$/.test(url.pathname)) return jsonResponse({ billing: { projectName: "customer_a", month: url.searchParams.get("month"), enabled: true, discountBps: 8000, sourceMonth: "2026-09" } });
+    if (url.pathname === "/api/internal/billing/preview") return jsonResponse({ terms: { enabled: true, discountBps: 8000 }, statement: { id: "bill-1", number: "RB-202609-CUSTOMERA", projectName: "customer_a", month: url.searchParams.get("month"), status: "draft", subtotalYuan: "10.000000", discountYuan: "2.000000", adjustmentYuan: "0.000000", totalYuan: "8.000000", pendingCount: 0, generatedAt: "2026-09-01 00:00:00", updatedAt: "2026-09-03 00:00:00" } });
+    if (url.pathname === "/api/internal/billing/statements") return jsonResponse({ statements: [{ id: "bill-1", number: "RB-202609-CUSTOMERA", projectName: "customer_a", month: "2026-09", status: "draft", subtotalYuan: "10.000000", discountYuan: "2.000000", adjustmentYuan: "0.000000", totalYuan: "8.000000", pendingCount: 0, generatedAt: "2026-09-01 00:00:00", updatedAt: "2026-09-03 00:00:00" }] });
+    if (url.pathname === "/api/internal/billing/statements/bill-1") return jsonResponse({ statement: { id: "bill-1", number: "RB-202609-CUSTOMERA", projectName: "customer_a", month: "2026-09", status: "draft", subtotalYuan: "10.000000", discountYuan: "2.000000", adjustmentYuan: "0.000000", totalYuan: "8.000000", pendingCount: 0, generatedAt: "2026-09-01 00:00:00", updatedAt: "2026-09-03 00:00:00", lines: [{ id: "line-1", model: "glm-5.2", metric: "input_tokens", quantity: "1000000", unitSize: 1000000, unitPriceYuan: "1.200000", listAmountYuan: "1.200000", netAmountYuan: "0.960000" }], adjustments: [], pending: [] } });
     if (/\/api\/internal\/admin\/backups\/[^/]+\/validate$/.test(url.pathname)) return jsonResponse({ backup: { ...backupItem, integrity: "ok", sha256: "abc123" } });
     if (/\/api\/internal\/admin\/backups\/[^/]+\/restore$/.test(url.pathname)) { authenticated = false; return jsonResponse({ restored: true, requiresLogin: true }); }
     if (/\/api\/internal\/admin\/users\/[^/]+\/(enable|disable)$/.test(url.pathname)) {
@@ -185,6 +195,19 @@ describe("内部控制台", () => {
     expect(calls.every((call) => call.init?.credentials === "same-origin")).toBe(true);
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it("普通管理员可以查看项目计费预估、价目和月度账单", async () => {
+    const { calls } = installFetch();
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "计费账单" }));
+    expect(await screen.findByRole("heading", { name: "项目计费账单" })).toBeInTheDocument();
+    expect(await screen.findByText("¥8.00")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "模型价目" }));
+    expect(await screen.findByText("GLM 5.2")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "月度账单" }));
+    expect(await screen.findByText("RB-202609-CUSTOMERA")).toBeInTheDocument();
+    expect(calls.some((call) => call.path.startsWith("/api/internal/billing/preview?"))).toBe(true);
   });
 
   it("登录锁定时展示 Retry-After", async () => {
