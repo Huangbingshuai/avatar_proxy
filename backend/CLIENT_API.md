@@ -280,9 +280,9 @@ curl -X DELETE "$BASE_URL/api/asset/delete?assetId=asset-xxxxxxxx" \
 
 修改后的素材名称最多 64 个字符。删除成功后，本系统会同时清理与该登记记录关联的 TOS 对象；删除操作可能无法恢复。
 
-## 10. Seedance 视频生成
+## 10. 异步视频生成
 
-视频接口采用火山方舟与漫剧一致的任务路径和请求结构，但鉴权、模型名称和任务 ID 由本中转站管理：
+视频接口统一采用火山方舟与漫剧一致的任务路径和请求结构，但鉴权、模型名称、任务 ID 及供应商适配由本中转站管理：
 
 ```text
 POST   /api/v3/contents/generations/tasks
@@ -290,7 +290,7 @@ GET    /api/v3/contents/generations/tasks/{taskId}
 DELETE /api/v3/contents/generations/tasks/{taskId}
 ```
 
-调用方仍使用瑞池业务 API Key，不提交火山 API Key。`model` 必须填写 `/v1/models` 返回的稳定别名，例如 `seedance-2.0`；服务端会把别名转换为固定的火山 Model ID，并使用该项目绑定渠道的加密凭证请求火山。客户端不能覆盖真实模型 ID、供应商、渠道、项目或 Base URL。
+调用方仍使用瑞池业务 API Key，不提交供应商 API Key。`model` 必须填写 `/v1/models` 返回的稳定别名，例如 `seedance-2.0`、`wan3.0-video` 或 `minimax-h3`；服务端会把别名转换为固定的上游模型 ID，并使用该项目绑定渠道的加密凭证请求对应供应商。客户端不能覆盖真实模型 ID、供应商、渠道、项目或 Base URL。
 
 ### 10.1 创建任务
 
@@ -318,7 +318,7 @@ curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
   }'
 ```
 
-`content` 支持文本以及模型能力允许的图片、视频和音频引用。素材 URL 可使用 HTTP(S) URL 或当前项目可访问的 `asset://` ID；图片和音频还支持合法 Data URL。图片角色为 `first_frame`、`last_frame` 或 `reference_image`，视频角色为 `reference_video`，音频角色为 `reference_audio`。各模型可用素材类型、条目数量、分辨率和时长以 `/v1/models` 返回的能力为准。
+`content` 支持文本以及模型能力允许的图片、视频和音频引用。火山方舟模型可使用 HTTP(S) URL、当前项目可访问的 `asset://` ID，以及合法的图片或音频 Data URL；阿里百炼和 MiniMax 当前只接受 HTTP(S) 图片 URL。图片角色为 `first_frame`、`last_frame` 或 `reference_image`，视频角色为 `reference_video`，音频角色为 `reference_audio`。阿里 `wan3.0-video` 当前最多接受一张 `first_frame` 图片。各模型可用素材类型、条目数量、分辨率和时长以 `/v1/models` 返回的能力为准。
 
 可选字段包括 `duration`、`frames`、`resolution`、`ratio`、`generate_audio`、`draft`、`seed`、`camera_fixed`、`watermark`、`return_last_frame`、`service_tier`、`execution_expires_after` 和 `task_type`。不支持或不属于兼容契约的字段返回 `422`，不会盲目转发。
 
@@ -367,7 +367,7 @@ curl -X DELETE "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-取消成功返回 `204 No Content`。中转站会向原任务固定的火山渠道发送取消请求，不会因渠道凭证后续轮换而改用其他渠道。
+火山方舟任务取消成功返回 `204 No Content`。中转站会向原任务固定渠道发送取消请求，不会因渠道凭证后续轮换而改用其他渠道。阿里百炼和 MiniMax 当前未开放经过本系统验证的取消适配，调用取消接口会返回 `422 video_cancel_unsupported`，且不会把仍可能在上游执行的任务伪装为已取消。
 
 ## 11. 错误处理
 
@@ -488,8 +488,10 @@ curl "$BASE_URL/v1/models" \
 | `seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `wan3.0-video` | 异步视频 | 阿里百炼 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `minimax-h3` | 异步视频 | MiniMax | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 
-创建、查询和取消视频任务必须使用同一枚业务 API Key。`wan3.0-video` 和 `minimax-h3` 不属于当前火山兼容视频接口的公开范围。
+创建和查询视频任务必须使用同一枚业务 API Key；支持取消的供应商同样要求使用创建任务时的业务 Key。
 
 模型是否已经对当前项目开放，以 `/v1/models` 的实时返回结果为准。请求未开通的模型会返回 `403 model_not_allowed`，请联系管理员确认项目授权和供应商渠道状态。
 
@@ -606,9 +608,9 @@ curl "$BASE_URL/v1/images/generations" \
 
 以实际响应为准：供应商没有返回的 `usage` 字段不会被补零。使用 `url` 时应及时下载结果；使用 `b64_json` 时，响应体可能明显增大。
 
-### 13.4 Seedance 视频
+### 13.4 异步视频
 
-Seedance 不使用 OpenAI `/v1/videos` 路径；创建、查询和取消统一使用第 10 节的火山兼容 `/api/v3/contents/generations/tasks` 接口。请求中的 `model` 仍使用中转站稳定别名，服务端负责转换为当前固定的火山 Model ID。
+视频模型不使用 OpenAI `/v1/videos` 路径；创建、查询和取消统一使用第 10 节的火山兼容 `/api/v3/contents/generations/tasks` 接口。请求中的 `model` 使用中转站稳定别名，服务端负责转换为当前固定的供应商模型 ID。阿里百炼和 MiniMax 的请求、响应差异由中转站内部适配。
 
 ### 13.5 幂等与错误
 
@@ -649,7 +651,8 @@ Seedance 不使用 OpenAI `/v1/videos` 路径；创建、查询和取消统一�
 | `422` | `stream_parameter_invalid` | `stream` 不是布尔值 |
 | `422` | `idempotency_key_invalid` | 幂等键为空或超过 128 个字符 |
 | `422` | `video_input_required` / `video_content_invalid` | 视频请求缺少 `content` 或条目格式无效 |
-| `422` | `video_parameter_unsupported` / `video_duration_invalid` / `video_resolution_invalid` | 当前 Seedance 模型不支持请求参数 |
+| `422` | `video_parameter_unsupported` / `video_duration_invalid` / `video_resolution_invalid` | 当前视频模型不支持请求参数 |
+| `422` | `video_cancel_unsupported` | 当前视频供应商未开放经过验证的任务取消适配 |
 | `422` | `route_override_forbidden` | 请求试图覆盖内部路由字段 |
 | `404` | `video_task_not_found` | 任务不存在，或任务不属于当前业务 Key |
 | `502` | `provider_unreachable` / `provider_request_failed` | 供应商不可达或拒绝请求 |

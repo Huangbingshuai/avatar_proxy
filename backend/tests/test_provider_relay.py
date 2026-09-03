@@ -778,6 +778,168 @@ def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
         assert unsupported_audio.json()["error"]["code"] == "video_audio_unsupported"
 
 
+def test_aliyun_video_is_restored_on_ark_compatible_contract(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url.host == "workspace-a.cn-beijing.maas.aliyuncs.com"
+        assert request.headers["authorization"] == "Bearer secret-aliyun_bailian-abcdefgh"
+        assert request.headers["x-dashscope-async"] == "enable"
+        if request.method == "POST":
+            payload = json.loads(request.content)
+            assert payload == {
+                "model": "wan3.0-video",
+                "input": {
+                    "prompt": "ocean sunrise",
+                    "media": [{"type": "first_frame", "url": "https://example.com/frame.jpg"}],
+                },
+                "parameters": {
+                    "resolution": "1080P",
+                    "ratio": "16:9",
+                    "prompt_extend": True,
+                    "audio": False,
+                    "aigc_watermark": False,
+                    "duration": 8,
+                },
+            }
+            return httpx.Response(200, json={"output": {"task_id": "ali-task-1"}})
+        return httpx.Response(
+            200,
+            json={
+                "output": {
+                    "task_status": "SUCCEEDED",
+                    "video_url": "https://video.example.com/ali.mp4",
+                    "video_duration": 8,
+                },
+                "usage": {"duration": 8},
+            },
+        )
+
+    with relay_client(tmp_path) as client:
+        catalog = client.app.state.provider_relay.catalog()
+        assert {item["id"] for item in catalog} >= {"wan3.0-video", "minimax-h3"}
+        _, secret, _ = provision(
+            client,
+            provider="aliyun_bailian",
+            alias="wan3.0-video",
+            upstream_model="ignored-model",
+            config={"workspaceId": "workspace-a", "region": "cn-beijing"},
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}"}
+        assert [model["id"] for model in client.get("/v1/models", headers=headers).json()["data"]] == [
+            "wan3.0-video"
+        ]
+        created = client.post(
+            "/api/v3/contents/generations/tasks",
+            headers=headers,
+            json={
+                "model": "wan3.0-video",
+                "content": [
+                    {"type": "text", "text": "ocean sunrise"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "https://example.com/frame.jpg"},
+                        "role": "first_frame",
+                    },
+                ],
+                "duration": 8,
+                "resolution": "1080P",
+                "ratio": "16:9",
+                "generate_audio": False,
+                "watermark": False,
+            },
+        )
+        finished = client.get(
+            f"/api/v3/contents/generations/tasks/{created.json()['id']}", headers=headers
+        )
+        unsupported_cancel = client.delete(
+            f"/api/v3/contents/generations/tasks/{created.json()['id']}", headers=headers
+        )
+        with client.app.state.database.connect() as connection:
+            usage_seconds = connection.execute(
+                "SELECT video_seconds FROM inference_usage WHERE model_alias='wan3.0-video'"
+            ).fetchone()[0]
+
+    assert created.status_code == 200
+    assert finished.status_code == 200
+    assert finished.json()["status"] == "succeeded"
+    assert finished.json()["content"]["video_url"] == "https://video.example.com/ali.mp4"
+    assert unsupported_cancel.status_code == 422
+    assert unsupported_cancel.json()["error"]["code"] == "video_cancel_unsupported"
+    assert usage_seconds == 8
+    assert [request.url.path for request in requests] == [
+        "/api/v1/services/aigc/video-generation/video-synthesis",
+        "/api/v1/tasks/ali-task-1",
+    ]
+
+
+def test_minimax_video_is_restored_on_ark_compatible_contract(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url.host == "api.minimax.cn"
+        if request.method == "POST":
+            payload = json.loads(request.content)
+            assert payload == {
+                "model": "MiniMax-H3",
+                "content": [{"type": "text", "text": "camera move"}],
+                "resolution": "768P",
+                "ratio": "adaptive",
+                "duration": 6,
+                "seed": 12,
+            }
+            return httpx.Response(200, json={"task_id": "mini-task-1"})
+        return httpx.Response(
+            200,
+            json={
+                "task": {
+                    "status": "succeeded",
+                    "content": {"url": "https://video.example.com/minimax.mp4"},
+                    "usage": {"output_seconds": 6},
+                    "duration": 6,
+                    "resolution": "768P",
+                    "ratio": "adaptive",
+                }
+            },
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="minimax",
+            alias="minimax-h3",
+            upstream_model="ignored-model",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}"}
+        created = client.post(
+            "/api/v3/contents/generations/tasks",
+            headers=headers,
+            json={
+                "model": "minimax-h3",
+                "content": [{"type": "text", "text": "camera move"}],
+                "duration": 6,
+                "seed": 12,
+            },
+        )
+        finished = client.get(
+            f"/api/v3/contents/generations/tasks/{created.json()['id']}", headers=headers
+        )
+
+    assert created.status_code == 200
+    assert finished.status_code == 200
+    assert finished.json()["model"] == "minimax-h3"
+    assert finished.json()["status"] == "succeeded"
+    assert finished.json()["content"]["video_url"] == "https://video.example.com/minimax.mp4"
+    assert [request.url.path for request in requests] == [
+        "/v2/video_generation",
+        "/v2/query/video_generation/mini-task-1",
+    ]
+
+
 def test_channel_delete_protection_and_business_admin_cannot_manage_secrets(tmp_path: Path) -> None:
     with relay_client(tmp_path) as client:
         _, _, channel = provision(

@@ -415,8 +415,7 @@ class ProviderRelay:
     def catalog(self) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             rows = connection.execute(
-                "SELECT * FROM model_catalog WHERE enabled=1 "
-                "AND (modality<>'video' OR provider='volcengine_ark') ORDER BY modality,alias"
+                "SELECT * FROM model_catalog WHERE enabled=1 ORDER BY modality,alias"
             ).fetchall()
         return [
             {
@@ -445,7 +444,7 @@ class ProviderRelay:
                 LEFT JOIN project_model_bindings b
                   ON b.model_alias=m.alias AND b.project_name=?
                 LEFT JOIN provider_channels c ON c.id=b.channel_id
-                WHERE m.enabled=1 AND (m.modality<>'video' OR m.provider='volcengine_ark')
+                WHERE m.enabled=1
                 ORDER BY m.modality,m.alias
                 """,
                 (canonical,),
@@ -481,8 +480,7 @@ class ProviderRelay:
                     raise ApiError("模型绑定存在空值或重复项", 422, "model_binding_invalid")
                 seen.add(alias)
                 model = connection.execute(
-                    "SELECT provider,upstream_model FROM model_catalog WHERE alias=? AND enabled=1 "
-                    "AND (modality<>'video' OR provider='volcengine_ark')",
+                    "SELECT provider,upstream_model FROM model_catalog WHERE alias=? AND enabled=1",
                     (alias,),
                 ).fetchone()
                 channel = connection.execute(
@@ -531,7 +529,6 @@ class ProviderRelay:
                   ON c.id=b.channel_id AND c.project_name=? AND c.status='active'
                 JOIN provider_credentials pc ON pc.channel_id=c.id AND pc.status='active'
                 WHERE m.alias=? AND m.enabled=1
-                  AND (m.modality<>'video' OR m.provider='volcengine_ark')
                 """,
                 (principal.project_name, principal.project_name, alias),
             ).fetchone()
@@ -564,7 +561,7 @@ class ProviderRelay:
                 JOIN provider_channels c
                   ON c.id=b.channel_id AND c.project_name=? AND c.status='active'
                 JOIN provider_credentials pc ON pc.channel_id=c.id AND pc.status='active'
-                WHERE m.enabled=1 AND (m.modality<>'video' OR m.provider='volcengine_ark')
+                WHERE m.enabled=1
                 ORDER BY m.alias
                 """,
                 (principal.project_name, principal.project_name),
@@ -1066,9 +1063,18 @@ class ProviderRelay:
         return result
 
     def _video_submit_payload(self, route: ModelRoute, payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if route.provider == "volcengine_ark":
+            return self._volcengine_video_submit_payload(route, payload)
+        if route.provider == "aliyun_bailian":
+            return self._aliyun_video_submit_payload(route, payload)
+        if route.provider == "minimax":
+            return self._minimax_video_submit_payload(route, payload)
+        raise ApiError("该渠道不支持异步视频", 422, "video_provider_unsupported")
+
+    def _volcengine_video_submit_payload(
+        self, route: ModelRoute, payload: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
         metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-        if route.provider != "volcengine_ark":
-            raise ApiError("视频中转只允许方舟模型", 422, "video_provider_unsupported")
         allowed_metadata = {
             "resolution", "ratio", "generate_audio", "watermark", "camera_fixed",
             "return_last_frame", "service_tier", "content", "draft", "frames",
@@ -1190,6 +1196,135 @@ class ProviderRelay:
         return "/contents/generations/tasks", body
 
     @staticmethod
+    def _external_video_content(content: Any, provider_name: str) -> tuple[str, list[dict[str, str]]]:
+        if not isinstance(content, list) or not content or len(content) > 20:
+            raise ApiError(
+                f"{provider_name} content必须是1到20项的数组",
+                422,
+                "video_content_invalid",
+            )
+        text_parts: list[str] = []
+        images: list[dict[str, str]] = []
+        for item in content:
+            if not isinstance(item, dict):
+                raise ApiError(f"{provider_name} content包含无效条目", 422, "video_content_invalid")
+            if item.get("type") == "text":
+                if (
+                    set(item) - {"type", "text"}
+                    or not isinstance(item.get("text"), str)
+                    or not item["text"].strip()
+                ):
+                    raise ApiError(f"{provider_name}文本条目格式无效", 422, "video_content_invalid")
+                text_parts.append(item["text"].strip())
+                continue
+            if item.get("type") != "image_url":
+                raise ApiError(f"{provider_name} content包含不支持的条目", 422, "video_content_unsupported")
+            image_value = item.get("image_url")
+            role = item.get("role", "first_frame")
+            url = image_value.get("url") if isinstance(image_value, dict) else None
+            if (
+                set(item) - {"type", "image_url", "role"}
+                or not isinstance(image_value, dict)
+                or set(image_value) - {"url"}
+                or not isinstance(url, str)
+                or not url.startswith(("https://", "http://"))
+                or role not in {"first_frame", "last_frame", "reference_image"}
+            ):
+                raise ApiError(f"{provider_name}图片条目格式无效", 422, "video_content_invalid")
+            images.append({"url": url, "role": role})
+        return "\n".join(text_parts)[:40000], images
+
+    def _aliyun_video_submit_payload(
+        self, route: ModelRoute, payload: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        allowed_metadata = {"content", "resolution", "ratio", "generate_audio", "watermark"}
+        forbidden = sorted(set(metadata) - allowed_metadata)
+        if forbidden:
+            raise ApiError(
+                "当前阿里视频模型不支持部分火山兼容字段",
+                422,
+                "video_parameter_unsupported",
+                details={"fields": forbidden},
+            )
+        if payload.get("seed") is not None:
+            raise ApiError(
+                "当前阿里视频模型不支持seed",
+                422,
+                "video_parameter_unsupported",
+                details={"fields": ["seed"]},
+            )
+        prompt, images = self._external_video_content(metadata.get("content"), "阿里百炼")
+        if len(images) > 1:
+            raise ApiError("当前阿里视频模型最多支持一张参考图片", 422, "video_content_unsupported")
+        if images and images[0]["role"] != "first_frame":
+            raise ApiError("当前阿里视频模型仅支持首帧图片", 422, "video_content_unsupported")
+        input_data: dict[str, Any] = {}
+        if prompt:
+            input_data["prompt"] = prompt
+        if images:
+            input_data["media"] = [{"type": "first_frame", "url": images[0]["url"]}]
+        parameters: dict[str, Any] = {
+            "resolution": metadata.get("resolution", "1080P"),
+            "ratio": metadata.get("ratio", "adaptive"),
+            "prompt_extend": True,
+            "audio": metadata.get("generate_audio", True),
+        }
+        for name in ("generate_audio", "watermark"):
+            if name in metadata and not isinstance(metadata[name], bool):
+                raise ApiError(f"{name}必须是布尔值", 422, "video_parameter_invalid")
+        if "watermark" in metadata:
+            parameters["aigc_watermark"] = metadata["watermark"]
+        if payload.get("duration") is not None:
+            parameters["duration"] = payload["duration"]
+        return "/services/aigc/video-generation/video-synthesis", {
+            "model": route.upstream_model,
+            "input": input_data,
+            "parameters": parameters,
+        }
+
+    def _minimax_video_submit_payload(
+        self, route: ModelRoute, payload: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        allowed_metadata = {"content", "resolution", "ratio", "watermark"}
+        forbidden = sorted(set(metadata) - allowed_metadata)
+        if forbidden:
+            raise ApiError(
+                "当前MiniMax视频模型不支持部分火山兼容字段",
+                422,
+                "video_parameter_unsupported",
+                details={"fields": forbidden},
+            )
+        prompt, images = self._external_video_content(metadata.get("content"), "MiniMax")
+        safe_content: list[dict[str, Any]] = []
+        if prompt:
+            safe_content.append({"type": "text", "text": prompt})
+        safe_content.extend(
+            {
+                "type": "image_url",
+                "image_url": {"url": image["url"]},
+                "role": image["role"],
+            }
+            for image in images
+        )
+        body: dict[str, Any] = {
+            "model": route.upstream_model,
+            "content": safe_content,
+            "resolution": metadata.get("resolution", "768P"),
+            "ratio": metadata.get("ratio", "adaptive"),
+        }
+        if payload.get("duration") is not None:
+            body["duration"] = payload["duration"]
+        if payload.get("seed") is not None:
+            body["seed"] = payload["seed"]
+        if "watermark" in metadata:
+            if not isinstance(metadata["watermark"], bool):
+                raise ApiError("watermark必须是布尔值", 422, "video_parameter_invalid")
+            body["aigc_watermark"] = metadata["watermark"]
+        return "/v2/video_generation", body
+
+    @staticmethod
     def _ark_video_content(route: ModelRoute, content: Any) -> list[dict[str, Any]]:
         maximum = int(route.capabilities.get("maxContent", 20))
         if not isinstance(content, list) or not content or len(content) > maximum:
@@ -1257,7 +1392,15 @@ class ProviderRelay:
             return self._video_public(task)
         try:
             response, data = await self._request(route, "POST", path, upstream_payload)
-            upstream_task_id = data.get("id")
+            if route.provider == "aliyun_bailian":
+                output = data.get("output") if isinstance(data.get("output"), dict) else {}
+                upstream_task_id = output.get("task_id")
+            elif route.provider == "volcengine_ark":
+                upstream_task_id = data.get("id")
+            else:
+                upstream_task_id = data.get("task_id")
+                if not upstream_task_id and isinstance(data.get("task"), dict):
+                    upstream_task_id = data["task"].get("id")
             if not isinstance(upstream_task_id, (str, int)) or not str(upstream_task_id):
                 raise ApiError("供应商未返回任务ID", 502, "provider_task_id_missing")
             provider_id = _provider_request_id(response.headers, data)
@@ -1287,8 +1430,6 @@ class ProviderRelay:
         route = self.resolve(principal, alias)
         if route.modality != "video":
             raise ApiError("该模型不支持视频接口", 422, "model_modality_mismatch")
-        if route.provider != "volcengine_ark":
-            raise ApiError("火山兼容接口只允许方舟视频模型", 422, "video_provider_unsupported")
         metadata = {
             key: value
             for key, value in payload.items()
@@ -1331,17 +1472,17 @@ class ProviderRelay:
     async def refresh_ark_video(
         self, principal: ApiPrincipal, task_id: str
     ) -> dict[str, Any]:
-        task = self.get_local_task(principal, task_id)
-        route = self._task_route(task)
-        if route.provider != "volcengine_ark":
-            raise ApiError("火山兼容接口只允许查询方舟视频任务", 404, "video_task_not_found")
         return self._ark_video_public(await self.refresh_video(principal, task_id))
 
     async def cancel_ark_video(self, principal: ApiPrincipal, task_id: str) -> None:
         task = self.get_local_task(principal, task_id)
         route = self._task_route(task)
         if route.provider != "volcengine_ark":
-            raise ApiError("火山兼容接口只允许操作方舟视频任务", 404, "video_task_not_found")
+            raise ApiError(
+                "当前视频供应商不支持通过中转站取消任务",
+                422,
+                "video_cancel_unsupported",
+            )
         upstream_id = task.get("upstream_task_id")
         if upstream_id:
             await self._request(route, "DELETE", f"/contents/generations/tasks/{upstream_id}")
@@ -1398,43 +1539,92 @@ class ProviderRelay:
         if task["status"] in TERMINAL_TASK_STATUSES or not task.get("upstream_task_id"):
             return self._video_public(task)
         route = self._task_route(task)
-        if route.provider != "volcengine_ark":
-            raise ApiError("视频中转只允许方舟模型", 422, "video_provider_unsupported")
         upstream_id = task["upstream_task_id"]
-        response, data = await self._request(
-            route, "GET", f"/contents/generations/tasks/{upstream_id}"
-        )
-        raw_status = str(data.get("status") or "queued").lower()
-        status_map = {
-            "queued": "queued", "running": "running", "succeeded": "succeeded",
-            "failed": "failed", "cancelled": "canceled", "canceled": "canceled",
-            "expired": "failed",
-        }
-        status = status_map.get(raw_status, "running")
-        content = data.get("content") if isinstance(data.get("content"), dict) else {}
-        result_url = content.get("video_url") or content.get("url")
-        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-        seconds_value = data.get("duration")
+        error_code_value: str | None = None
+        if route.provider == "aliyun_bailian":
+            response, data = await self._request(route, "GET", f"/tasks/{upstream_id}")
+            output = data.get("output") if isinstance(data.get("output"), dict) else {}
+            raw_status = str(output.get("task_status") or "PENDING").upper()
+            status_map = {
+                "PENDING": "queued", "RUNNING": "running", "SUCCEEDED": "succeeded",
+                "FAILED": "failed", "CANCELED": "canceled", "CANCELLED": "canceled",
+            }
+            status = status_map.get(raw_status, "running")
+            result_url = output.get("video_url") or output.get("url")
+            usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+            seconds_value = (
+                output.get("video_duration")
+                or usage.get("output_video_duration")
+                or usage.get("duration")
+                or usage.get("video_duration")
+            )
+            error = output.get("message") or data.get("message")
+            error_code_value = str(output.get("code") or data.get("code") or "provider_task_failed")
+            metadata = {
+                "duration": seconds_value,
+                **({"usage": usage} if usage else {}),
+            }
+        elif route.provider == "volcengine_ark":
+            response, data = await self._request(
+                route, "GET", f"/contents/generations/tasks/{upstream_id}"
+            )
+            raw_status = str(data.get("status") or "queued").lower()
+            status_map = {
+                "queued": "queued", "running": "running", "succeeded": "succeeded",
+                "failed": "failed", "cancelled": "canceled", "canceled": "canceled",
+                "expired": "failed",
+            }
+            status = status_map.get(raw_status, "running")
+            content = data.get("content") if isinstance(data.get("content"), dict) else {}
+            result_url = content.get("video_url") or content.get("url")
+            usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+            seconds_value = data.get("duration")
+            error_data = data.get("error") if isinstance(data.get("error"), dict) else {}
+            error = error_data.get("message")
+            error_code_value = str(error_data.get("code") or "provider_task_failed")
+            if raw_status == "expired" and not error:
+                error = "火山视频任务已过期"
+            metadata = {
+                key: data[key]
+                for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio")
+                if data.get(key) is not None
+            }
+            if content.get("last_frame_url"):
+                metadata["last_frame_url"] = content["last_frame_url"]
+            if usage:
+                metadata["usage"] = usage
+        elif route.provider == "minimax":
+            response, data = await self._request(
+                route, "GET", f"/v2/query/video_generation/{upstream_id}"
+            )
+            upstream_task = data.get("task") if isinstance(data.get("task"), dict) else {}
+            raw_status = str(upstream_task.get("status") or "queued").lower()
+            status = "canceled" if raw_status in {"cancelled", "canceled"} else raw_status
+            if status not in TERMINAL_TASK_STATUSES | ACTIVE_TASK_STATUSES:
+                status = "running"
+            content = upstream_task.get("content") if isinstance(upstream_task.get("content"), dict) else {}
+            result_url = content.get("url") or content.get("video_url")
+            usage = upstream_task.get("usage") if isinstance(upstream_task.get("usage"), dict) else {}
+            seconds_value = usage.get("output_seconds") or upstream_task.get("duration")
+            error_data = upstream_task.get("error") if isinstance(upstream_task.get("error"), dict) else {}
+            error = error_data.get("message")
+            error_code_value = str(error_data.get("code") or "provider_task_failed")
+            metadata = {
+                key: upstream_task[key]
+                for key in ("resolution", "duration", "ratio")
+                if upstream_task.get(key) is not None
+            }
+            if usage:
+                metadata["usage"] = usage
+        else:
+            raise ApiError("该渠道不支持异步视频", 422, "video_provider_unsupported")
         try:
             seconds = float(seconds_value) if seconds_value is not None else None
         except (TypeError, ValueError):
             seconds = None
-        error_data = data.get("error") if isinstance(data.get("error"), dict) else {}
-        error = error_data.get("message")
-        if raw_status == "expired" and not error:
-            error = "火山视频任务已过期"
-        metadata = {
-            key: data[key]
-            for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio")
-            if data.get(key) is not None
-        }
-        if content.get("last_frame_url"):
-            metadata["last_frame_url"] = content["last_frame_url"]
-        if usage:
-            metadata["usage"] = usage
         provider_id = _provider_request_id(response.headers, data) or task.get("provider_request_id")
         progress = 100 if status in TERMINAL_TASK_STATUSES else (50 if status == "running" else 0)
-        error_code = str(error_data.get("code") or "provider_task_failed") if status == "failed" else None
+        error_code = error_code_value if status == "failed" else None
         with self.database.connect() as connection:
             connection.execute(
                 """
