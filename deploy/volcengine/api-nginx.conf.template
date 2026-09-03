@@ -44,9 +44,9 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host api.richbest.cn;
 
-        proxy_connect_timeout 2s;
-        proxy_send_timeout 4s;
-        proxy_read_timeout 4s;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
         proxy_next_upstream off;
         proxy_intercept_errors off;
     }

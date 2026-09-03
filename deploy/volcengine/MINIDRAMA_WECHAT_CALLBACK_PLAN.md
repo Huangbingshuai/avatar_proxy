@@ -55,7 +55,7 @@ extra_hosts:
 - 请求正文最大 `1MB`，不解压、不解析、不重写。
 - 保留微信支付签名请求头以及 `Content-Type`。
 - 设置正确的 `Host`、`X-Forwarded-*` 和 `X-Real-IP`。
-- 上游连接超时 `2s`，发送和读取超时 `4s`。
+- 上游连接超时 `5s`，发送和读取超时 `30s`。
 - 禁止自动切换上游，避免 POST 被重复转发。
 - 上游状态码和响应正文原样返回，不把代理失败改成成功。
 - 专用访问日志不记录正文、完整签名、OpenID 或支付密钥。
@@ -75,6 +75,17 @@ extra_hosts:
 9. 日志中不出现请求正文和完整签名。
 10. `/health`、`/api/*`、`/api/internal/*` 和控制台 `/` 的原配置保持不变。
 
+公网路由可使用仓库内脚本进行无副作用验收。脚本只发送 `GET`、健康检查和
+一个无签名的空 JSON，不会创建订单或修改支付状态：
+
+```bash
+python deploy/volcengine/verify_minidrama_callback.py \
+  --base-url https://api.richbest.cn
+```
+
+只有脚本输出 `PASS` 才表示网关已经把无签名请求交给微信验签逻辑；
+`UNAUTHORIZED`、Basic Auth HTML 或登录跳转都会使脚本失败。
+
 ## 后续线上发布
 
 本次提交不部署线上。获得明确部署指令后：
@@ -87,6 +98,10 @@ extra_hosts:
 6. 用无效签名请求确认回调能到达漫剧后端并被拒绝。
 7. 回归检查素材 API、内部管理接口、控制台、证书和现有 HTTP 路由。
 8. 由 LocalMiniDrama 维护者执行真实微信支付通知验收。
+
+无效签名验收返回 `INVALID_SIGNATURE` 只表示请求已经绕过登录认证并进入
+微信支付验签逻辑，不是有效支付通知的成功响应。如果返回 `UNAUTHORIZED`、
+HTML Basic Auth 页面或登录跳转，说明请求仍被通用认证拦截，禁止开始真实支付验收。
 
 回滚时恢复上一份 Release，并只重建 `api-gateway`。
 
