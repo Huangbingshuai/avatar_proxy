@@ -308,6 +308,7 @@ PAYMENT_ORIGIN_HOST=drama.richbest.cn
 ## 相关文档
 
 - [客户 API 接入文档](backend/CLIENT_API.md)
+- [管理端计费账单 API 文档](backend/ADMIN_BILLING_API.md)
 - [多供应商模型中转实施与安全边界](backend/MULTI_PROVIDER_RELAY_PLAN.md)
 - [后端生产部署说明](backend/DEPLOYMENT.md)
 - [额度与素材账本设计](backend/RISK_CONTROL_PLAN.md)
