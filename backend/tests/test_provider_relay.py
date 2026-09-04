@@ -875,6 +875,52 @@ def test_aliyun_video_is_restored_on_ark_compatible_contract(tmp_path: Path) -> 
     ]
 
 
+def test_response_only_model_rejects_chat_and_stream_before_upstream(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        payload = json.loads(request.content)
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "translation-request"},
+            json={"id": "resp-translation", "model": payload["model"], "output": []},
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="volcengine_ark",
+            alias="doubao-seed-translation",
+            upstream_model="ignored-model",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}"}
+        chat = client.post(
+            "/v1/chat/completions",
+            headers=headers,
+            json={"model": "doubao-seed-translation", "messages": []},
+        )
+        streamed = client.post(
+            "/v1/responses",
+            headers=headers,
+            json={"model": "doubao-seed-translation", "input": [], "stream": True},
+        )
+        response = client.post(
+            "/v1/responses",
+            headers=headers,
+            json={"model": "doubao-seed-translation", "input": [], "stream": False},
+        )
+
+    assert chat.status_code == 422
+    assert chat.json()["error"]["code"] == "model_operation_unsupported"
+    assert streamed.status_code == 422
+    assert streamed.json()["error"]["code"] == "model_stream_unsupported"
+    assert response.status_code == 200
+    assert response.json()["model"] == "doubao-seed-translation"
+    assert len(requests) == 1
+
+
 def test_minimax_video_is_restored_on_ark_compatible_contract(tmp_path: Path) -> None:
     requests: list[httpx.Request] = []
 
@@ -1010,6 +1056,12 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
                 ("seededit-3.0-i2i", "SeedEdit 3.0 I2I", "volcengine_ark", "image", "openai_image", "retired", "{}"),
                 ("doubao-seed-1.8", "Doubao Seed 1.8", "volcengine_ark", "text", "openai_text", "retired", "{}"),
                 ("doubao-seed-1.6-vision", "Doubao Seed 1.6 Vision", "volcengine_ark", "text", "openai_text", "retired", "{}"),
+                ("doubao-seed-code", "Doubao Seed Code", "volcengine_ark", "text", "openai_text", "retired", "{}"),
+                ("glm-4.7", "GLM 4.7", "volcengine_ark", "text", "openai_text", "retired", "{}"),
+                ("qwen3-32b", "Qwen3 32B", "volcengine_ark", "text", "openai_text", "unavailable", "{}"),
+                ("qwen3-14b", "Qwen3 14B", "volcengine_ark", "text", "openai_text", "unavailable", "{}"),
+                ("qwen3-8b", "Qwen3 8B", "volcengine_ark", "text", "openai_text", "unavailable", "{}"),
+                ("qwen3-0.6b", "Qwen3 0.6B", "volcengine_ark", "text", "openai_text", "unavailable", "{}"),
             ],
         )
     app.state.database.initialize()
@@ -1025,14 +1077,20 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
             "'seedance-1.0-lite-t2v','seedance-1.5-pro','seedream-3.0-t2i','seededit-3.0-i2i',"
             "'doubao-seed-1.8','doubao-seed-1.6-vision')"
         ))
+        removed_count = connection.execute(
+            "SELECT COUNT(*) FROM model_catalog WHERE alias IN ("
+            "'doubao-seed-code','glm-4.7','qwen3-32b','qwen3-14b','qwen3-8b','qwen3-0.6b')"
+        ).fetchone()[0]
         bindings = connection.execute("SELECT COUNT(*) FROM project_model_bindings").fetchone()[0]
         permissions = connection.execute("SELECT COUNT(*) FROM api_key_model_permissions").fetchone()[0]
 
     assert aliases == sorted([
-        "deepseek-v4-flash", "glm-5.2", "image2.0", "minimax-h3", "seedream-5.0-pro",
+        "deepseek-v4-flash", "deepseek-v4-pro", "glm-5.2",
+        "image2.0", "minimax-h3", "seedream-5.0-pro",
         "seedream-5.0-lite", "seedream-5.0", "seedream-4.5", "seedream-4.0",
         "doubao-seed-2.1-pro", "doubao-seed-2.1-turbo", "doubao-seed-2.0-pro", "doubao-seed-2.0-lite",
-        "doubao-seed-2.0-mini",
+        "doubao-seed-2.0-mini", "doubao-seed-evolving", "doubao-seed-character",
+        "doubao-seed-2.0-code", "doubao-seed-translation",
         "seedance-2.5", "seedance-2.0", "seedance-2.0-fast", "seedance-2.0-mini",
         "seedance-1.0-pro", "seedance-1.0-pro-fast",
         "wan3.0-video",
@@ -1052,6 +1110,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         }
     assert upstream_models == {
         "deepseek-v4-flash": "deepseek-v4-flash-260425",
+        "deepseek-v4-pro": "deepseek-v4-pro-ga-260813",
         "glm-5.2": "glm-5-2-260617",
         "image2.0": "gpt-image-2",
         "minimax-h3": "MiniMax-H3",
@@ -1065,6 +1124,10 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "doubao-seed-2.0-pro": "doubao-seed-2-0-pro-260215",
         "doubao-seed-2.0-lite": "doubao-seed-2-0-lite-260428",
         "doubao-seed-2.0-mini": "doubao-seed-2-0-mini-260215",
+        "doubao-seed-evolving": "doubao-seed-evolving",
+        "doubao-seed-character": "doubao-seed-character-260628",
+        "doubao-seed-2.0-code": "doubao-seed-2-0-code-preview-260215",
+        "doubao-seed-translation": "doubao-seed-translation-250915",
         "seedance-2.5": "doubao-seedance-2-5-260628",
         "seedance-2.0": "doubao-seedance-2-0-260128",
         "seedance-2.0-fast": "doubao-seedance-2-0-fast-260128",
@@ -1079,6 +1142,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         for capabilities in seedream_capabilities.values()
     )
     assert bindings == permissions == 0
+    assert removed_count == 0
     assert retired_status == {
         "seedance-1.0-lite-t2v": 0,
         "seedance-1.5-pro": 0,

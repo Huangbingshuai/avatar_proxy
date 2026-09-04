@@ -77,6 +77,9 @@ async def _text(
     alias = str(payload["model"]).strip()
     stream = payload.get("stream") is True
     if stream:
+        request.app.state.provider_relay.validate_text_operation(
+            principal, alias, operation, stream=True
+        )
         return StreamingResponse(
             request.app.state.provider_relay.text_stream(principal, alias, operation, payload),
             media_type="text/event-stream",

@@ -354,6 +354,33 @@ export function testRelayText(apiKey: string, model: string, prompt: string) {
   });
 }
 
+export function testRelayTranslation(
+  apiKey: string,
+  model: string,
+  text: string,
+  targetLanguage: string,
+  sourceLanguage?: string,
+) {
+  return relayRequest("/v1/responses", apiKey, {
+    method: "POST",
+    body: JSON.stringify({
+      model,
+      input: [{
+        role: "user",
+        content: [{
+          type: "input_text",
+          text,
+          translation_options: {
+            ...(sourceLanguage ? { source_language: sourceLanguage } : {}),
+            target_language: targetLanguage,
+          },
+        }],
+      }],
+      stream: false,
+    }),
+  });
+}
+
 function streamTextValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return "";

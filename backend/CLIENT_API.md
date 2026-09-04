@@ -1,8 +1,8 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.2
+版本：5.3
 
-更新日期：2026-09-03
+更新日期：2026-09-04
 正式地址：`https://api.richbest.cn`
 
 本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、OpenAI 兼容文本与图片接口，以及火山方舟兼容的统一异步视频任务接口。
@@ -533,12 +533,17 @@ curl "$BASE_URL/v1/models" \
 | 对外模型别名 | 能力 | 供应商 | 发起请求接口 | 响应方式或结果接口 |
 |---|---|---|---|---|
 | `deepseek-v4-flash` | 文本对话 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `deepseek-v4-pro` | 文本对话 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
 | `glm-5.2` | 文本对话 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
 | `doubao-seed-2.1-pro` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
 | `doubao-seed-2.1-turbo` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
 | `doubao-seed-2.0-pro` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
 | `doubao-seed-2.0-lite` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
 | `doubao-seed-2.0-mini` | 文本、识图 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-evolving` | 文本、识图、Coding 与 Agent | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-character` | 文本对话、角色扮演 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-2.0-code` | 文本、识图、编程 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
+| `doubao-seed-translation` | 文本翻译 | 火山方舟 | `POST /v1/responses` | 同步 JSON；必须使用翻译结构化输入 |
 | `seedream-5.0-pro` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `seedream-5.0-lite` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `seedream-5.0` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
@@ -607,6 +612,29 @@ curl "$BASE_URL/v1/responses" \
   -d '{
     "model": "glm-5.2",
     "input": "列出三条新品发布检查项",
+    "stream": false
+  }'
+```
+
+`doubao-seed-translation` 只支持 Responses API，不支持 Chat Completions 或 SSE。每个待翻译文本需要在 `input_text` 中提供 `translation_options.target_language`；`source_language` 可省略并由模型自动识别：
+
+```bash
+curl "$BASE_URL/v1/responses" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "doubao-seed-translation",
+    "input": [{
+      "role": "user",
+      "content": [{
+        "type": "input_text",
+        "text": "你好",
+        "translation_options": {
+          "source_language": "zh",
+          "target_language": "en"
+        }
+      }]
+    }],
     "stream": false
   }'
 ```

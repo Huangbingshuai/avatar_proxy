@@ -20,6 +20,7 @@ import {
   getRelayVideoTask,
   listRelayModels,
   testRelayImage,
+  testRelayTranslation,
   testRelayTextStream,
   testRelayVideo,
   type RelayApiResult,
@@ -58,9 +59,15 @@ function textValue(value: unknown): string {
 function responseText(body: Record<string, unknown>) {
   const choice = record(Array.isArray(body.choices) ? body.choices[0] : undefined);
   const message = record(choice.message);
+  const output = Array.isArray(body.output) ? body.output : [];
+  const outputText = output.map((item) => {
+    const value = record(item);
+    return textValue(value.content) || textValue(value.text);
+  }).filter(Boolean).join("\n");
   return textValue(message.content)
     || textValue(message.reasoning_content)
     || textValue(body.output_text)
+    || outputText
     || "模型已返回响应，但没有可显示的文本内容。";
 }
 
@@ -86,6 +93,8 @@ function usageItems(body: Record<string, unknown>) {
   const labels: Record<string, string> = {
     prompt_tokens: "输入 tokens",
     completion_tokens: "输出 tokens",
+    input_tokens: "输入 tokens",
+    output_tokens: "输出 tokens",
     total_tokens: "总 tokens",
     generated_images: "生成图片",
     video_seconds: "视频秒数",
@@ -108,6 +117,8 @@ export default function ModelPlayground({ apiKey, apiKeyValid }: { apiKey: strin
   const [prompt, setPrompt] = useState("");
   const [referenceImage, setReferenceImage] = useState("");
   const [duration, setDuration] = useState("5");
+  const [sourceLanguage, setSourceLanguage] = useState("");
+  const [targetLanguage, setTargetLanguage] = useState("en");
   const [loadingModels, setLoadingModels] = useState(false);
   const [running, setRunning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,6 +131,9 @@ export default function ModelPlayground({ apiKey, apiKeyValid }: { apiKey: strin
     () => models.find((item) => item.id === modelId) ?? models[0],
     [modelId, models],
   );
+  const isTranslation = selectedModel?.capabilities.translation === true;
+  const supportsTextStream = selectedModel?.modality === "text"
+    && selectedModel.capabilities.stream === true;
 
   useEffect(() => {
     if (!apiKeyValid) return undefined;
@@ -165,15 +179,25 @@ export default function ModelPlayground({ apiKey, apiKeyValid }: { apiKey: strin
     try {
       let response: RelayApiResult;
       if (model.modality === "text") {
-        const controller = new AbortController();
-        streamController.current = controller;
-        response = await testRelayTextStream(apiKey, model.id, prompt.trim(), {
-          signal: controller.signal,
-          image: model.capabilities.imageInput === true
-            ? referenceImage.trim() || undefined
-            : undefined,
-          onDelta: (_delta, accumulated) => setStreamingText(accumulated),
-        });
+        if (model.capabilities.translation === true) {
+          response = await testRelayTranslation(
+            apiKey,
+            model.id,
+            prompt.trim(),
+            targetLanguage,
+            sourceLanguage || undefined,
+          );
+        } else {
+          const controller = new AbortController();
+          streamController.current = controller;
+          response = await testRelayTextStream(apiKey, model.id, prompt.trim(), {
+            signal: controller.signal,
+            image: model.capabilities.imageInput === true
+              ? referenceImage.trim() || undefined
+              : undefined,
+            onDelta: (_delta, accumulated) => setStreamingText(accumulated),
+          });
+        }
       } else if (model.modality === "image") {
         response = await testRelayImage(
           apiKey,
@@ -262,19 +286,21 @@ export default function ModelPlayground({ apiKey, apiKeyValid }: { apiKey: strin
 
         <div className="modelLabPrompt">
           <label htmlFor="model-test-prompt">测试提示词</label>
-          <textarea id="model-test-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={4000} rows={6} placeholder={selectedModel?.capabilities.vision === true ? "例如：请详细描述参考图片中的人物、场景和文字" : selectedModel?.modality === "text" ? "例如：用三句话介绍人工智能的实际用途" : selectedModel?.modality === "image" ? "例如：电影感产品摄影，暖色灯光，精致细节" : "例如：海边日出，镜头缓慢向前推进"} />
+          <textarea id="model-test-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={4000} rows={6} placeholder={isTranslation ? "输入需要翻译的文本" : selectedModel?.capabilities.vision === true ? "例如：请详细描述参考图片中的人物、场景和文字" : selectedModel?.modality === "text" ? "例如：用三句话介绍人工智能的实际用途" : selectedModel?.modality === "image" ? "例如：电影感产品摄影，暖色灯光，精致细节" : "例如：海边日出，镜头缓慢向前推进"} />
           <span>{prompt.length}/4000</span>
         </div>
 
+        {isTranslation ? <div className="modelLabVideoFields"><label>源语言<select value={sourceLanguage} onChange={(event) => setSourceLanguage(event.target.value)}><option value="">自动识别</option><option value="zh">中文</option><option value="en">英语</option><option value="ja">日语</option><option value="ko">韩语</option><option value="fr">法语</option><option value="de">德语</option><option value="es">西班牙语</option></select></label><label>目标语言<select value={targetLanguage} onChange={(event) => setTargetLanguage(event.target.value)}><option value="en">英语</option><option value="zh">中文</option><option value="ja">日语</option><option value="ko">韩语</option><option value="fr">法语</option><option value="de">德语</option><option value="es">西班牙语</option></select></label></div> : null}
+
         {supportsReferenceImage || selectedModel?.modality === "video" ? <div className="modelLabVideoFields">{supportsReferenceImage ? <label>参考图片 URL{videoRequiresImage ? "（必填）" : "（可选）"}<input type="url" required={videoRequiresImage} value={referenceImage} onChange={(event) => setReferenceImage(event.target.value)} placeholder="https://..." /></label> : null}{selectedModel?.modality === "video" ? <label>视频时长<select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">5 秒</option><option value="8">8 秒</option><option value="10">10 秒</option></select></label> : null}</div> : null}
 
-        <div className="modelLabSubmitRow"><span><KeyRound size={14} />使用当前登录 Key，不会在页面显示完整密钥{selectedModel?.modality === "text" ? <em><Radio size={12} />流式输出</em> : null}</span><div className="modelLabActions">{running && selectedModel?.modality === "text" ? <button type="button" className="modelLabStopButton" onClick={stopStream}><Square size={13} fill="currentColor" />停止生成</button> : null}<button type="button" className="modelLabRunButton" disabled={running || !selectedModel || prompt.trim().length < 2 || Boolean(videoRequiresImage && !referenceImage.trim())} onClick={() => void runTest()}>{running ? <LoaderCircle size={17} className="spin" /> : <Send size={17} />}{running ? selectedModel?.modality === "text" ? "正在流式生成" : "正在调用模型" : "发送真实测试"}</button></div></div>
+        <div className="modelLabSubmitRow"><span><KeyRound size={14} />使用当前登录 Key，不会在页面显示完整密钥{supportsTextStream ? <em><Radio size={12} />流式输出</em> : isTranslation ? <em>Responses 翻译</em> : null}</span><div className="modelLabActions">{running && supportsTextStream ? <button type="button" className="modelLabStopButton" onClick={stopStream}><Square size={13} fill="currentColor" />停止生成</button> : null}<button type="button" className="modelLabRunButton" disabled={running || !selectedModel || prompt.trim().length < 2 || Boolean(videoRequiresImage && !referenceImage.trim())} onClick={() => void runTest()}>{running ? <LoaderCircle size={17} className="spin" /> : <Send size={17} />}{running ? supportsTextStream ? "正在流式生成" : "正在调用模型" : "发送真实测试"}</button></div></div>
       </div>
 
       <aside className={`modelLabResult ${result ? "hasResult" : ""}`} aria-live="polite">
         {!result && !running ? <div className="modelLabResultEmpty"><Play size={26} /><b>等待测试</b><p>选择模型并输入提示词，响应会显示在这里。</p></div> : null}
-        {running && selectedModel?.modality === "text" ? <><header className="modelLabStreamingHeader"><span><Radio size={16} />实时生成中</span><small>{streamingText.length.toLocaleString("zh-CN")} 字符</small></header><div className="modelLabTextResult streaming"><MessageSquareText size={18} /><p>{streamingText || "正在等待模型返回首个内容片段…"}<i className="modelLabTypingCursor" aria-hidden="true" /></p></div></> : null}
-        {running && selectedModel?.modality !== "text" ? <div className="modelLabResultEmpty"><LoaderCircle size={28} className="spin" /><b>模型处理中</b><p>图片和视频模型可能需要更长时间，请不要重复提交。</p></div> : null}
+        {running && supportsTextStream ? <><header className="modelLabStreamingHeader"><span><Radio size={16} />实时生成中</span><small>{streamingText.length.toLocaleString("zh-CN")} 字符</small></header><div className="modelLabTextResult streaming"><MessageSquareText size={18} /><p>{streamingText || "正在等待模型返回首个内容片段…"}<i className="modelLabTypingCursor" aria-hidden="true" /></p></div></> : null}
+        {running && !supportsTextStream ? <div className="modelLabResultEmpty"><LoaderCircle size={28} className="spin" /><b>模型处理中</b><p>{isTranslation ? "正在翻译文本，请稍候。" : "图片和视频模型可能需要更长时间，请不要重复提交。"}</p></div> : null}
         {result ? <>
           <header><span><CheckCircle2 size={16} />HTTP {result.status}</span><small><Clock3 size={13} />{result.elapsedMs.toLocaleString("zh-CN")} ms</small></header>
           {result.modality === "text" ? <div className="modelLabTextResult"><MessageSquareText size={18} /><p>{responseText(result.body)}</p></div> : null}

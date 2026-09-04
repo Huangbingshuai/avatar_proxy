@@ -10,6 +10,7 @@ SEEDREAM_MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024
 
 BUILTIN_MODEL_CATALOG = (
     ("deepseek-v4-flash", "DeepSeek V4 Flash", "volcengine_ark", "text", "openai_text", "deepseek-v4-flash-260425", {"chat": True, "responses": True, "stream": True}),
+    ("deepseek-v4-pro", "DeepSeek V4 Pro", "volcengine_ark", "text", "openai_text", "deepseek-v4-pro-ga-260813", {"chat": True, "responses": True, "stream": True}),
     ("glm-5.2", "GLM 5.2", "volcengine_ark", "text", "openai_text", "glm-5-2-260617", {"chat": True, "responses": True, "stream": True}),
     ("seedream-5.0-pro", "Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-pro-260628", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "maxN": 1}),
     ("seedream-5.0-lite", "Seedream 5.0 Lite", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-lite-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15, "outputFormat": True, "webSearch": True}),
@@ -21,6 +22,10 @@ BUILTIN_MODEL_CATALOG = (
     ("doubao-seed-2.0-pro", "Doubao Seed 2.0 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-pro-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-lite", "Doubao Seed 2.0 Lite", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-lite-260428", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-mini", "Doubao Seed 2.0 Mini", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-mini-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
+    ("doubao-seed-evolving", "Doubao Seed Evolving", "volcengine_ark", "text", "openai_text", "doubao-seed-evolving", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
+    ("doubao-seed-character", "Doubao Seed Character", "volcengine_ark", "text", "openai_text", "doubao-seed-character-260628", {"chat": True, "responses": True, "stream": True}),
+    ("doubao-seed-2.0-code", "Doubao Seed 2.0 Code", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-code-preview-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
+    ("doubao-seed-translation", "Doubao Seed Translation", "volcengine_ark", "text", "openai_text", "doubao-seed-translation-250915", {"chat": False, "responses": True, "stream": False, "translation": True}),
     ("seedance-2.5", "Seedance 2.5", "volcengine_ark", "video", "async_video", "doubao-seedance-2-5-260628", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 30, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 50, "maxN": 1}),
     ("seedance-2.0", "Seedance 2.0", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 20, "maxN": 1}),
     ("seedance-2.0-fast", "Seedance 2.0 Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-fast-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
@@ -31,6 +36,32 @@ BUILTIN_MODEL_CATALOG = (
     ("minimax-h3", "MiniMax H3", "minimax", "video", "async_video", "MiniMax-H3", {"image": True, "maxN": 1}),
     ("image2.0", "Image 2.0", "openai", "image", "openai_image", "gpt-image-2", {"generations": True}),
 )
+
+
+# These entries are retained so existing bindings and usage remain readable, but
+# they are not advertised until a directly callable Ark serverless ID is available.
+BUILTIN_DISABLED_MODEL_ALIASES = frozenset({
+    "seedance-1.0-lite-t2v",
+    "seedance-1.0-lite-i2v",
+    "seedance-1.5-pro",
+    "seedream-3.0-t2i",
+    "seededit-3.0-i2i",
+    "doubao-seed-1.8",
+    "doubao-seed-1.6-vision",
+})
+
+
+# These aliases were briefly added during local discovery, but Ark cannot serve
+# them through the supported inference endpoints. Remove them rather than leaving
+# unusable placeholders in upgraded databases.
+BUILTIN_REMOVED_MODEL_ALIASES = frozenset({
+    "doubao-seed-code",
+    "glm-4.7",
+    "qwen3-32b",
+    "qwen3-14b",
+    "qwen3-8b",
+    "qwen3-0.6b",
+})
 
 
 SCHEMA = """
@@ -722,14 +753,30 @@ class Database:
                 )
             # Retired or unavailable models remain in historical task/usage rows,
             # but are hidden from catalogs and cannot receive new traffic.
+            disabled_placeholders = ",".join("?" for _ in BUILTIN_DISABLED_MODEL_ALIASES)
             connection.execute(
                 "UPDATE model_catalog SET enabled=0,updated_at=CURRENT_TIMESTAMP "
-                "WHERE alias IN ("
-                "'seedance-1.0-lite-t2v','seedance-1.0-lite-i2v',"
-                "'seedance-1.5-pro',"
-                "'seedream-3.0-t2i','seededit-3.0-i2i',"
-                "'doubao-seed-1.8','doubao-seed-1.6-vision'"
-                ")"
+                f"WHERE alias IN ({disabled_placeholders})",
+                tuple(sorted(BUILTIN_DISABLED_MODEL_ALIASES)),
+            )
+            removed_placeholders = ",".join("?" for _ in BUILTIN_REMOVED_MODEL_ALIASES)
+            removed_aliases = tuple(sorted(BUILTIN_REMOVED_MODEL_ALIASES))
+            for table in (
+                "api_key_model_permissions",
+                "project_model_bindings",
+                "billing_model_rates",
+            ):
+                connection.execute(
+                    f"DELETE FROM {table} WHERE model_alias IN ({removed_placeholders})",
+                    removed_aliases,
+                )
+            connection.execute(
+                "DELETE FROM model_catalog "
+                f"WHERE alias IN ({removed_placeholders}) "
+                "AND NOT EXISTS (SELECT 1 FROM inference_tasks t WHERE t.model_alias=model_catalog.alias) "
+                "AND NOT EXISTS (SELECT 1 FROM inference_usage u WHERE u.model_alias=model_catalog.alias) "
+                "AND NOT EXISTS (SELECT 1 FROM billing_usage_items b WHERE b.model_alias=model_catalog.alias)",
+                removed_aliases,
             )
             # Early local catalogs used two aliases that did not match the fixed
             # upstream IDs. Migrate every reference atomically so existing project

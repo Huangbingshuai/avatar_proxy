@@ -620,6 +620,23 @@ class ProviderRelay:
             for row in rows
         ]
 
+    def validate_text_operation(
+        self, principal: ApiPrincipal, alias: str, operation: str, *, stream: bool
+    ) -> ModelRoute:
+        route = self.resolve(principal, alias)
+        if route.modality != "text":
+            raise ApiError("该模型不支持文本接口", 422, "model_modality_mismatch")
+        if not route.capabilities.get(operation):
+            raise ApiError(
+                "该模型不支持当前文本接口",
+                422,
+                "model_operation_unsupported",
+                details={"operation": operation},
+            )
+        if stream and not route.capabilities.get("stream"):
+            raise ApiError("该模型不支持流式输出", 422, "model_stream_unsupported")
+        return route
+
     def _base_url(self, route: ModelRoute) -> str:
         if route.provider == "openai":
             return "https://api.openai.com/v1"
@@ -777,9 +794,7 @@ class ProviderRelay:
     async def text_json(
         self, principal: ApiPrincipal, alias: str, operation: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], str | None]:
-        route = self.resolve(principal, alias)
-        if route.modality != "text":
-            raise ApiError("该模型不支持文本接口", 422, "model_modality_mismatch")
+        route = self.validate_text_operation(principal, alias, operation, stream=False)
         if _contains_image_input(payload) and not route.capabilities.get("imageInput"):
             raise ApiError("该模型不支持图片理解", 422, "model_image_input_unsupported")
         path = "/chat/completions" if operation == "chat" else "/responses"
@@ -803,9 +818,7 @@ class ProviderRelay:
     async def text_stream(
         self, principal: ApiPrincipal, alias: str, operation: str, payload: dict[str, Any]
     ) -> AsyncIterator[bytes]:
-        route = self.resolve(principal, alias)
-        if route.modality != "text":
-            raise ApiError("该模型不支持文本接口", 422, "model_modality_mismatch")
+        route = self.validate_text_operation(principal, alias, operation, stream=True)
         if _contains_image_input(payload) and not route.capabilities.get("imageInput"):
             raise ApiError("该模型不支持图片理解", 422, "model_image_input_unsupported")
         path = "/chat/completions" if operation == "chat" else "/responses"

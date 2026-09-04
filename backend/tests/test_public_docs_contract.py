@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from app.database import BUILTIN_MODEL_CATALOG
+from app.database import BUILTIN_DISABLED_MODEL_ALIASES, BUILTIN_MODEL_CATALOG
 from app.routers.ark_compat import ARK_VIDEO_FIELDS, router as ark_router
 from app.routers.openai_compat import IMAGE_FIELDS, router as openai_router
 
@@ -20,7 +20,10 @@ def test_client_api_model_table_matches_builtin_catalog() -> None:
     client = _text(CLIENT_DOC)
     model_section = client.split("### 13.1 可用模型", 1)[1].split("### 13.2", 1)[0]
     documented = set(re.findall(r"^\| `([^`]+)` \|", model_section, flags=re.MULTILINE))
-    expected = {row[0] for row in BUILTIN_MODEL_CATALOG}
+    expected = {
+        row[0] for row in BUILTIN_MODEL_CATALOG
+        if row[0] not in BUILTIN_DISABLED_MODEL_ALIASES
+    }
     assert documented == expected
 
 
@@ -49,7 +52,7 @@ def test_specialized_docs_defer_to_client_contract() -> None:
     relay = _text(MODEL_RELAY_DOC)
     richidrama = _text(RICHIDRAMA_DOC)
 
-    assert "版本：5.2" in client
+    assert "版本：5.3" in client
     assert "CLIENT_API.md" in relay
     assert "CLIENT_API.md" in richidrama
     assert "negative_prompt" not in IMAGE_FIELDS
