@@ -231,7 +231,7 @@ GET  /v1/audio/transcriptions/{taskId}
 POST /v1/audio/generations
 ```
 
-`doubao-embedding-vision` 使用项目的火山方舟渠道。`doubao-seed-tts-2.0`、`doubao-seedasr-2.0` 和 `seed-audio-1.0` 使用独立豆包语音渠道，调用方仍只持有瑞池业务 Key，不接触语音供应商凭证。完整字段、响应结构和 curl 示例见 [CLIENT_API.md 的“向量与音频接口”](CLIENT_API.md#136-向量与音频接口)。
+`doubao-embedding-vision` 使用项目的火山方舟渠道。`doubao-seed-tts-2.0`、`doubao-seedasr-2.0` 和 `doubao-seed-audio-1.0` 使用独立豆包语音渠道，调用方仍只持有瑞池业务 Key，不接触语音供应商凭证。完整字段、响应结构和 curl 示例见 [CLIENT_API.md 的“向量与音频接口”](CLIENT_API.md#136-向量与音频接口)。
 
 语音合成直接返回音频二进制；录音识别为异步任务，必须使用提交任务时的同一枚业务 Key 查询。语音模型调用会产生真实费用，不应使用渠道测试按钮自动探测。
 

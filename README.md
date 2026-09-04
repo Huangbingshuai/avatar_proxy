@@ -1,6 +1,6 @@
 # Star Proxy
 
-Star Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系统。系统用我方签发的业务 API Key 隔离客户项目，并提供内部管理控制台、客户工具前端和独立 FastAPI 服务。
+Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素材管理系统。系统用我方签发的业务 API Key 隔离客户项目，统一提供文本、图片、视频、向量和音频能力，并配套内部管理控制台、客户工具前端和独立 FastAPI 服务。
 
 ## 系统组成
 
@@ -22,7 +22,7 @@ Star Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系
   └─ Bearer vap_live_* ─────────> FastAPI
        ├─ AK/SK ──> 火山素材库与 IAM 项目校验
        ├─ AK/SK ──> TOS 文件中转
-       └─ 项目加密供应商渠道 ──> 方舟文本、图片与 Seedance 视频 / OpenAI 图片
+       └─ 项目加密供应商渠道 ──> 火山方舟与语音 / 阿里百炼 / MiniMax / OpenAI
 
 微信支付平台
   └─ POST /minidrama/payments/callbacks/wechat
@@ -51,9 +51,30 @@ Star Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系
 - 统一 `429` 限流协议、额度事件、审计与失败清理。
 - 可选的模型中转：使用同一枚 `vap_live_*` 调用文本、图片、多模态向量、音频和统一异步视频接口；按项目路由到火山方舟、豆包语音、阿里百炼、MiniMax 或 OpenAI 渠道。
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
-- 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；同时支持方舟 Seedream 5.0 Pro/5.0 Lite/4.5/4.0 生图与改图模型、方舟当前可调用的 6 个 Seedance 视频模型、阿里百炼 `wan3.0-video`、MiniMax `minimax-h3`，以及 `image2.0`。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
+- 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；图片覆盖 Doubao Seedream 4.0、4.5、5.0、5.0 Lite、5.0 Pro 与 OpenAI `image2.0`；视频覆盖 6 个 Doubao Seedance 模型、阿里百炼 `wan3.0-video` 和 MiniMax `minimax-h3`；另提供 Doubao 多模态向量、TTS、ASR 和 Seed Audio。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
 
 模型中转调用方可直接使用 [模型中转接口文档](backend/MODEL_RELAY_API.md)；素材库及完整客户接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。模型目录的固定映射、接入门槛和验收记录见 [火山方舟模型目录维护文档](backend/VOLCENGINE_MODEL_CATALOG.md)。
+
+## 客户 API 快速接入
+
+所有客户接口使用同一套业务 Key 鉴权：
+
+```http
+Authorization: Bearer vap_live_xxx
+```
+
+接入方应先请求 `GET /v1/models`，只使用响应中返回的模型 `id`，再按能力选择接口：
+
+| 能力 | 接口 |
+|---|---|
+| 文本对话 | `POST /v1/chat/completions`、`POST /v1/responses` |
+| 图片生成与改图 | `POST /v1/images/generations` |
+| 文本/多模态向量 | `POST /v1/embeddings`、`POST /v1/embeddings/multimodal` |
+| 语音合成、录音识别、音频生成 | `/v1/audio/*` |
+| 异步视频创建、查询、取消 | `/api/v3/contents/generations/tasks*` |
+| 火山素材上传与素材组管理 | `/api/asset*`、`/api/asset-group*` |
+
+对外别名是 Star Proxy 的稳定契约，真实上游模型 ID 由服务端维护。Doubao 产品统一使用 `doubao-` 前缀，例如 `doubao-seedream-5.0` 和 `doubao-seedance-2.0`；旧 `seedream-*`、`seedance-*` 短别名不再兼容。图片和视频创建建议携带 `Idempotency-Key`，避免调用方超时重试造成重复任务与重复费用。
 
 ### 管理员安全
 

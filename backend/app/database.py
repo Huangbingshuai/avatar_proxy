@@ -38,7 +38,7 @@ BUILTIN_MODEL_CATALOG = (
     ("doubao-embedding-vision", "Doubao Embedding Vision", "volcengine_ark", "embedding", "ark_embedding", "doubao-embedding-vision-251215", {"embeddings": True, "multimodal": True, "inputTypes": ["text", "image", "video"], "dimensions": [1024, 2048], "billingMetric": "input_tokens", "billingUnit": 1000000}),
     ("doubao-seed-tts-2.0", "Doubao Seed TTS 2.0", "volcengine_speech", "audio", "speech_tts", "seed-tts-2.0", {"speech": True, "formats": ["mp3", "pcm", "ogg_opus"], "billingMetric": "characters", "billingUnit": 10000}),
     ("doubao-seedasr-2.0", "Doubao Seed ASR 2.0", "volcengine_speech", "audio", "speech_asr", "volc.seedasr.auc", {"transcriptions": True, "async": True, "billingMetric": "audio_second", "billingUnit": 3600}),
-    ("seed-audio-1.0", "Seed Audio 1.0", "volcengine_speech", "audio", "speech_audio_generation", "seed-audio-1.0", {"audioGenerations": True, "maxDuration": 120, "billingMetric": "audio_second", "billingUnit": 60}),
+    ("doubao-seed-audio-1.0", "Doubao Seed Audio 1.0", "volcengine_speech", "audio", "speech_audio_generation", "seed-audio-1.0", {"audioGenerations": True, "maxDuration": 120, "billingMetric": "audio_second", "billingUnit": 60}),
 )
 
 
@@ -56,6 +56,7 @@ BUILTIN_MODEL_ALIAS_MIGRATIONS = (
     ("seedance-1.0-pro-fast", "doubao-seedance-1.0-pro-fast"),
     ("glm-5.3", "glm-5.2"),
     ("wan3.0", "wan3.0-video"),
+    ("seed-audio-1.0", "doubao-seed-audio-1.0"),
 )
 
 

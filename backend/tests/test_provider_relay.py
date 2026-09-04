@@ -408,12 +408,12 @@ def test_seed_audio_and_async_asr_protocols(tmp_path: Path) -> None:
             secret="secret-volcengine_speech-abcdefgh", actor_id="super-admin",
         )
         relay.set_project_models("speech-project", [
-            {"model": "seed-audio-1.0", "channelId": channel["id"], "enabled": True},
+            {"model": "doubao-seed-audio-1.0", "channelId": channel["id"], "enabled": True},
             {"model": "doubao-seedasr-2.0", "channelId": channel["id"], "enabled": True},
         ], "admin")
         relay.transport = httpx.MockTransport(handler)
         headers = {"Authorization": f"Bearer {secret}"}
-        generated = client.post("/v1/audio/generations", headers=headers, json={"model": "seed-audio-1.0", "prompt": "轻柔雨声"})
+        generated = client.post("/v1/audio/generations", headers=headers, json={"model": "doubao-seed-audio-1.0", "prompt": "轻柔雨声"})
         assert generated.status_code == 200
         assert generated.json()["data"][0]["url"].endswith("audio.mp3")
         submitted = client.post(
@@ -444,7 +444,7 @@ def test_speech_validation_guards_and_manual_channel_test(tmp_path: Path) -> Non
         relay.set_project_models("speech-guards", [
             {"model": "doubao-seed-tts-2.0", "channelId": channel["id"], "enabled": True},
             {"model": "doubao-seedasr-2.0", "channelId": channel["id"], "enabled": True},
-            {"model": "seed-audio-1.0", "channelId": channel["id"], "enabled": True},
+            {"model": "doubao-seed-audio-1.0", "channelId": channel["id"], "enabled": True},
         ], "admin")
         headers = {"Authorization": f"Bearer {secret}"}
         cases = [
@@ -453,10 +453,10 @@ def test_speech_validation_guards_and_manual_channel_test(tmp_path: Path) -> Non
             ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": "voice", "response_format": "wav"}, "audio_format_invalid"),
             ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": "voice", "sample_rate": 123}, "audio_sample_rate_invalid"),
             ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": "voice", "speed": 101}, "audio_speed_invalid"),
-            ("/v1/audio/generations", {"model": "seed-audio-1.0", "prompt": ""}, "audio_prompt_invalid"),
+            ("/v1/audio/generations", {"model": "doubao-seed-audio-1.0", "prompt": ""}, "audio_prompt_invalid"),
             ("/v1/audio/transcriptions", {"model": "doubao-seedasr-2.0", "url": "http://private/audio.mp3"}, "audio_url_invalid"),
             ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": "voice", "unknown": 1}, "audio_parameter_unsupported"),
-            ("/v1/audio/generations", {"model": "seed-audio-1.0", "prompt": "rain", "unknown": 1}, "audio_parameter_unsupported"),
+            ("/v1/audio/generations", {"model": "doubao-seed-audio-1.0", "prompt": "rain", "unknown": 1}, "audio_parameter_unsupported"),
             ("/v1/audio/transcriptions", {"model": "doubao-seedasr-2.0", "url": "https://cdn.example/a.mp3", "unknown": 1}, "audio_parameter_unsupported"),
         ]
         for path, body, code in cases:
@@ -472,7 +472,7 @@ def test_speech_validation_guards_and_manual_channel_test(tmp_path: Path) -> Non
         ).json()["error"]["code"] == "idempotency_key_invalid"
         assert client.post(
             "/v1/audio/speech", headers=headers,
-            json={"model": "seed-audio-1.0", "input": "hi", "voice": "voice"},
+            json={"model": "doubao-seed-audio-1.0", "input": "hi", "voice": "voice"},
         ).json()["error"]["code"] == "model_modality_mismatch"
         assert client.post(
             "/v1/audio/generations", headers=headers,
@@ -596,7 +596,7 @@ def test_audio_generation_unknown_duration_and_asr_submit_failure(tmp_path: Path
             secret="speech-secret-abcdefgh", actor_id="owner",
         )
         relay.set_project_models("speech-errors", [
-            {"model": "seed-audio-1.0", "channelId": channel["id"], "enabled": True},
+            {"model": "doubao-seed-audio-1.0", "channelId": channel["id"], "enabled": True},
             {"model": "doubao-seedasr-2.0", "channelId": channel["id"], "enabled": True},
         ], "admin")
         headers = {"Authorization": f"Bearer {secret}"}
@@ -605,7 +605,7 @@ def test_audio_generation_unknown_duration_and_asr_submit_failure(tmp_path: Path
         ))
         generated = client.post(
             "/v1/audio/generations", headers=headers,
-            json={"model": "seed-audio-1.0", "prompt": "rain"},
+            json={"model": "doubao-seed-audio-1.0", "prompt": "rain"},
         )
         assert generated.status_code == 200
         with client.app.state.database.connect() as connection:
@@ -624,7 +624,7 @@ def test_audio_generation_unknown_duration_and_asr_submit_failure(tmp_path: Path
         assert task["status"] == "failed"
         principal = ApiPrincipal(key_id, "speech-errors")
         assert asyncio.run(relay.refresh_transcription(principal, task["id"]))["status"] == "failed"
-        route = relay.resolve(principal, "seed-audio-1.0")
+        route = relay.resolve(principal, "doubao-seed-audio-1.0")
         other, _ = relay._create_task(principal, route, "image", {"model": route.alias}, None)
         with pytest.raises(ApiError) as wrong:
             asyncio.run(relay.refresh_transcription(principal, other["id"]))
@@ -1482,7 +1482,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "doubao-seedance-2.5", "doubao-seedance-2.0", "doubao-seedance-2.0-fast", "doubao-seedance-2.0-mini",
         "doubao-seedance-1.0-pro", "doubao-seedance-1.0-pro-fast",
         "wan3.0-video", "doubao-embedding-vision", "doubao-seed-tts-2.0",
-        "doubao-seedasr-2.0", "seed-audio-1.0",
+        "doubao-seedasr-2.0", "doubao-seed-audio-1.0",
     ])
     with app.state.database.connect() as connection:
         upstream_models = dict(
@@ -1527,7 +1527,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "doubao-embedding-vision": "doubao-embedding-vision-251215",
         "doubao-seed-tts-2.0": "seed-tts-2.0",
         "doubao-seedasr-2.0": "volc.seedasr.auc",
-        "seed-audio-1.0": "seed-audio-1.0",
+        "doubao-seed-audio-1.0": "seed-audio-1.0",
     }
     assert seedream_capabilities
     assert all(

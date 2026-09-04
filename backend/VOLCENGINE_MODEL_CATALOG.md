@@ -16,7 +16,7 @@
 | `doubao-embedding-vision` | `doubao-embedding-vision-251215` | `/v1/embeddings`、`/v1/embeddings/multimodal` | 同步 JSON |
 | `doubao-seed-tts-2.0` | `seed-tts-2.0` | `/v1/audio/speech` | 音频二进制 |
 | `doubao-seedasr-2.0` | `volc.seedasr.auc` | `/v1/audio/transcriptions` | 异步任务 |
-| `seed-audio-1.0` | `seed-audio-1.0` | `/v1/audio/generations` | 同步 JSON |
+| `doubao-seed-audio-1.0` | `seed-audio-1.0` | `/v1/audio/generations` | 同步 JSON |
 
 模型别名与上游 ID 在 `backend/app/database.py` 中一一固定。管理员只为项目选择供应商渠道并启用模型，客户和管理员都不能在请求中改写上游模型 ID。
 
@@ -34,7 +34,7 @@ Star Proxy 对外模型别名是稳定的客户接口契约，不等同于火山
 | `seedance-2.0-fast` | `doubao-seedance-2.0-fast` |
 | `seedance-2.5` | `doubao-seedance-2.5` |
 
-其余 Seedream 4.x、Seedream 5.0 Pro、Seedance 1.0 Pro 与 Seedance 2.0 Mini 采用相同规则。未使用 Doubao 品牌的官方模型系列（例如 `seed-audio-1.0`）保留其官方名称，不机械增加前缀。
+其余 Seedream 4.x、Seedream 5.0 Pro、Seedance 1.0 Pro 与 Seedance 2.0 Mini 采用相同规则。公开别名统一采用产品品牌前缀，例如 `doubao-seed-audio-1.0`；真实供应商模型 ID 仍由目录固定映射。
 
 本次变更不提供旧请求别名兼容层：客户端必须先通过 `GET /v1/models` 获取可用模型，并将静态配置更新为标准别名；继续传旧别名会返回 `model_not_allowed`。服务启动时只对已有数据库引用执行一次原子迁移，覆盖项目模型绑定、API Key 模型权限、推理任务、用量、费率与账单记录，避免历史数据和权限断裂。上游固定 ID 继续由中转站维护，客户不得直接传入或依赖它。
 

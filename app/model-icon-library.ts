@@ -57,6 +57,7 @@ const MODEL_ICON_OVERRIDES: Record<string, ModelIconKey> = {
   "gpt-image-2": "openai",
   "doubao-seedream-5.0-pro": "doubao",
   "doubao-seedream-5-0-260128": "doubao",
+  "doubao-seed-audio-1.0": "doubao",
   "deepseek-v4-flash": "deepseek",
   "deepseek-v4-pro": "deepseek",
   "glm-5.2": "chatglm",

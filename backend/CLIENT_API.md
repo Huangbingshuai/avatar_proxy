@@ -11,6 +11,15 @@
 
 客户业务 API 不返回模型价目、项目折扣、账单或支付信息。项目计费由管理员在内部控制台统一配置，不需要也不支持客户为每个 API Key 单独设置；内部管理接口另见 [管理端计费账单 API 文档](ADMIN_BILLING_API.md)。
 
+### 5.5 文档基线
+
+- 统一使用瑞池业务 Key 调用素材、文本、图片、视频、向量和音频接口；调用方不接触供应商凭证。
+- 视频任务统一采用火山兼容的 `/api/v3/contents/generations/tasks` 创建、查询和取消路径，不再提供 `/v1/videos`。
+- Doubao 产品对外别名统一保留 `doubao-` 前缀，旧 `seedream-*` 和 `seedance-*` 短别名停止接受。
+- 图片参考图按照解码后的真实大小校验；素材库上传与模型参考图是两套独立规则。
+- 图片和视频任务支持调用方提供 `Idempotency-Key`，任务与用量始终按业务 Key 和项目隔离。
+- `/v1/models` 是当前项目可用模型及能力的唯一实时来源；本文档中的列表用于说明接口范围，不代表每个项目默认全部开通。
+
 ## 1. 鉴权
 
 除 `/health` 外，请求都必须携带瑞池签发的业务 API Key：
@@ -509,6 +518,22 @@ curl "$BASE_URL/v1/models" \
 
 只返回当前 Key 所属项目已绑定且渠道处于启用状态的模型。内置别名如下；实际是否可用以该接口返回为准。Doubao 系列统一使用 `doubao-` 前缀；旧的 `seedance-*`、`seedream-*` 短别名已经停用，请勿继续发送：
 
+别名标准化属于破坏性接口变更，不设置兼容转发。迁移关系为：
+
+- `seedream-4.0` → `doubao-seedream-4.0`
+- `seedream-4.5` → `doubao-seedream-4.5`
+- `seedream-5.0` → `doubao-seedream-5.0`
+- `seedream-5.0-lite` → `doubao-seedream-5.0-lite`
+- `seedream-5.0-pro` → `doubao-seedream-5.0-pro`
+- `seedance-1.0-pro` → `doubao-seedance-1.0-pro`
+- `seedance-1.0-pro-fast` → `doubao-seedance-1.0-pro-fast`
+- `seedance-2.0` → `doubao-seedance-2.0`
+- `seedance-2.0-fast` → `doubao-seedance-2.0-fast`
+- `seedance-2.0-mini` → `doubao-seedance-2.0-mini`
+- `seedance-2.5` → `doubao-seedance-2.5`
+
+调用方不能使用表中的旧别名，也不能把火山带日期的 Model ID 当作 `model` 传入。两种情况都会按未授权模型处理；请改为每次启动或按合理周期刷新 `/v1/models`，并以其返回值生成可选模型列表。
+
 响应示例：
 
 ```json
@@ -559,7 +584,7 @@ curl "$BASE_URL/v1/models" \
 | `doubao-embedding-vision` | 文本、图片和视频多模态向量化 | 火山方舟 | `POST /v1/embeddings`<br>`POST /v1/embeddings/multimodal` | 同步 JSON |
 | `doubao-seed-tts-2.0` | 语音合成 | 火山语音 | `POST /v1/audio/speech` | 音频二进制响应 |
 | `doubao-seedasr-2.0` | 异步录音识别 | 火山语音 | `POST /v1/audio/transcriptions` | `GET /v1/audio/transcriptions/{taskId}` |
-| `seed-audio-1.0` | 音频生成 | 火山语音 | `POST /v1/audio/generations` | 同步 JSON |
+| `doubao-seed-audio-1.0` | 音频生成 | 火山语音 | `POST /v1/audio/generations` | 同步 JSON |
 | `doubao-seedance-2.5` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `doubao-seedance-2.0` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `doubao-seedance-2.0-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
@@ -775,7 +800,7 @@ curl "$BASE_URL/v1/images/generations" \
 | `POST` | `/v1/audio/speech` | `doubao-seed-tts-2.0` 语音合成 |
 | `POST` | `/v1/audio/transcriptions` | `doubao-seedasr-2.0` 创建异步录音识别任务 |
 | `GET` | `/v1/audio/transcriptions/{taskId}` | 查询录音识别任务 |
-| `POST` | `/v1/audio/generations` | `seed-audio-1.0` 音频生成 |
+| `POST` | `/v1/audio/generations` | `doubao-seed-audio-1.0` 音频生成 |
 
 具体请求字段和能力必须以 `/v1/models` 返回的 `capabilities` 为准。语音合成直接返回音频二进制；录音识别创建成功返回 `202`，后续使用同一枚业务 Key 查询任务。
 
@@ -826,7 +851,7 @@ curl "$BASE_URL/v1/audio/transcriptions/asr_xxx" \
 curl "$BASE_URL/v1/audio/generations" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"seed-audio-1.0","prompt":"雨夜咖啡馆，轻柔爵士乐与窗外雨声","format":"mp3"}'
+  -d '{"model":"doubao-seed-audio-1.0","prompt":"雨夜咖啡馆，轻柔爵士乐与窗外雨声","format":"mp3"}'
 ```
 
 响应可能包含临时 `url` 或音频 Base64。临时 URL 由供应商托管并可能过期，调用方应及时下载；中转站不会自动归档媒体。
