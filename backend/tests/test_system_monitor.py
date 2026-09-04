@@ -53,6 +53,7 @@ def build_monitor(
     timer = clock or Clock()
     settings = build_settings(
         database.path,
+        system_monitor_enabled=True,
         system_monitor_path=tmp_path,
         system_monitor_sample_interval_seconds=60,
         system_monitor_persist_interval_seconds=300,
@@ -81,6 +82,27 @@ def alert_rows(database: Database) -> list[dict]:
                 "SELECT event_type,severity,message,details_json FROM admin_security_alerts ORDER BY id"
             ).fetchall()
         ]
+
+
+def test_shared_test_settings_isolate_monitor_and_smtp_from_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SYSTEM_MONITOR_ENABLED", "true")
+    monkeypatch.setenv("SMTP_HOST", "smtp.real.example")
+    monkeypatch.setenv("SMTP_USERNAME", "real-user@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "real-password")
+    monkeypatch.setenv("SMTP_FROM_EMAIL", "real-user@example.com")
+    monkeypatch.setenv("ALERT_EMAIL_RECIPIENTS", "real-owner@example.com")
+
+    settings = build_settings(tmp_path / "isolated.db")
+
+    assert settings.system_monitor_enabled is False
+    assert settings.smtp_host == ""
+    assert settings.smtp_username == ""
+    assert settings.smtp_password is None
+    assert settings.smtp_from_email == ""
+    assert settings.alert_email_recipients == ""
 
 
 def test_database_migration_defaults_are_idempotent(tmp_path: Path) -> None:
@@ -243,6 +265,7 @@ def test_existing_active_incident_is_emailed_automatically_after_smtp_is_configu
 
     settings = build_settings(
         database.path,
+        system_monitor_enabled=True,
         system_monitor_path=tmp_path,
         system_monitor_sample_interval_seconds=60,
         system_monitor_persist_interval_seconds=300,

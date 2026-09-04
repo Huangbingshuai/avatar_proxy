@@ -1,3 +1,4 @@
+import smtplib
 from collections.abc import Callable, Iterator
 from io import BytesIO
 from pathlib import Path
@@ -47,6 +48,17 @@ def stub_volcengine_project_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(VolcengineClient, "get_project", get_project)
 
 
+@pytest.fixture(autouse=True)
+def block_real_smtp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail fast if a test tries to connect to a real SMTP server."""
+
+    def reject_real_smtp(*args: object, **kwargs: object) -> None:
+        raise AssertionError("tests must not open a real SMTP connection")
+
+    monkeypatch.setattr(smtplib, "SMTP", reject_real_smtp)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", reject_real_smtp)
+
+
 def build_settings(database_path: Path, **overrides: object) -> Settings:
     values: dict[str, object] = {
         "volcengine_access_key": "test-ak",
@@ -59,11 +71,17 @@ def build_settings(database_path: Path, **overrides: object) -> Settings:
         "admin_argon2_parallelism": 1,
         "admin_backup_enabled": False,
         "multi_provider_enabled": False,
+        "system_monitor_enabled": False,
+        "smtp_host": "",
+        "smtp_username": "",
+        "smtp_password": None,
+        "smtp_from_email": "",
+        "alert_email_recipients": "",
         "database_path": database_path,
         "cors_origins": "http://localhost:3000",
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 @pytest.fixture(autouse=True)

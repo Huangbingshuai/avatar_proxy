@@ -28,6 +28,7 @@ class FakeVolcengine:
 
 def settings(database_path: Path) -> Settings:
     return Settings(
+        _env_file=None,
         volcengine_access_key="test-ak",
         volcengine_secret_key="test-sk",
         tos_bucket="test-bucket",
@@ -36,6 +37,12 @@ def settings(database_path: Path) -> Settings:
         admin_argon2_time_cost=1,
         admin_argon2_memory_cost=8192,
         admin_argon2_parallelism=1,
+        system_monitor_enabled=False,
+        smtp_host="",
+        smtp_username="",
+        smtp_password=None,
+        smtp_from_email="",
+        alert_email_recipients="",
         database_path=database_path,
         cors_origins="http://localhost:3000",
     )
