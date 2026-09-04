@@ -382,7 +382,7 @@ def test_video_validation_and_task_access_boundaries(tmp_path: Path) -> None:
         key_id, secret, _ = provision(
             client,
             provider="volcengine_ark",
-            alias="seedance-2.0",
+            alias="doubao-seedance-2.0",
             upstream_model="doubao-seedance-2-0-260128",
         )
         _, second_secret = create_key(client, "relay_project", "other-key")
@@ -397,27 +397,27 @@ def test_video_validation_and_task_access_boundaries(tmp_path: Path) -> None:
         invalid_idempotency = client.post(
             "/api/v3/contents/generations/tasks",
             headers={**headers, "Idempotency-Key": "x" * 129},
-            json={"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}]},
+            json={"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}]},
         )
         assert invalid_body.json()["error"]["code"] == "invalid_request_body"
         assert missing_model.json()["error"]["code"] == "model_required"
         assert invalid_idempotency.json()["error"]["code"] == "idempotency_key_invalid"
         invalid_cases = [
-            ({"model": "seedance-2.0"}, "video_input_required"),
-            ({"model": "seedance-2.0", "prompt": "x"}, "video_parameter_unsupported"),
-            ({"model": "seedance-2.0", "content": []}, "video_input_required"),
-            ({"model": "seedance-2.0", "content": [{"type": "audio"}]}, "video_content_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x", "extra": 1}]}, "video_content_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "image_url", "image_url": {"url": "file:///x"}, "role": "first_frame"}]}, "video_content_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "provider": "x"}, "route_override_forbidden"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": 5, "frames": 29}, "video_duration_conflict"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": True}, "video_duration_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": 4.5}, "video_duration_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "ratio": "wide"}, "video_ratio_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "watermark": "yes"}, "video_parameter_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "service_tier": "priority"}, "video_service_tier_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "execution_expires_after": 60}, "video_expiration_invalid"),
-            ({"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}], "task_type": "v2v"}, "video_task_type_invalid"),
+            ({"model": "doubao-seedance-2.0"}, "video_input_required"),
+            ({"model": "doubao-seedance-2.0", "prompt": "x"}, "video_parameter_unsupported"),
+            ({"model": "doubao-seedance-2.0", "content": []}, "video_input_required"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "audio"}]}, "video_content_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x", "extra": 1}]}, "video_content_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "image_url", "image_url": {"url": "file:///x"}, "role": "first_frame"}]}, "video_content_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "provider": "x"}, "route_override_forbidden"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": 5, "frames": 29}, "video_duration_conflict"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": True}, "video_duration_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "duration": 4.5}, "video_duration_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "ratio": "wide"}, "video_ratio_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "watermark": "yes"}, "video_parameter_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "service_tier": "priority"}, "video_service_tier_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "execution_expires_after": 60}, "video_expiration_invalid"),
+            ({"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}], "task_type": "v2v"}, "video_task_type_invalid"),
         ]
         for payload, code in invalid_cases:
             response = client.post("/api/v3/contents/generations/tasks", headers=headers, json=payload)
@@ -433,7 +433,7 @@ def test_video_validation_and_task_access_boundaries(tmp_path: Path) -> None:
         ))
         created = client.post(
             "/api/v3/contents/generations/tasks", headers=headers,
-            json={"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}]},
+            json={"model": "doubao-seedance-2.0", "content": [{"type": "text", "text": "x"}]},
         )
         task_id = created.json()["id"]
         forbidden = client.get(

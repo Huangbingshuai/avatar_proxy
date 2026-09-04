@@ -8,11 +8,11 @@
 
 - `deepseek-v4-flash`：火山方舟文本模型。
 - `glm-5.2`：火山方舟文本模型。
-- `seedream-5.0-pro`、`seedream-5.0-lite`、`seedream-4.5`、`seedream-4.0`：火山方舟生图、参考图改图和受能力约束的组图模型。
+- `doubao-seedream-5.0-pro`、`doubao-seedream-5.0-lite`、`doubao-seedream-4.5`、`doubao-seedream-4.0`：火山方舟生图、参考图改图和受能力约束的组图模型。
 - `doubao-seed-2.1-pro`、`doubao-seed-2.0-pro`、`doubao-seed-2.0-lite`、`doubao-seed-2.0-mini`：火山方舟图文理解模型。
-- `seedance-2.5`：火山方舟 Seedance 2.5 视频模型。
-- `seedance-2.0`、`seedance-2.0-fast`、`seedance-2.0-mini`：火山方舟 Seedance 2.0 视频模型。
-- `seedance-1.0-pro`、`seedance-1.0-pro-fast`：火山方舟 Seedance 1.0 Pro 视频模型。
+- `doubao-seedance-2.5`：火山方舟 Seedance 2.5 视频模型。
+- `doubao-seedance-2.0`、`doubao-seedance-2.0-fast`、`doubao-seedance-2.0-mini`：火山方舟 Seedance 2.0 视频模型。
+- `doubao-seedance-1.0-pro`、`doubao-seedance-1.0-pro-fast`：火山方舟 Seedance 1.0 Pro 视频模型。
 - `wan3.0-video`：阿里百炼异步视频模型。
 - `minimax-h3`：MiniMax 异步视频模型。
 - `image2.0`：OpenAI 图片模型别名，固定映射到 `gpt-image-2`。

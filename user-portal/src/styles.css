@@ -679,6 +679,8 @@ a { color: inherit; text-decoration: none; }
 .modelLabModelGrid > button > span { display: grid; width: 34px; height: 34px; grid-row: 1 / span 2; place-items: center; border-radius: 10px; color: #3f70b0; background: #edf5ff; }
 .modelLabModelGrid > button > span.image { color: #a34668; background: #fff0f6; }
 .modelLabModelGrid > button > span.video { color: #93641b; background: #fff5dc; }
+.modelLabModelGrid > button > span.embedding { color: #6654b4; background: #f2efff; }
+.modelLabModelGrid > button > span.audio { color: #087b72; background: #eafaf7; }
 .modelLabModelGrid b, .modelLabModelGrid small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modelLabModelGrid b { font-size: 10px; }
 .modelLabModelGrid small { color: var(--muted); font-size: 8px; }
@@ -722,6 +724,7 @@ a { color: inherit; text-decoration: none; }
 .modelLabVideoResult > div { display: grid; gap: 5px; min-width: 0; }
 .modelLabVideoResult b { font-size: 11px; text-transform: capitalize; }
 .modelLabVideoResult code, .modelLabRequestId code { overflow: hidden; color: #747a8a; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.modelLabVideoResult audio { width: min(260px, 100%); }
 .modelLabUsage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0 0; }
 .modelLabUsage > div { display: grid; gap: 5px; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
 .modelLabUsage dt { color: var(--muted); font-size: 8px; }

@@ -2,7 +2,7 @@ export const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
-export const DEFAULT_MODEL = "seedance-2.0";
+export const DEFAULT_MODEL = "doubao-seedance-2.0";
 
 export type VideoModelOption = {
   id: string;
@@ -10,16 +10,16 @@ export type VideoModelOption = {
 };
 
 const DEFAULT_VIDEO_MODELS: VideoModelOption[] = [
-  { id: "seedance-2.5", label: "Doubao-Seedance-2.5" },
-  { id: "seedance-2.0", label: "Doubao-Seedance-2.0" },
-  { id: "seedance-2.0-fast", label: "Doubao-Seedance-2.0-Fast" },
-  { id: "seedance-2.0-mini", label: "Doubao-Seedance-2.0-Mini" },
-  { id: "seedance-1.0-pro", label: "Seedance-1.0-Pro" },
-  { id: "seedance-1.0-pro-fast", label: "Seedance-1.0-Pro-Fast" },
+  { id: "doubao-seedance-2.5", label: "Doubao-Seedance-2.5" },
+  { id: "doubao-seedance-2.0", label: "Doubao-Seedance-2.0" },
+  { id: "doubao-seedance-2.0-fast", label: "Doubao-Seedance-2.0-Fast" },
+  { id: "doubao-seedance-2.0-mini", label: "Doubao-Seedance-2.0-Mini" },
+  { id: "doubao-seedance-1.0-pro", label: "Doubao-Seedance-1.0-Pro" },
+  { id: "doubao-seedance-1.0-pro-fast", label: "Doubao-Seedance-1.0-Pro-Fast" },
 ];
 
 const RETIRED_VIDEO_MODELS = new Set([
-  "seedance-1.5-pro",
+  "doubao-seedance-1.5-pro",
   "doubao-seedance-1-5-pro-251215",
 ]);
 
@@ -30,9 +30,13 @@ function readVideoModels(): VideoModelOption[] {
     .filter(Boolean)
     .flatMap((item) => {
       const [id, label] = item.split("|").map((part) => part.trim());
-      return id && !RETIRED_VIDEO_MODELS.has(id) ? [{ id, label: label || id }] : [];
+      return id && !RETIRED_VIDEO_MODELS.has(id)
+        ? [{ id, label: label || id }]
+        : [];
     });
-  const models = new Map(DEFAULT_VIDEO_MODELS.map((model) => [model.id, model]));
+  const models = new Map(
+    DEFAULT_VIDEO_MODELS.map((model) => [model.id, model]),
+  );
   for (const model of configured) models.set(model.id, model);
   return [...models.values()];
 }
@@ -62,7 +66,7 @@ export type RelayModel = {
   id: string;
   object: "model";
   displayName: string;
-  modality: "text" | "image" | "video";
+  modality: "text" | "image" | "video" | "embedding" | "audio";
   capabilities: Record<string, unknown>;
 };
 
@@ -89,7 +93,12 @@ export type VideoGeneratePayload = {
   metadata?: {
     prompt: string;
     promptDocument?: string;
-    assets: Array<Pick<Asset, "id" | "groupId" | "name" | "status" | "assetType" | "previewUrl">>;
+    assets: Array<
+      Pick<
+        Asset,
+        "id" | "groupId" | "name" | "status" | "assetType" | "previewUrl"
+      >
+    >;
     durationMode?: "seconds" | "smart";
     generationCount?: number;
   };
@@ -160,7 +169,11 @@ function apiKeyFingerprint(apiKey: string) {
   return (hash >>> 0).toString(36);
 }
 
-function browserCacheKey(apiKey: string, resource: "groups" | "assets", path: string) {
+function browserCacheKey(
+  apiKey: string,
+  resource: "groups" | "assets",
+  path: string,
+) {
   return `${BROWSER_CACHE_PREFIX}:${apiKeyFingerprint(apiKey)}:${resource}:${encodeURIComponent(path)}`;
 }
 
@@ -170,7 +183,10 @@ function readBrowserCache<T>(key: string): T | null {
     const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
     const entry = JSON.parse(raw) as BrowserCacheEntry<T>;
-    if (!entry.cachedAt || Date.now() - entry.cachedAt > BROWSER_CACHE_MAX_AGE_MS) {
+    if (
+      !entry.cachedAt ||
+      Date.now() - entry.cachedAt > BROWSER_CACHE_MAX_AGE_MS
+    ) {
       window.sessionStorage.removeItem(key);
       return null;
     }
@@ -190,7 +206,10 @@ function writeBrowserCache<T>(key: string, data: T) {
   }
 }
 
-function invalidateBrowserCache(apiKey: string, resource?: "groups" | "assets") {
+function invalidateBrowserCache(
+  apiKey: string,
+  resource?: "groups" | "assets",
+) {
   if (typeof window === "undefined") return;
   const scope = `${BROWSER_CACHE_PREFIX}:${apiKeyFingerprint(apiKey)}:`;
   const prefix = resource ? `${scope}${resource}:` : scope;
@@ -219,7 +238,9 @@ function firstValue(record: UnknownRecord, keys: string[]) {
 
 function firstString(record: UnknownRecord, keys: string[], fallback = "") {
   const value = firstValue(record, keys);
-  return typeof value === "string" || typeof value === "number" ? String(value) : fallback;
+  return typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : fallback;
 }
 
 function firstNumber(record: UnknownRecord, keys: string[]) {
@@ -254,10 +275,14 @@ function errorMessage(value: unknown, status: number) {
   if (!isRecord(value)) return `请求失败（HTTP ${status}）`;
   const data = value as ApiErrorShape;
   if (data.error?.message) return data.error.message;
-  if (data.ResponseMetadata?.Error?.Message) return data.ResponseMetadata.Error.Message;
+  if (data.ResponseMetadata?.Error?.Message)
+    return data.ResponseMetadata.Error.Message;
   if (typeof data.detail === "string") return data.detail;
   if (Array.isArray(data.detail)) {
-    const details = data.detail.map((item) => item.msg).filter(Boolean).join("；");
+    const details = data.detail
+      .map((item) => item.msg)
+      .filter(Boolean)
+      .join("；");
     if (details) return details;
   }
   return data.message || `请求失败（HTTP ${status}）`;
@@ -271,7 +296,8 @@ async function apiRequest<T>(
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${apiKey.trim()}`);
   headers.set("Accept", "application/json");
-  if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  if (init.body && !(init.body instanceof FormData))
+    headers.set("Content-Type", "application/json");
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (response.status === 204) return undefined as T;
@@ -331,14 +357,20 @@ export async function listRelayModels(apiKey: string): Promise<RelayModel[]> {
   return models.filter(isRecord).flatMap((item) => {
     const id = firstString(item, ["id"]);
     const modality = firstString(item, ["modality"]);
-    if (!id || !new Set(["text", "image", "video"]).has(modality)) return [];
-    return [{
-      id,
-      object: "model" as const,
-      displayName: firstString(item, ["display_name", "displayName"], id),
-      modality: modality as RelayModel["modality"],
-      capabilities: isRecord(item.capabilities) ? item.capabilities : {},
-    }];
+    if (
+      !id ||
+      !new Set(["text", "image", "video", "embedding", "audio"]).has(modality)
+    )
+      return [];
+    return [
+      {
+        id,
+        object: "model" as const,
+        displayName: firstString(item, ["display_name", "displayName"], id),
+        modality: modality as RelayModel["modality"],
+        capabilities: isRecord(item.capabilities) ? item.capabilities : {},
+      },
+    ];
   });
 }
 
@@ -365,17 +397,21 @@ export function testRelayTranslation(
     method: "POST",
     body: JSON.stringify({
       model,
-      input: [{
-        role: "user",
-        content: [{
-          type: "input_text",
-          text,
-          translation_options: {
-            ...(sourceLanguage ? { source_language: sourceLanguage } : {}),
-            target_language: targetLanguage,
-          },
-        }],
-      }],
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text,
+              translation_options: {
+                ...(sourceLanguage ? { source_language: sourceLanguage } : {}),
+                target_language: targetLanguage,
+              },
+            },
+          ],
+        },
+      ],
       stream: false,
     }),
   });
@@ -384,20 +420,25 @@ export function testRelayTranslation(
 function streamTextValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return "";
-  return value.flatMap((item) => {
-    if (typeof item === "string") return [item];
-    if (!isRecord(item)) return [];
-    const text = firstString(item, ["text", "content"]);
-    return text ? [text] : [];
-  }).join("");
+  return value
+    .flatMap((item) => {
+      if (typeof item === "string") return [item];
+      if (!isRecord(item)) return [];
+      const text = firstString(item, ["text", "content"]);
+      return text ? [text] : [];
+    })
+    .join("");
 }
 
 function chatStreamDelta(event: UnknownRecord): string {
-  const choice = Array.isArray(event.choices) && isRecord(event.choices[0])
-    ? event.choices[0]
-    : {};
+  const choice =
+    Array.isArray(event.choices) && isRecord(event.choices[0])
+      ? event.choices[0]
+      : {};
   const delta = isRecord(choice.delta) ? choice.delta : {};
-  return streamTextValue(delta.content) || streamTextValue(delta.reasoning_content);
+  return (
+    streamTextValue(delta.content) || streamTextValue(delta.reasoning_content)
+  );
 }
 
 export async function testRelayTextStream(
@@ -408,9 +449,9 @@ export async function testRelayTextStream(
 ): Promise<RelayApiResult> {
   const content = options.image
     ? [
-      { type: "image_url", image_url: { url: options.image } },
-      { type: "text", text: prompt },
-    ]
+        { type: "image_url", image_url: { url: options.image } },
+        { type: "text", text: prompt },
+      ]
     : prompt;
   const response = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
     method: "POST",
@@ -488,7 +529,13 @@ export async function testRelayTextStream(
       id: requestId,
       object: "chat.completion",
       model,
-      choices: [{ index: 0, message: { role: "assistant", content: accumulated }, finish_reason: "stop" }],
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: accumulated },
+          finish_reason: "stop",
+        },
+      ],
       ...(Object.keys(usage).length ? { usage } : {}),
     },
   };
@@ -514,14 +561,89 @@ export function testRelayImage(
   });
 }
 
+export function testRelayEmbedding(
+  apiKey: string,
+  model: string,
+  input: string,
+) {
+  return relayRequest("/v1/embeddings", apiKey, {
+    method: "POST",
+    body: JSON.stringify({ model, input, encoding_format: "float" }),
+  });
+}
+
+export async function testRelaySpeech(
+  apiKey: string,
+  model: string,
+  input: string,
+  voice: string,
+): Promise<RelayApiResult> {
+  const response = await fetch(`${API_BASE_URL}/v1/audio/speech`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey.trim()}`,
+      "Content-Type": "application/json",
+    },
+    credentials: "omit",
+    body: JSON.stringify({ model, input, voice, response_format: "mp3" }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(errorMessage(body, response.status));
+  }
+  const audioUrl = URL.createObjectURL(await response.blob());
+  return {
+    status: response.status,
+    requestId: response.headers.get("x-request-id") || undefined,
+    body: { model, audio_url: audioUrl },
+  };
+}
+
+export function testRelayTranscription(
+  apiKey: string,
+  model: string,
+  url: string,
+  idempotencyKey: string,
+) {
+  return relayRequest("/v1/audio/transcriptions", apiKey, {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ model, url }),
+  });
+}
+
+export function getRelayTranscription(apiKey: string, taskId: string) {
+  return relayRequest(
+    `/v1/audio/transcriptions/${encodeURIComponent(taskId)}`,
+    apiKey,
+  );
+}
+
+export function testRelayAudioGeneration(
+  apiKey: string,
+  model: string,
+  prompt: string,
+) {
+  return relayRequest("/v1/audio/generations", apiKey, {
+    method: "POST",
+    body: JSON.stringify({ model, prompt, format: "mp3" }),
+  });
+}
+
 export function testRelayVideo(
   apiKey: string,
   payload: { model: string; prompt: string; image?: string; duration?: number },
   idempotencyKey: string,
 ) {
-  const content: Array<Record<string, unknown>> = [{ type: "text", text: payload.prompt }];
+  const content: Array<Record<string, unknown>> = [
+    { type: "text", text: payload.prompt },
+  ];
   if (payload.image) {
-    content.push({ type: "image_url", image_url: { url: payload.image }, role: "first_frame" });
+    content.push({
+      type: "image_url",
+      image_url: { url: payload.image },
+      role: "first_frame",
+    });
   }
   return relayRequest("/api/v3/contents/generations/tasks", apiKey, {
     method: "POST",
@@ -535,7 +657,10 @@ export function testRelayVideo(
 }
 
 export function getRelayVideoTask(apiKey: string, taskId: string) {
-  return relayRequest(`/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`, apiKey);
+  return relayRequest(
+    `/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`,
+    apiKey,
+  );
 }
 
 async function apiRead<T>(path: string, apiKey: string): Promise<T> {
@@ -559,10 +684,16 @@ function queryString(params: Record<string, string | number | undefined>) {
   return search.toString();
 }
 
-function assetGroupsListPath(options: { pageNumber?: number; pageSize?: number; name?: string } = {}) {
+function assetGroupsListPath(
+  options: { pageNumber?: number; pageSize?: number; name?: string } = {},
+) {
   const pageNumber = options.pageNumber ?? 1;
   const pageSize = options.pageSize ?? 20;
-  const query = queryString({ pageNumber, pageSize, name: options.name?.trim() });
+  const query = queryString({
+    pageNumber,
+    pageSize,
+    name: options.name?.trim(),
+  });
   return { pageNumber, pageSize, path: `/api/asset-group/list?${query}` };
 }
 
@@ -572,7 +703,12 @@ function assetsListPath(
 ) {
   const pageNumber = options.pageNumber ?? 1;
   const pageSize = options.pageSize ?? 20;
-  const query = queryString({ groupId, pageNumber, pageSize, name: options.name?.trim() });
+  const query = queryString({
+    groupId,
+    pageNumber,
+    pageSize,
+    name: options.name?.trim(),
+  });
   return { pageNumber, pageSize, path: `/api/asset/list?${query}` };
 }
 
@@ -582,18 +718,46 @@ export function normalizeAssetGroups(
   pageSize: number,
 ): PageResult<AssetGroup> {
   const result = resultRecord(response);
-  const items = resultItems(response, ["AssetGroups", "assetGroups", "Groups", "groups"])
+  const items = resultItems(response, [
+    "AssetGroups",
+    "assetGroups",
+    "Groups",
+    "groups",
+  ])
     .map((item): AssetGroup => ({
-      id: firstString(item, ["Id", "id", "GroupId", "groupId", "AssetGroupId", "assetGroupId"]),
-      name: firstString(item, ["Name", "name", "GroupName", "groupName"], "未命名素材库"),
+      id: firstString(item, [
+        "Id",
+        "id",
+        "GroupId",
+        "groupId",
+        "AssetGroupId",
+        "assetGroupId",
+      ]),
+      name: firstString(
+        item,
+        ["Name", "name", "GroupName", "groupName"],
+        "未命名素材库",
+      ),
       description: firstString(item, ["Description", "description"]),
-      assetCount: firstNumber(item, ["AssetCount", "assetCount", "TotalAssetCount", "totalAssetCount"]),
-      createdAt: firstString(item, ["CreateTime", "createTime", "CreatedAt", "createdAt"]),
+      assetCount: firstNumber(item, [
+        "AssetCount",
+        "assetCount",
+        "TotalAssetCount",
+        "totalAssetCount",
+      ]),
+      createdAt: firstString(item, [
+        "CreateTime",
+        "createTime",
+        "CreatedAt",
+        "createdAt",
+      ]),
     }))
     .filter((item) => item.id);
   return {
     items,
-    total: firstNumber(result, ["TotalCount", "totalCount", "Total", "total"]) ?? items.length,
+    total:
+      firstNumber(result, ["TotalCount", "totalCount", "Total", "total"]) ??
+      items.length,
     pageNumber,
     pageSize,
   };
@@ -606,20 +770,56 @@ export function normalizeAssets(
   pageSize: number,
 ): PageResult<Asset> {
   const result = resultRecord(response);
-  const items = resultItems(response, ["Assets", "assets", "AssetList", "assetList"])
+  const items = resultItems(response, [
+    "Assets",
+    "assets",
+    "AssetList",
+    "assetList",
+  ])
     .map((item): Asset => ({
       id: firstString(item, ["Id", "id", "AssetId", "assetId"]),
-      groupId: firstString(item, ["GroupId", "groupId", "AssetGroupId", "assetGroupId"], groupId),
-      name: firstString(item, ["Name", "name", "AssetName", "assetName"], "未命名素材"),
-      status: firstString(item, ["Status", "status", "AssetStatus", "assetStatus"], "Unknown"),
-      assetType: normalizeAssetType(firstString(item, ["AssetType", "assetType", "Type", "type"], "Image")),
-      previewUrl: firstString(item, ["URL", "Url", "url", "PreviewUrl", "previewUrl", "ImageUrl", "imageUrl", "CoverUrl", "coverUrl"]),
-      createdAt: firstString(item, ["CreateTime", "createTime", "CreatedAt", "createdAt"]),
+      groupId: firstString(
+        item,
+        ["GroupId", "groupId", "AssetGroupId", "assetGroupId"],
+        groupId,
+      ),
+      name: firstString(
+        item,
+        ["Name", "name", "AssetName", "assetName"],
+        "未命名素材",
+      ),
+      status: firstString(
+        item,
+        ["Status", "status", "AssetStatus", "assetStatus"],
+        "Unknown",
+      ),
+      assetType: normalizeAssetType(
+        firstString(item, ["AssetType", "assetType", "Type", "type"], "Image"),
+      ),
+      previewUrl: firstString(item, [
+        "URL",
+        "Url",
+        "url",
+        "PreviewUrl",
+        "previewUrl",
+        "ImageUrl",
+        "imageUrl",
+        "CoverUrl",
+        "coverUrl",
+      ]),
+      createdAt: firstString(item, [
+        "CreateTime",
+        "createTime",
+        "CreatedAt",
+        "createdAt",
+      ]),
     }))
     .filter((item) => item.id);
   return {
     items,
-    total: firstNumber(result, ["TotalCount", "totalCount", "Total", "total"]) ?? items.length,
+    total:
+      firstNumber(result, ["TotalCount", "totalCount", "Total", "total"]) ??
+      items.length,
     pageNumber,
     pageSize,
   };
@@ -641,32 +841,66 @@ export function readCachedAssetGroups(
   options: { pageNumber?: number; pageSize?: number; name?: string } = {},
 ) {
   const { path } = assetGroupsListPath(options);
-  return readBrowserCache<PageResult<AssetGroup>>(browserCacheKey(apiKey, "groups", path));
+  return readBrowserCache<PageResult<AssetGroup>>(
+    browserCacheKey(apiKey, "groups", path),
+  );
 }
 
-export async function createAssetGroup(apiKey: string, name: string, description = "") {
+export async function createAssetGroup(
+  apiKey: string,
+  name: string,
+  description = "",
+) {
   const result = await apiRequest<unknown>("/api/asset-group/create", apiKey, {
     method: "POST",
-    body: JSON.stringify({ name: name.trim(), description: description.trim() }),
+    body: JSON.stringify({
+      name: name.trim(),
+      description: description.trim(),
+    }),
   });
   invalidateBrowserCache(apiKey, "groups");
   const record = resultRecord(result);
-  const nestedGroup = firstValue(record, ["AssetGroup", "assetGroup", "Group", "group"]);
+  const nestedGroup = firstValue(record, [
+    "AssetGroup",
+    "assetGroup",
+    "Group",
+    "group",
+  ]);
   const source = isRecord(nestedGroup) ? nestedGroup : record;
-  return firstString(source, ["Id", "id", "GroupId", "groupId", "AssetGroupId", "assetGroupId"]);
+  return firstString(source, [
+    "Id",
+    "id",
+    "GroupId",
+    "groupId",
+    "AssetGroupId",
+    "assetGroupId",
+  ]);
 }
 
-export async function updateAssetGroup(apiKey: string, groupId: string, name: string, description: string) {
+export async function updateAssetGroup(
+  apiKey: string,
+  groupId: string,
+  name: string,
+  description: string,
+) {
   const result = await apiRequest<unknown>("/api/asset-group/update", apiKey, {
     method: "PUT",
-    body: JSON.stringify({ groupId, name: name.trim(), description: description.trim() }),
+    body: JSON.stringify({
+      groupId,
+      name: name.trim(),
+      description: description.trim(),
+    }),
   });
   invalidateBrowserCache(apiKey, "groups");
   return result;
 }
 
 export async function deleteAssetGroup(apiKey: string, groupId: string) {
-  const result = await apiRequest<unknown>(`/api/asset-group/delete?${queryString({ groupId })}`, apiKey, { method: "DELETE" });
+  const result = await apiRequest<unknown>(
+    `/api/asset-group/delete?${queryString({ groupId })}`,
+    apiKey,
+    { method: "DELETE" },
+  );
   invalidateBrowserCache(apiKey);
   return result;
 }
@@ -689,16 +923,26 @@ export function readCachedAssets(
   options: { pageNumber?: number; pageSize?: number; name?: string } = {},
 ) {
   const { path } = assetsListPath(groupId, options);
-  return readBrowserCache<PageResult<Asset>>(browserCacheKey(apiKey, "assets", path));
+  return readBrowserCache<PageResult<Asset>>(
+    browserCacheKey(apiKey, "assets", path),
+  );
 }
 
 export function uploadAssetFile(file: File, apiKey: string) {
   const form = new FormData();
   form.append("file", file);
-  return apiRequest<UploadResult>("/api/asset/upload-file", apiKey, { method: "POST", body: form });
+  return apiRequest<UploadResult>("/api/asset/upload-file", apiKey, {
+    method: "POST",
+    body: form,
+  });
 }
 
-export async function createAsset(apiKey: string, groupId: string, upload: UploadResult, name?: string) {
+export async function createAsset(
+  apiKey: string,
+  groupId: string,
+  upload: UploadResult,
+  name?: string,
+) {
   const result = await apiRequest<unknown>("/api/asset/create", apiKey, {
     method: "POST",
     body: JSON.stringify({
@@ -713,7 +957,11 @@ export async function createAsset(apiKey: string, groupId: string, upload: Uploa
   return result;
 }
 
-export async function updateAsset(apiKey: string, assetId: string, name: string) {
+export async function updateAsset(
+  apiKey: string,
+  assetId: string,
+  name: string,
+) {
   const result = await apiRequest<unknown>("/api/asset/update", apiKey, {
     method: "PUT",
     body: JSON.stringify({ assetId, name: name.trim() }),
@@ -723,7 +971,11 @@ export async function updateAsset(apiKey: string, assetId: string, name: string)
 }
 
 export async function deleteAsset(apiKey: string, assetId: string) {
-  const result = await apiRequest<unknown>(`/api/asset/delete?${queryString({ assetId })}`, apiKey, { method: "DELETE" });
+  const result = await apiRequest<unknown>(
+    `/api/asset/delete?${queryString({ assetId })}`,
+    apiKey,
+    { method: "DELETE" },
+  );
   invalidateBrowserCache(apiKey, "assets");
   return result;
 }
@@ -738,19 +990,26 @@ export function assetUri(assetId: string) {
 
 export type ReferenceAsset = Pick<Asset, "id" | "assetType">;
 
-export function assetTypeOf(asset: Partial<Pick<Asset, "assetType">> | AssetType): AssetType {
+export function assetTypeOf(
+  asset: Partial<Pick<Asset, "assetType">> | AssetType,
+): AssetType {
   const value = typeof asset === "string" ? asset : asset.assetType;
   return value === "Video" || value === "Audio" ? value : "Image";
 }
 
-export function assetTypeLabel(asset: Partial<Pick<Asset, "assetType">> | AssetType) {
+export function assetTypeLabel(
+  asset: Partial<Pick<Asset, "assetType">> | AssetType,
+) {
   const assetType = assetTypeOf(asset);
   if (assetType === "Video") return "视频";
   if (assetType === "Audio") return "音频";
   return "图片";
 }
 
-export function assetReferenceLabel(asset: ReferenceAsset, selectedAssets: ReferenceAsset[]) {
+export function assetReferenceLabel(
+  asset: ReferenceAsset,
+  selectedAssets: ReferenceAsset[],
+) {
   const assetType = assetTypeOf(asset);
   const sameTypeIndex = selectedAssets
     .filter((candidate) => assetTypeOf(candidate) === assetType)
@@ -758,7 +1017,9 @@ export function assetReferenceLabel(asset: ReferenceAsset, selectedAssets: Refer
   return `${assetTypeLabel(asset)}${Math.max(0, sameTypeIndex) + 1}`;
 }
 
-export function assetContentItem(asset: ReferenceAsset): Record<string, unknown> {
+export function assetContentItem(
+  asset: ReferenceAsset,
+): Record<string, unknown> {
   const url = assetUri(asset.id);
   const assetType = assetTypeOf(asset);
   if (assetType === "Video") {
@@ -771,7 +1032,12 @@ export function assetContentItem(asset: ReferenceAsset): Record<string, unknown>
 }
 
 export function generateVideo(payload: VideoGeneratePayload, apiKey: string) {
-  const { metadata: _localMetadata, generateAudio, returnLastFrame, ...nativePayload } = payload;
+  const {
+    metadata: _localMetadata,
+    generateAudio,
+    returnLastFrame,
+    ...nativePayload
+  } = payload;
   void _localMetadata;
   return apiRequest<VideoTask>("/api/v3/contents/generations/tasks", apiKey, {
     method: "POST",
@@ -783,18 +1049,37 @@ export function generateVideo(payload: VideoGeneratePayload, apiKey: string) {
   });
 }
 
-export function getVideoTask(taskId: string, apiKey: string, signal?: AbortSignal) {
-  return apiRequest<VideoTask>(`/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`, apiKey, { signal });
+export function getVideoTask(
+  taskId: string,
+  apiKey: string,
+  signal?: AbortSignal,
+) {
+  return apiRequest<VideoTask>(
+    `/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`,
+    apiKey,
+    { signal },
+  );
 }
 
 export function cancelVideoTask(taskId: string, apiKey: string) {
-  return apiRequest<void>(`/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`, apiKey, { method: "DELETE" });
+  return apiRequest<void>(
+    `/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`,
+    apiKey,
+    { method: "DELETE" },
+  );
 }
 
 export function getVideoUrl(task: VideoTask | null) {
-  return task?.content?.video_url || task?.output?.video_url || task?.video_url || "";
+  return (
+    task?.content?.video_url || task?.output?.video_url || task?.video_url || ""
+  );
 }
 
 export function getLastFrameUrl(task: VideoTask | null) {
-  return task?.content?.last_frame_url || task?.output?.last_frame_url || task?.last_frame_url || "";
+  return (
+    task?.content?.last_frame_url ||
+    task?.output?.last_frame_url ||
+    task?.last_frame_url ||
+    ""
+  );
 }

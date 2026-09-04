@@ -479,7 +479,7 @@ def test_api_key_with_inference_history_can_be_deleted_without_losing_usage(tmp_
                 "id,api_key_id,project_name,model_alias,channel_id,credential_id,upstream_model,"
                 "operation,status,request_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    "task-1", key_id, "drama_prod", "seedance-2.0", "channel-1",
+                    "task-1", key_id, "drama_prod", "doubao-seedance-2.0", "channel-1",
                     "credential-1", "doubao-seedance-2-0-260128", "video.create",
                     "succeeded", "request-hash", 1,
                 ),
@@ -490,7 +490,7 @@ def test_api_key_with_inference_history_can_be_deleted_without_losing_usage(tmp_
                 "video_seconds) VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     "usage-1", "request-1", "task-1", key_id, "drama_prod",
-                    "seedance-2.0", "channel-1", "succeeded", 5.0,
+                    "doubao-seedance-2.0", "channel-1", "succeeded", 5.0,
                 ),
             )
 

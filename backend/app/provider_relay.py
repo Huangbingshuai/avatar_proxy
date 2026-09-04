@@ -21,7 +21,7 @@ from .errors import ApiError
 from .security import ApiPrincipal
 
 
-PROVIDERS = {"openai", "volcengine_ark", "aliyun_bailian", "minimax"}
+PROVIDERS = {"openai", "volcengine_ark", "volcengine_speech", "aliyun_bailian", "minimax"}
 TERMINAL_TASK_STATUSES = {"succeeded", "failed", "canceled"}
 ACTIVE_TASK_STATUSES = {"queued", "running"}
 ALIYUN_REGIONS = {
@@ -267,6 +267,7 @@ class ProviderRelay:
         allowed: dict[str, set[str]] = {
             "openai": {"organization", "project"},
             "volcengine_ark": {"projectName"},
+            "volcengine_speech": set(),
             "aliyun_bailian": {"workspaceId", "region"},
             "minimax": set(),
         }
@@ -360,7 +361,7 @@ class ProviderRelay:
         normalized_config = self._validate_provider_config(provider, config)
         # The customer project is already bound to the canonical Volcengine
         # ProjectName. Never trust or require a second client-supplied value.
-        if provider == "volcengine_ark":
+        if provider in {"volcengine_ark", "volcengine_speech"}:
             normalized_config["projectName"] = canonical_project
         channel_id = f"pch_{uuid.uuid4().hex}"
         credential_id = f"pcr_{uuid.uuid4().hex}"
@@ -642,6 +643,8 @@ class ProviderRelay:
             return "https://api.openai.com/v1"
         if route.provider == "volcengine_ark":
             return "https://ark.cn-beijing.volces.com/api/v3"
+        if route.provider == "volcengine_speech":
+            return "https://openspeech.bytedance.com"
         if route.provider == "minimax":
             return "https://api.minimax.cn"
         if route.provider == "aliyun_bailian":
@@ -654,6 +657,8 @@ class ProviderRelay:
 
     @staticmethod
     def _headers(route: ModelRoute) -> dict[str, str]:
+        if route.provider == "volcengine_speech":
+            return {"x-api-key": route.secret, "content-type": "application/json"}
         headers = {"authorization": f"Bearer {route.secret}", "content-type": "application/json"}
         if route.provider == "openai":
             organization = route.channel_config.get("organization")
@@ -734,6 +739,15 @@ class ProviderRelay:
             credential_id=row["credential_id"],
             secret=self.vault.decrypt(row["secret_ciphertext"]),
         )
+        if route.provider == "volcengine_speech":
+            message = "豆包语音没有免费的凭证探测接口，请绑定模型后从用户端发起一次真实测试"
+            with self.database.connect() as connection:
+                connection.execute(
+                    "UPDATE provider_channels SET last_test_status='manual',last_test_at=CURRENT_TIMESTAMP,"
+                    "last_test_latency_ms=NULL,last_test_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (message, channel_id),
+                )
+            return {"status": "manual", "latencyMs": None, "message": message}
         path = "/v1/models" if route.provider == "minimax" else "/models"
         started = time.monotonic()
         status = "success"
@@ -766,6 +780,8 @@ class ProviderRelay:
         video_seconds: float | None = None,
         width: int | None = None,
         height: int | None = None,
+        input_characters: int | None = None,
+        audio_seconds: float | None = None,
     ) -> None:
         usage = usage or {}
         input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
@@ -777,8 +793,9 @@ class ProviderRelay:
                 INSERT OR IGNORE INTO inference_usage
                 (id,request_id,task_id,api_key_id,project_name,model_alias,channel_id,
                  provider_request_id,status,input_tokens,output_tokens,total_tokens,
-                 generated_images,video_seconds,video_width,video_height,settled_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                 generated_images,video_seconds,video_width,video_height,input_characters,
+                 audio_seconds,settled_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
                 """,
                 (
                     f"ius_{uuid.uuid4().hex}", request_id, task_id, principal.id,
@@ -787,9 +804,389 @@ class ProviderRelay:
                     int(input_tokens) if isinstance(input_tokens, (int, float)) else None,
                     int(output_tokens) if isinstance(output_tokens, (int, float)) else None,
                     int(total_tokens) if isinstance(total_tokens, (int, float)) else None,
-                    generated_images, video_seconds, width, height,
+                    generated_images, video_seconds, width, height, input_characters, audio_seconds,
                 ),
             )
+
+    def _speech_headers(
+        self, route: ModelRoute, *, resource_id: str | None, request_id: str, require_usage: bool = False
+    ) -> dict[str, str]:
+        headers = self._headers(route)
+        headers.update({
+            "x-api-request-id": request_id,
+            "x-api-sequence": "-1",
+        })
+        if resource_id:
+            headers["x-api-resource-id"] = resource_id
+        if require_usage:
+            headers["x-control-require-usage-tokens-return"] = "*"
+        return headers
+
+    async def _speech_request(
+        self,
+        route: ModelRoute,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        request_id: str,
+        resource_id: str | None,
+        require_usage: bool = False,
+    ) -> tuple[httpx.Response, dict[str, Any]]:
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.settings.upstream_timeout_seconds,
+                transport=self.transport,
+            ) as client:
+                response = await client.post(
+                    f"{self._base_url(route)}{path}",
+                    headers=self._speech_headers(
+                        route,
+                        resource_id=resource_id,
+                        request_id=request_id,
+                        require_usage=require_usage,
+                    ),
+                    json=payload,
+                )
+        except httpx.RequestError as error:
+            raise ApiError("无法连接豆包语音服务", 502, "provider_unreachable") from error
+        status_code = response.headers.get("x-api-status-code")
+        status_ok = not status_code or status_code == "0" or status_code.startswith("2000000")
+        if response.status_code >= 400 or not status_ok:
+            message = response.headers.get("x-api-message")
+            if not message:
+                try:
+                    error_body = response.json()
+                except ValueError:
+                    error_body = {}
+                if isinstance(error_body, dict):
+                    message = error_body.get("message") or error_body.get("error")
+            message = str(message or "豆包语音服务拒绝了请求")
+            raise ApiError(
+                message[:500],
+                response.status_code if response.status_code >= 400 else 502,
+                "provider_request_failed",
+                details={"upstreamRequestId": response.headers.get("x-tt-logid") or request_id},
+            )
+        try:
+            data = response.json() if response.content else {}
+        except ValueError as error:
+            raise ApiError("豆包语音服务返回了无效响应", 502, "provider_response_invalid") from error
+        if not isinstance(data, dict):
+            raise ApiError("豆包语音服务返回了无效响应", 502, "provider_response_invalid")
+        return response, data
+
+    async def embeddings(
+        self, principal: ApiPrincipal, alias: str, payload: dict[str, Any], *, multimodal: bool
+    ) -> tuple[dict[str, Any], str]:
+        route = self.resolve(principal, alias)
+        if route.modality != "embedding" or not route.capabilities.get("embeddings"):
+            raise ApiError("该模型不支持向量化接口", 422, "model_modality_mismatch")
+        if multimodal and not route.capabilities.get("multimodal"):
+            raise ApiError("该模型不支持多模态向量化", 422, "model_operation_unsupported")
+        upstream = dict(payload)
+        upstream["model"] = route.upstream_model
+        # Ark's current embedding-vision release accepts text through the
+        # multimodal endpoint. Preserve an OpenAI-compatible text endpoint by
+        # adapting a single text input and normalising the provider response.
+        adapt_vision_text = not multimodal and route.upstream_model.startswith(
+            "doubao-embedding-vision-"
+        )
+        if adapt_vision_text:
+            input_value = upstream.get("input")
+            if isinstance(input_value, list):
+                if len(input_value) != 1 or not isinstance(input_value[0], str):
+                    raise ApiError(
+                        "当前模型的文本向量化一次仅支持一个字符串",
+                        422,
+                        "embedding_batch_unsupported",
+                    )
+                input_value = input_value[0]
+            if not isinstance(input_value, str):
+                raise ApiError(
+                    "当前模型的文本向量化仅支持字符串输入",
+                    422,
+                    "embedding_input_invalid",
+                )
+            upstream["input"] = [{"type": "text", "text": input_value}]
+            upstream.pop("sparse_embedding", None)
+        response, data = await self._request(
+            route,
+            "POST",
+            "/embeddings/multimodal" if multimodal or adapt_vision_text else "/embeddings",
+            upstream,
+        )
+        if adapt_vision_text:
+            provider_data = data.get("data")
+            vector = provider_data.get("embedding") if isinstance(provider_data, dict) else None
+            if not isinstance(vector, list):
+                raise ApiError("模型供应商返回了无效向量", 502, "provider_response_invalid")
+            data = {
+                "object": "list",
+                "data": [{"object": "embedding", "index": 0, "embedding": vector}],
+                "model": route.alias,
+                "usage": data.get("usage") if isinstance(data.get("usage"), dict) else {},
+            }
+        else:
+            data["model"] = route.alias
+        request_id = _provider_request_id(response.headers, data) or f"req_{uuid.uuid4().hex}"
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        self._record_usage(
+            request_id=request_id,
+            principal=principal,
+            route=route,
+            status="succeeded",
+            provider_request_id=_provider_request_id(response.headers, data),
+            usage=usage,
+        )
+        return data, request_id
+
+    async def synthesize_speech(
+        self, principal: ApiPrincipal, alias: str, payload: dict[str, Any]
+    ) -> tuple[bytes, str, str]:
+        route = self.resolve(principal, alias)
+        if route.modality != "audio" or route.protocol != "speech_tts":
+            raise ApiError("该模型不支持语音合成接口", 422, "model_modality_mismatch")
+        text = str(payload.get("input") or "").strip()
+        voice = str(payload.get("voice") or "").strip()
+        if not text or len(text) > 10000:
+            raise ApiError("input不能为空或过长", 422, "audio_input_invalid")
+        if not voice or len(voice) > 128:
+            raise ApiError("voice必须填写TTS 2.0音色ID", 422, "audio_voice_invalid")
+        output_format = str(payload.get("response_format") or "mp3")
+        if output_format not in {"mp3", "pcm", "ogg_opus"}:
+            raise ApiError("response_format仅支持mp3、pcm或ogg_opus", 422, "audio_format_invalid")
+        sample_rate = payload.get("sample_rate", 24000)
+        speed = payload.get("speed", 0)
+        if not isinstance(sample_rate, int) or isinstance(sample_rate, bool) or sample_rate not in {8000, 16000, 22050, 24000, 32000, 44100, 48000}:
+            raise ApiError("sample_rate不受支持", 422, "audio_sample_rate_invalid")
+        if not isinstance(speed, int) or isinstance(speed, bool) or not -50 <= speed <= 100:
+            raise ApiError("speed必须是-50到100的整数", 422, "audio_speed_invalid")
+        request_id = str(uuid.uuid4())
+        body = {
+            "user": {"uid": principal.id},
+            "req_params": {
+                "text": text,
+                "speaker": voice,
+                "sample_rate": sample_rate,
+                "audio_params": {
+                    "format": output_format,
+                    "speech_rate": speed,
+                },
+                "additions": _json({"disable_markdown_filter": False}),
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.settings.upstream_timeout_seconds, transport=self.transport) as client:
+                response = await client.post(
+                    f"{self._base_url(route)}/api/v3/tts/unidirectional/sse",
+                    headers=self._speech_headers(
+                        route, resource_id=route.upstream_model, request_id=request_id, require_usage=True
+                    ),
+                    json=body,
+                )
+        except httpx.RequestError as error:
+            raise ApiError("无法连接豆包语音服务", 502, "provider_unreachable") from error
+        if response.status_code >= 400:
+            raise ApiError(
+                response.headers.get("x-api-message") or "豆包语音服务拒绝了请求",
+                response.status_code,
+                "provider_request_failed",
+            )
+        chunks: list[bytes] = []
+        provider_request_id = response.headers.get("x-tt-logid") or request_id
+        for line in response.text.splitlines():
+            if not line.startswith("data:"):
+                continue
+            try:
+                event = json.loads(line[5:].strip())
+            except ValueError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            code = event.get("code")
+            if code not in {None, 0, 20000000}:
+                raise ApiError(str(event.get("message") or "语音合成失败")[:500], 502, "provider_request_failed")
+            encoded = event.get("data")
+            if isinstance(encoded, str) and encoded:
+                try:
+                    chunks.append(base64.b64decode(encoded, validate=True))
+                except (ValueError, binascii.Error) as error:
+                    raise ApiError("语音数据格式无效", 502, "provider_response_invalid") from error
+        if not chunks:
+            raise ApiError("语音服务未返回音频数据", 502, "provider_response_invalid")
+        self._record_usage(
+            request_id=f"aud_{uuid.uuid4().hex}", principal=principal, route=route,
+            status="succeeded", provider_request_id=provider_request_id,
+            input_characters=len(text),
+        )
+        media_types = {"mp3": "audio/mpeg", "pcm": "audio/L16", "ogg_opus": "audio/ogg"}
+        return b"".join(chunks), media_types[output_format], provider_request_id
+
+    async def generate_audio(
+        self, principal: ApiPrincipal, alias: str, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], str]:
+        route = self.resolve(principal, alias)
+        if route.modality != "audio" or route.protocol != "speech_audio_generation":
+            raise ApiError("该模型不支持音频生成接口", 422, "model_modality_mismatch")
+        prompt = str(payload.get("prompt") or "").strip()
+        if not prompt or len(prompt) > 4000:
+            raise ApiError("prompt不能为空或过长", 422, "audio_prompt_invalid")
+        request_id = str(uuid.uuid4())
+        upstream = {key: value for key, value in payload.items() if key in {
+            "speaker", "audio_url", "audio_data", "image_url", "image_data", "duration", "format"
+        }}
+        upstream["text_prompt"] = prompt
+        upstream["model"] = route.upstream_model
+        response, data = await self._speech_request(
+            route, "/api/v3/tts/create", upstream,
+            request_id=request_id, resource_id=None,
+        )
+        content = data.get("data") if isinstance(data.get("data"), dict) else data
+        duration = content.get("original_duration") if isinstance(content, dict) else None
+        try:
+            seconds = float(duration) if duration is not None else None
+        except (TypeError, ValueError):
+            seconds = None
+        provider_id = response.headers.get("x-tt-logid") or request_id
+        self._record_usage(
+            request_id=f"aud_{uuid.uuid4().hex}", principal=principal, route=route,
+            status="succeeded", provider_request_id=provider_id, audio_seconds=seconds,
+        )
+        item = content if isinstance(content, dict) else {}
+        return {
+            "created": _now_epoch(), "model": route.alias,
+            "data": [{key: item[key] for key in ("url", "audio", "duration", "original_duration", "subtitle") if item.get(key) is not None}],
+        }, provider_id
+
+    async def create_transcription(
+        self,
+        principal: ApiPrincipal,
+        alias: str,
+        payload: dict[str, Any],
+        idempotency_key: str | None,
+    ) -> dict[str, Any]:
+        route = self.resolve(principal, alias)
+        if route.modality != "audio" or route.protocol != "speech_asr":
+            raise ApiError("该模型不支持录音文件识别接口", 422, "model_modality_mismatch")
+        audio_url = str(payload.get("url") or "").strip()
+        if not audio_url.startswith("https://") or len(audio_url) > 2048:
+            raise ApiError("url必须是公网可访问的HTTPS音频地址", 422, "audio_url_invalid")
+        normalized = {
+            "model": alias,
+            "url": audio_url,
+            "language": str(payload.get("language") or "").strip() or None,
+            "enable_speaker_info": bool(payload.get("enable_speaker_info", False)),
+        }
+        task, created = self._create_task(
+            principal, route, "transcription", normalized, idempotency_key
+        )
+        if not created:
+            return self._transcription_public(task)
+        upstream_id = str(uuid.uuid4())
+        request_body: dict[str, Any] = {
+            "user": {"uid": principal.id},
+            "audio": {"url": audio_url},
+            "request": {
+                "model_name": "bigmodel",
+                "enable_punc": True,
+                "enable_itn": True,
+                "enable_speaker_info": normalized["enable_speaker_info"],
+            },
+        }
+        if normalized["language"]:
+            request_body["request"]["language"] = normalized["language"]
+        try:
+            response, _ = await self._speech_request(
+                route,
+                "/api/v3/auc/bigmodel/submit",
+                request_body,
+                request_id=upstream_id,
+                resource_id=route.upstream_model,
+            )
+        except Exception:
+            with self.database.connect() as connection:
+                connection.execute(
+                    "UPDATE inference_tasks SET status='failed',progress=100,error_code='provider_submit_failed',"
+                    "error_message='录音文件识别任务提交失败',completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (task["id"],),
+                )
+            raise
+        provider_id = response.headers.get("x-tt-logid") or upstream_id
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE inference_tasks SET upstream_task_id=?,status='queued',provider_request_id=?,"
+                "metadata_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (upstream_id, provider_id, _json({"audio_url": audio_url}), task["id"]),
+            )
+        return self._transcription_public(self.get_local_task(principal, task["id"]))
+
+    @staticmethod
+    def _transcription_public(task: dict[str, Any]) -> dict[str, Any]:
+        metadata = _loaded(task.get("metadata_json"), {})
+        result: dict[str, Any] = {
+            "id": task["id"],
+            "object": "audio.transcription",
+            "model": task.get("model_alias"),
+            "status": task.get("status", "queued"),
+            "created_at": task.get("created_at"),
+        }
+        if isinstance(metadata.get("text"), str):
+            result["text"] = metadata["text"]
+        if isinstance(metadata.get("duration"), (int, float)):
+            result["duration"] = metadata["duration"]
+        if task.get("error_message"):
+            result["error"] = {"code": task.get("error_code"), "message": task["error_message"]}
+        return result
+
+    async def refresh_transcription(
+        self, principal: ApiPrincipal, task_id: str
+    ) -> dict[str, Any]:
+        task = self.get_local_task(principal, task_id)
+        if task.get("operation") != "transcription":
+            raise ApiError("录音识别任务不存在", 404, "transcription_task_not_found")
+        if task["status"] in TERMINAL_TASK_STATUSES or not task.get("upstream_task_id"):
+            return self._transcription_public(task)
+        route = self._task_route(task)
+        response, data = await self._speech_request(
+            route,
+            "/api/v3/auc/bigmodel/query",
+            {},
+            request_id=task["upstream_task_id"],
+            resource_id=route.upstream_model,
+        )
+        result = data.get("result") if isinstance(data.get("result"), dict) else {}
+        text = result.get("text") if isinstance(result.get("text"), str) else None
+        audio_info = data.get("audio_info") if isinstance(data.get("audio_info"), dict) else {}
+        duration_ms = audio_info.get("duration")
+        try:
+            seconds = float(duration_ms) / 1000 if duration_ms is not None else None
+        except (TypeError, ValueError):
+            seconds = None
+        header_status = response.headers.get("x-api-status-code")
+        message = response.headers.get("x-api-message") or ""
+        complete = bool(text is not None or result) and header_status == "20000000"
+        running = header_status in {"20000001", "20000002"} or "processing" in message.lower()
+        status = "succeeded" if complete else "running" if running or header_status == "20000000" else "failed"
+        metadata = {"text": text, "duration": seconds}
+        provider_id = response.headers.get("x-tt-logid") or task.get("provider_request_id")
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE inference_tasks SET status=?,progress=?,metadata_json=?,provider_request_id=?,"
+                "error_code=?,error_message=?,completed_at=CASE WHEN ? IN ('succeeded','failed') "
+                "THEN COALESCE(completed_at,CURRENT_TIMESTAMP) ELSE completed_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (
+                    status, 100 if status in TERMINAL_TASK_STATUSES else 50, _json(metadata), provider_id,
+                    "provider_task_failed" if status == "failed" else None,
+                    message[:500] if status == "failed" else None,
+                    status, task_id,
+                ),
+            )
+        if status == "succeeded":
+            self._record_usage(
+                request_id=task_id, task_id=task_id, principal=principal, route=route,
+                status="succeeded", provider_request_id=provider_id, audio_seconds=seconds,
+            )
+        return self._transcription_public(self.get_local_task(principal, task_id))
 
     async def text_json(
         self, principal: ApiPrincipal, alias: str, operation: str, payload: dict[str, Any]
@@ -916,7 +1313,8 @@ class ProviderRelay:
             existing = self._find_idempotent_task(principal, operation, idempotency_key, request_hash)
             if existing:
                 return existing, False
-        task_id = f"vid_{uuid.uuid4().hex}" if operation == "video" else f"img_{uuid.uuid4().hex}"
+        prefix = {"video": "vid", "image": "img", "transcription": "asr"}.get(operation, "tsk")
+        task_id = f"{prefix}_{uuid.uuid4().hex}"
         billing_metadata: dict[str, Any] = {}
         if operation == "video":
             metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
@@ -1225,7 +1623,7 @@ class ProviderRelay:
                 body[name] = metadata[name]
         camera_fixed = metadata.get("camera_fixed")
         if camera_fixed is not None:
-            if not isinstance(camera_fixed, bool) or route.alias.startswith("seedance-2.0"):
+            if not isinstance(camera_fixed, bool) or route.alias.startswith("doubao-seedance-2.0"):
                 raise ApiError("当前模型不支持固定摄像头", 422, "video_camera_unsupported")
             if any(item["type"] != "text" for item in safe_content):
                 raise ApiError("参考素材场景不支持固定摄像头", 422, "video_camera_unsupported")
@@ -1234,7 +1632,7 @@ class ProviderRelay:
         if service_tier is not None:
             if service_tier not in {"default", "flex"}:
                 raise ApiError("service_tier无效", 422, "video_service_tier_invalid")
-            if service_tier == "flex" and route.alias.startswith("seedance-2.0"):
+            if service_tier == "flex" and route.alias.startswith("doubao-seedance-2.0"):
                 raise ApiError("Seedance 2.0不支持离线推理", 422, "video_service_tier_invalid")
             body["service_tier"] = service_tier
         expires_after = metadata.get("execution_expires_after")
@@ -1758,7 +2156,8 @@ class ProviderRelay:
                 "channelName": row["channel_name"], "status": row["status"],
                 "inputTokens": row["input_tokens"], "outputTokens": row["output_tokens"],
                 "totalTokens": row["total_tokens"], "generatedImages": row["generated_images"],
-                "videoSeconds": row["video_seconds"], "createdAt": row["created_at"],
+                "videoSeconds": row["video_seconds"], "inputCharacters": row["input_characters"],
+                "audioSeconds": row["audio_seconds"], "createdAt": row["created_at"],
             }
             for row in rows
         ]
@@ -1781,7 +2180,7 @@ class ProviderRelay:
             rows = connection.execute(
                 "SELECT * FROM inference_tasks" + where + " ORDER BY created_at DESC LIMIT ?", params
             ).fetchall()
-        return [self._video_public(dict(row)) if row["operation"] == "video" else {
+        return [self._video_public(dict(row)) if row["operation"] == "video" else self._transcription_public(dict(row)) if row["operation"] == "transcription" else {
             "id": row["id"], "object": "image", "model": row["model_alias"],
             "status": row["status"], "created_at": row["created_at"],
         } for row in rows]

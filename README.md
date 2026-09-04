@@ -49,7 +49,7 @@ Star Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系
 - Seedance 视频任务创建、状态查询与取消；客户工具只在当前浏览器保存任务索引。
 - 使用业务 Key 通过火山兼容任务接口中转 Seedance 视频生成，并按任务归属隔离查询与取消。
 - 统一 `429` 限流协议、额度事件、审计与失败清理。
-- 可选的模型中转：使用同一枚 `vap_live_*` 调用 OpenAI 兼容文本与图片接口，以及统一的火山兼容异步视频接口；视频请求可由服务端路由到火山方舟、阿里百炼或 MiniMax。
+- 可选的模型中转：使用同一枚 `vap_live_*` 调用文本、图片、多模态向量、音频和统一异步视频接口；按项目路由到火山方舟、豆包语音、阿里百炼、MiniMax 或 OpenAI 渠道。
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
 - 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；同时支持方舟 Seedream 5.0 Pro/5.0 Lite/4.5/4.0 生图与改图模型、方舟当前可调用的 6 个 Seedance 视频模型、阿里百炼 `wan3.0-video`、MiniMax `minimax-h3`，以及 `image2.0`。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
 
@@ -73,7 +73,7 @@ Star Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系
 - 默认 `MULTI_PROVIDER_ENABLED=false`，迁移后没有任何默认模型绑定，素材接口行为保持不变；视频生成仅通过启用后的中转渠道提供。
 - 启用时使用独立 Fernet 主密钥；未显式配置 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 时，系统会在 SQLite 同目录自动创建并复用 `provider_credentials.key`，SQLite 仍只保存凭证密文和尾号掩码。
 - 固定使用供应商官方 HTTPS 域名，客户请求不能指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
-- `/v1/models` 只返回当前业务 Key 所属项目已启用且渠道可用的模型；Chat Completions、Responses 和图片接口采用 OpenAI 兼容格式，并支持按模型能力传入图片 URL 进行识图或参考图生图。
+- `/v1/models` 只返回当前业务 Key 所属项目已启用且渠道可用的模型；支持 Chat Completions、Responses、图片与多模态向量接口，以及豆包语音合成、异步录音识别和音频生成。
 - Seedance 视频使用与火山方舟、漫剧调用格式一致的 `/api/v3/contents/generations/tasks` 异步任务接口；任务提交后固定渠道、凭证版本和上游模型，轮换不会破坏旧任务查询。
 - 图片和视频支持 `Idempotency-Key`；相同键与相同请求复用结果，不同请求体返回 `409`。
 - 只记录供应商真实返回的 Token、图片数和视频秒数，未知字段保持为空；第一阶段不做余额或金额扣费。
@@ -96,12 +96,12 @@ Star Proxy 是一个面向 ToB 客户的火山引擎素材与 Seedance 接入系
 
 | 对外别名 | 火山 Model ID | 最小验证规格 | 本地实测 |
 |---|---|---:|---|
-| `seedance-2.5` | `doubao-seedance-2-5-260628` | 4 秒 / 480p | 成功 |
-| `seedance-2.0` | `doubao-seedance-2-0-260128` | 4 秒 / 480p | 成功 |
-| `seedance-2.0-fast` | `doubao-seedance-2-0-fast-260128` | 4 秒 / 480p | 成功 |
-| `seedance-2.0-mini` | `doubao-seedance-2-0-mini-260615` | 4 秒 / 480p | 成功 |
-| `seedance-1.0-pro` | `doubao-seedance-1-0-pro-250528` | 2 秒 / 480p | 成功 |
-| `seedance-1.0-pro-fast` | `doubao-seedance-1-0-pro-fast-251015` | 2 秒 / 480p | 成功 |
+| `doubao-seedance-2.5` | `doubao-seedance-2-5-260628` | 4 秒 / 480p | 成功 |
+| `doubao-seedance-2.0` | `doubao-seedance-2-0-260128` | 4 秒 / 480p | 成功 |
+| `doubao-seedance-2.0-fast` | `doubao-seedance-2-0-fast-260128` | 4 秒 / 480p | 成功 |
+| `doubao-seedance-2.0-mini` | `doubao-seedance-2-0-mini-260615` | 4 秒 / 480p | 成功 |
+| `doubao-seedance-1.0-pro` | `doubao-seedance-1-0-pro-250528` | 2 秒 / 480p | 成功 |
+| `doubao-seedance-1.0-pro-fast` | `doubao-seedance-1-0-pro-fast-251015` | 2 秒 / 480p | 成功 |
 
 表中视频模型均已通过真实 `asset://` 素材完成生成验证。视频创建响应只返回中转站任务 ID；查询响应返回模型别名、状态及火山结果，不暴露渠道 ID、凭证版本、真实上游 Model ID 或内部请求哈希。
 

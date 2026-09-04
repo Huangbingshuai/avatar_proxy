@@ -170,6 +170,20 @@ class BillingManager:
             value = prices.get("perImageYuan")
             if value is not None:
                 rows.append(("image", "", 1, yuan_to_micros(str(value))))
+        elif modality == "embedding":
+            value = prices.get("inputPerMillionYuan")
+            if value is not None:
+                rows.append(("input_tokens", "", TOKEN_UNIT, yuan_to_micros(str(value))))
+        elif modality == "audio":
+            capabilities = model.get("capabilities") or {}
+            metric = capabilities.get("billingMetric")
+            unit_size = int(capabilities.get("billingUnit") or 1)
+            field = "perTenThousandCharactersYuan" if metric == "characters" else (
+                "perHourYuan" if unit_size == 3600 else "perMinuteYuan"
+            )
+            value = prices.get(field)
+            if value is not None:
+                rows.append((str(metric), "", unit_size, yuan_to_micros(str(value))))
         else:
             values = prices.get("perSecondByResolution") or {}
             if not isinstance(values, dict):
@@ -233,6 +247,18 @@ class BillingManager:
         elif model["modality"] == "image":
             row = next((item for item in rows if item["metric"] == "image"), None)
             prices = {"perImageYuan": micros_to_yuan(row["unit_price_micros"]) if row else None}
+        elif model["modality"] == "embedding":
+            row = next((item for item in rows if item["metric"] == "input_tokens"), None)
+            prices = {"inputPerMillionYuan": micros_to_yuan(row["unit_price_micros"]) if row else None}
+        elif model["modality"] == "audio":
+            capabilities = model.get("capabilities") or {}
+            metric = capabilities.get("billingMetric")
+            unit_size = int(capabilities.get("billingUnit") or 1)
+            row = next((item for item in rows if item["metric"] == metric), None)
+            field = "perTenThousandCharactersYuan" if metric == "characters" else (
+                "perHourYuan" if unit_size == 3600 else "perMinuteYuan"
+            )
+            prices = {field: micros_to_yuan(row["unit_price_micros"]) if row else None}
         else:
             mapped = {row["resolution"]: micros_to_yuan(row["unit_price_micros"]) for row in rows}
             prices = {"perSecondByResolution": {resolution: mapped.get(resolution) for resolution in VIDEO_RESOLUTIONS}}
@@ -241,6 +267,8 @@ class BillingManager:
             "displayName": model["display_name"],
             "provider": model["provider"],
             "modality": model["modality"],
+            "billingMetric": model.get("capabilities", {}).get("billingMetric"),
+            "billingUnit": model.get("capabilities", {}).get("billingUnit"),
             "month": month,
             "sourceMonths": sorted({row["effective_month"] for row in rows}),
             "prices": prices,
@@ -464,6 +492,20 @@ class BillingManager:
             if row["generated_images"] is None:
                 return None, "usage_unknown"
             return [("image", "", Decimal(row["generated_images"]))], None
+        if row["modality"] == "embedding":
+            if row["input_tokens"] is None:
+                return None, "usage_unknown"
+            return [("input_tokens", "", Decimal(row["input_tokens"]))], None
+        if row["modality"] == "audio":
+            capabilities = _loaded(row.get("capabilities_json"), {})
+            metric = capabilities.get("billingMetric")
+            if metric == "characters":
+                if row.get("input_characters") is None:
+                    return None, "usage_unknown"
+                return [("characters", "", Decimal(row["input_characters"]))], None
+            if row.get("audio_seconds") is None or Decimal(str(row["audio_seconds"])) <= 0:
+                return None, "usage_unknown"
+            return [("audio_second", "", Decimal(str(row["audio_seconds"])))], None
         if row["video_seconds"] is None or Decimal(str(row["video_seconds"])) <= 0:
             return None, "usage_unknown"
         billing_meta = _loaded(row.get("billing_metadata_json"), {})
@@ -479,7 +521,7 @@ class BillingManager:
     def _collect_sources(self, connection: Any) -> set[tuple[str, str]]:
         touched: set[tuple[str, str]] = set()
         relay_rows = connection.execute(
-            "SELECT u.*,m.modality,t.metadata_json,t.billing_metadata_json FROM inference_usage u "
+            "SELECT u.*,m.modality,m.capabilities_json,t.metadata_json,t.billing_metadata_json FROM inference_usage u "
             "JOIN model_catalog m ON m.alias=u.model_alias LEFT JOIN inference_tasks t ON t.id=u.task_id "
             "WHERE u.status='succeeded' ORDER BY u.created_at"
         ).fetchall()

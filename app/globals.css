@@ -661,7 +661,7 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .relayModelCell .relayModelIcon.brand { overflow: visible; border: 0; background: transparent; box-shadow: none; }
 .relayModelCell .relayModelIcon.brand img { display: block; width: 30px; height: 30px; max-width: none; max-height: none; object-fit: contain; object-position: center; transform-origin: center; }
 .relayModelCell .relayModelIcon[data-model="image2.0"] img { transform: scale(1.08); }
-.relayModelCell .relayModelIcon[data-model="seedream-5.0-pro"] img { transform: scale(1.04); }
+.relayModelCell .relayModelIcon[data-model="doubao-seedream-5.0-pro"] img { transform: scale(1.04); }
 .relayModelCell .relayModelIcon[data-model="deepseek-v4-flash"] img { transform: scale(1.08); }
 .relayModelCell .relayModelIcon[data-model="glm-5.2"] img { transform: scale(1.02); }
 .relayModelCell .relayModelIcon[data-model="minimax-h3"] img { transform: scale(1.06); }
@@ -673,6 +673,8 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .relayTypePill.text { color: #335fa3; background: #eef4ff; }
 .relayTypePill.image { color: #984a62; background: #fff0f5; }
 .relayTypePill.video { color: #8c601b; background: #fff5dc; }
+.relayTypePill.embedding { color: #5b4aa4; background: #f2efff; }
+.relayTypePill.audio { color: #087b72; background: #eafaf7; }
 .relayInlineControl { display: grid; gap: 4px; min-width: 0; }
 .relayInlineControl select, .relayInlineControl input { width: 100%; min-width: 0; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 0 11px; color: var(--ink); background: #fff; outline: 0; }
 .relayInlineControl select:focus, .relayInlineControl input:focus { border-color: #ff9f80; box-shadow: 0 0 0 3px rgba(255, 90, 95, .08); }

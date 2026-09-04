@@ -253,7 +253,7 @@ def inference_usage(
     project_name: str | None = Query(default=None, alias="projectName"),
     key_id: str | None = Query(default=None, alias="keyId"),
     model: str | None = Query(default=None),
-    provider: str | None = Query(default=None, pattern="^(openai|volcengine_ark|aliyun_bailian|minimax)$"),
+    provider: str | None = Query(default=None, pattern="^(openai|volcengine_ark|volcengine_speech|aliyun_bailian|minimax)$"),
     start: str | None = Query(default=None, max_length=40),
     end: str | None = Query(default=None, max_length=40),
     limit: int = Query(default=200, ge=1, le=1000),

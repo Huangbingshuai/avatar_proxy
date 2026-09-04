@@ -1,7 +1,7 @@
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Header, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from ..errors import ApiError
 from ..security import PrincipalDependency
@@ -31,6 +31,19 @@ RESPONSE_FIELDS = {
     "previous_response_id", "prompt", "reasoning", "safety_identifier", "service_tier",
     "store", "stream_options", "temperature", "text", "tool_choice", "tools",
     "top_logprobs", "top_p", "truncation", "user",
+}
+EMBEDDING_FIELDS = {
+    "model", "input", "encoding_format", "dimensions", "user", "instructions",
+    "sparse_embedding",
+}
+MULTIMODAL_EMBEDDING_FIELDS = {
+    "model", "input", "encoding_format", "dimensions", "instructions",
+}
+SPEECH_FIELDS = {"model", "input", "voice", "response_format", "speed", "sample_rate"}
+TRANSCRIPTION_FIELDS = {"model", "url", "language", "enable_speaker_info"}
+AUDIO_GENERATION_FIELDS = {
+    "model", "prompt", "speaker", "audio_url", "audio_data", "image_url", "image_data",
+    "duration", "format",
 }
 
 
@@ -142,3 +155,108 @@ async def images_generations(
         principal, alias, payload, idempotency_key
     )
     return JSONResponse(content=data)
+
+
+async def _embedding(
+    request: Request,
+    principal: PrincipalDependency,
+    raw: dict[str, Any],
+    *,
+    multimodal: bool,
+):
+    payload = _payload(raw)
+    allowed = MULTIMODAL_EMBEDDING_FIELDS if multimodal else EMBEDDING_FIELDS
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise ApiError(
+            "向量化请求包含不支持的字段", 422, "embedding_parameter_unsupported",
+            details={"fields": unknown},
+        )
+    value = payload.get("input")
+    if value is None or value == "" or value == []:
+        raise ApiError("input不能为空", 422, "embedding_input_invalid")
+    dimensions = payload.get("dimensions")
+    if dimensions is not None and dimensions not in {1024, 2048}:
+        raise ApiError("dimensions仅支持1024或2048", 422, "embedding_dimensions_invalid")
+    data, request_id = await request.app.state.provider_relay.embeddings(
+        principal, str(payload["model"]).strip(), payload, multimodal=multimodal
+    )
+    return JSONResponse(content=data, headers={"X-Request-Id": request_id})
+
+
+@router.post("/embeddings")
+async def embeddings(
+    request: Request,
+    principal: PrincipalDependency,
+    raw: Annotated[dict[str, Any], Body()],
+):
+    return await _embedding(request, principal, raw, multimodal=False)
+
+
+@router.post("/embeddings/multimodal")
+async def multimodal_embeddings(
+    request: Request,
+    principal: PrincipalDependency,
+    raw: Annotated[dict[str, Any], Body()],
+):
+    return await _embedding(request, principal, raw, multimodal=True)
+
+
+@router.post("/audio/speech")
+async def audio_speech(
+    request: Request,
+    principal: PrincipalDependency,
+    raw: Annotated[dict[str, Any], Body()],
+):
+    payload = _payload(raw)
+    unknown = sorted(set(payload) - SPEECH_FIELDS)
+    if unknown:
+        raise ApiError("语音合成请求包含不支持的字段", 422, "audio_parameter_unsupported", details={"fields": unknown})
+    content, media_type, request_id = await request.app.state.provider_relay.synthesize_speech(
+        principal, str(payload["model"]).strip(), payload
+    )
+    return Response(content=content, media_type=media_type, headers={"X-Request-Id": request_id})
+
+
+@router.post("/audio/transcriptions")
+async def audio_transcriptions(
+    request: Request,
+    principal: PrincipalDependency,
+    raw: Annotated[dict[str, Any], Body()],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    payload = _payload(raw)
+    unknown = sorted(set(payload) - TRANSCRIPTION_FIELDS)
+    if unknown:
+        raise ApiError("录音识别请求包含不支持的字段", 422, "audio_parameter_unsupported", details={"fields": unknown})
+    if idempotency_key is not None and not (1 <= len(idempotency_key) <= 128):
+        raise ApiError("Idempotency-Key长度无效", 422, "idempotency_key_invalid")
+    data = await request.app.state.provider_relay.create_transcription(
+        principal, str(payload["model"]).strip(), payload, idempotency_key
+    )
+    return JSONResponse(content=data, status_code=202)
+
+
+@router.get("/audio/transcriptions/{task_id}")
+async def audio_transcription_status(
+    task_id: str,
+    request: Request,
+    principal: PrincipalDependency,
+):
+    return JSONResponse(content=await request.app.state.provider_relay.refresh_transcription(principal, task_id))
+
+
+@router.post("/audio/generations")
+async def audio_generations(
+    request: Request,
+    principal: PrincipalDependency,
+    raw: Annotated[dict[str, Any], Body()],
+):
+    payload = _payload(raw)
+    unknown = sorted(set(payload) - AUDIO_GENERATION_FIELDS)
+    if unknown:
+        raise ApiError("音频生成请求包含不支持的字段", 422, "audio_parameter_unsupported", details={"fields": unknown})
+    data, request_id = await request.app.state.provider_relay.generate_audio(
+        principal, str(payload["model"]).strip(), payload
+    )
+    return JSONResponse(content=data, headers={"X-Request-Id": request_id})

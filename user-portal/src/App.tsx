@@ -786,7 +786,7 @@ function App() {
     if (!keyValid) return setError("请先填写有效的业务 API Key");
     if (!hasPrompt) return setError("请至少输入两个字描述要生成的视频");
     if (!selectedAssetsReady) return setError("所选素材中有暂不可用的内容，请重新选择");
-    if (selectedAssets.some((asset) => assetTypeOf(asset) !== "Image") && !model.startsWith("seedance-2.")) {
+    if (selectedAssets.some((asset) => assetTypeOf(asset) !== "Image") && !model.startsWith("doubao-seedance-2.")) {
       return setError("视频和音频参考素材仅支持 Seedance 2.x，请先切换模型");
     }
     setBusy("generate");

@@ -44,7 +44,7 @@ class AdminSensitiveAction(ApiModel):
 class AdminProviderChannelCreate(ApiModel):
     project_name: str = Field(min_length=1, max_length=64, pattern=PROJECT_NAME_PATTERN)
     name: str = Field(min_length=1, max_length=100)
-    provider: str = Field(pattern=r"^(openai|volcengine_ark|aliyun_bailian|minimax)$")
+    provider: str = Field(pattern=r"^(openai|volcengine_ark|volcengine_speech|aliyun_bailian|minimax)$")
     config: dict[str, Any] = Field(default_factory=dict)
     secret: str = Field(min_length=8, max_length=4096)
     current_password: str = Field(min_length=1, max_length=128)

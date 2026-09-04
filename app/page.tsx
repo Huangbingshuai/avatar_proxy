@@ -114,7 +114,7 @@ type Tab = "overview" | "projects" | "keys" | "models" | "billing" | "quotas" | 
 type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
-const EXAMPLE_VIDEO_MODEL = "seedance-2.0";
+const EXAMPLE_VIDEO_MODEL = "doubao-seedance-2.0";
 
 const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "概览", icon: Gauge },

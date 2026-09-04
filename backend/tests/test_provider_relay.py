@@ -1,4 +1,7 @@
+import base64
+import asyncio
 import json
+import sqlite3
 import time
 from pathlib import Path
 
@@ -9,6 +12,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.errors import ApiError
+from app.database import Database
 from app.main import create_app
 from app.security import ApiPrincipal
 from conftest import ADMIN_HEADERS, build_settings, create_key, create_project
@@ -22,6 +26,58 @@ def relay_client(tmp_path: Path, **overrides: object) -> TestClient:
         **overrides,
     )
     return TestClient(create_app(settings))
+
+
+def test_legacy_relay_constraints_upgrade_preserves_rows(tmp_path: Path) -> None:
+    path = tmp_path / "legacy-relay.db"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE projects(name TEXT PRIMARY KEY,display_name TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            INSERT INTO projects(name,display_name) VALUES ('legacy','Legacy');
+            CREATE TABLE provider_channels(
+              id TEXT PRIMARY KEY,project_name TEXT NOT NULL,name TEXT NOT NULL,
+              provider TEXT NOT NULL CHECK(provider IN ('openai','volcengine_ark','aliyun_bailian','minimax')),
+              config_json TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'active',
+              last_test_status TEXT CHECK(last_test_status IN ('success','failed')),last_test_at TEXT,
+              last_test_latency_ms INTEGER,last_test_error TEXT,created_by TEXT,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              deleted_at TEXT,UNIQUE(project_name,name));
+            INSERT INTO provider_channels(id,project_name,name,provider) VALUES ('old-channel','legacy','Old','volcengine_ark');
+            CREATE TABLE model_catalog(
+              alias TEXT PRIMARY KEY,display_name TEXT NOT NULL,provider TEXT NOT NULL,
+              modality TEXT NOT NULL CHECK(modality IN ('text','image','video')),protocol TEXT NOT NULL,
+              upstream_model TEXT NOT NULL,capabilities_json TEXT NOT NULL DEFAULT '{}',enabled INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            INSERT INTO model_catalog(alias,display_name,provider,modality,protocol,upstream_model) VALUES ('legacy-model','Legacy','volcengine_ark','text','openai_text','legacy-upstream');
+            CREATE TABLE billing_model_rates(
+              id TEXT PRIMARY KEY,model_alias TEXT NOT NULL,
+              metric TEXT NOT NULL CHECK(metric IN ('input_tokens','output_tokens','image','video_second')),
+              resolution TEXT NOT NULL DEFAULT '',effective_month TEXT NOT NULL,unit_size INTEGER NOT NULL,
+              unit_price_micros INTEGER NOT NULL,created_by TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(model_alias,metric,resolution,effective_month));
+            INSERT INTO billing_model_rates(id,model_alias,metric,effective_month,unit_size,unit_price_micros,created_by)
+              VALUES ('old-rate','legacy-model','input_tokens','2026-09',1000000,1,'admin');
+            CREATE TABLE inference_tasks(
+              id TEXT PRIMARY KEY,api_key_id TEXT,project_name TEXT,model_alias TEXT,channel_id TEXT,
+              credential_id TEXT,operation TEXT,status TEXT,progress INTEGER,request_hash TEXT,idempotency_key TEXT,
+              result_url TEXT,result_format TEXT,error_code TEXT,error_message TEXT,provider_request_id TEXT,
+              metadata_json TEXT,created_at INTEGER,updated_at TEXT,completed_at TEXT);
+            CREATE TABLE inference_usage(
+              id TEXT PRIMARY KEY,request_id TEXT,task_id TEXT,api_key_id TEXT,project_name TEXT,model_alias TEXT,
+              channel_id TEXT,provider_request_id TEXT,status TEXT,input_tokens INTEGER,output_tokens INTEGER,
+              total_tokens INTEGER,generated_images INTEGER,video_seconds REAL,video_width INTEGER,video_height INTEGER,
+              created_at TEXT,settled_at TEXT);
+            """
+        )
+    Database(path).initialize()
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT provider FROM provider_channels WHERE id='old-channel'").fetchone()[0] == "volcengine_ark"
+        assert connection.execute("SELECT COUNT(*) FROM model_catalog WHERE modality IN ('embedding','audio')").fetchone()[0] == 4
+        assert connection.execute("SELECT metric FROM billing_model_rates WHERE id='old-rate'").fetchone()[0] == "input_tokens"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        provider_sql = connection.execute("SELECT sql FROM sqlite_master WHERE name='provider_channels'").fetchone()[0]
+        assert "volcengine_speech" in provider_sql and "manual" in provider_sql
 
 
 def provision(
@@ -243,6 +299,338 @@ def test_sse_rewrites_alias_and_does_not_invent_usage(tmp_path: Path) -> None:
     assert usage["input_tokens"] is usage["output_tokens"] is usage["total_tokens"] is None
 
 
+def test_embedding_vision_rewrites_model_and_records_real_tokens(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v3/embeddings/multimodal"
+        assert request.headers["authorization"] == "Bearer secret-volcengine_ark-abcdefgh"
+        payload = json.loads(request.content)
+        assert payload["model"] == "doubao-embedding-vision-251215"
+        assert payload["input"] == [{"type": "text", "text": "测试向量"}]
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "embedding-upstream"},
+            json={"object": "multimodal_embedding", "data": {"object": "embedding", "embedding": [0.1, 0.2]}, "usage": {"prompt_tokens": 9, "total_tokens": 9}},
+        )
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client, provider="volcengine_ark", alias="doubao-embedding-vision", upstream_model="ignored"
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        response = client.post(
+            "/v1/embeddings",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": "测试向量"},
+        )
+        assert response.status_code == 200
+        assert response.json()["model"] == "doubao-embedding-vision"
+        assert response.json()["data"] == [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2]}
+        ]
+        batch = client.post(
+            "/v1/embeddings",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": ["one", "two"]},
+        )
+        assert batch.status_code == 422
+        assert batch.json()["error"]["code"] == "embedding_batch_unsupported"
+        invalid_type = client.post(
+            "/v1/embeddings",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": {"text": "one"}},
+        )
+        assert invalid_type.status_code == 422
+        assert invalid_type.json()["error"]["code"] == "embedding_input_invalid"
+        client.app.state.provider_relay.transport = httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"data": {}, "usage": {}})
+        )
+        invalid_response = client.post(
+            "/v1/embeddings",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": ["one"]},
+        )
+        assert invalid_response.status_code == 502
+        assert invalid_response.json()["error"]["code"] == "provider_response_invalid"
+        with client.app.state.database.connect() as connection:
+            usage = connection.execute("SELECT input_tokens,total_tokens FROM inference_usage").fetchone()
+        assert tuple(usage) == (9, 9)
+
+
+def test_speech_tts_uses_separate_key_and_returns_audio(tmp_path: Path) -> None:
+    audio = base64.b64encode(b"mock-mp3").decode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v3/tts/unidirectional/sse"
+        assert request.headers["x-api-key"] == "secret-volcengine_speech-abcdefgh"
+        assert request.headers["x-api-resource-id"] == "seed-tts-2.0"
+        assert "authorization" not in request.headers
+        return httpx.Response(200, headers={"x-tt-logid": "tts-log"}, text=f'data: {{"code":0,"data":"{audio}"}}\n\n')
+
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client, provider="volcengine_speech", alias="doubao-seed-tts-2.0", upstream_model="ignored"
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(handler)
+        response = client.post(
+            "/v1/audio/speech",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-seed-tts-2.0", "input": "你好", "voice": "zh_female_vv_uranus_bigtts"},
+        )
+        assert response.status_code == 200
+        assert response.content == b"mock-mp3"
+        assert response.headers["content-type"].startswith("audio/mpeg")
+        with client.app.state.database.connect() as connection:
+            usage = connection.execute("SELECT input_characters FROM inference_usage").fetchone()[0]
+        assert usage == 2
+
+
+def test_seed_audio_and_async_asr_protocols(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        assert request.headers["x-api-key"] == "secret-volcengine_speech-abcdefgh"
+        if request.url.path.endswith("/tts/create"):
+            payload = json.loads(request.content)
+            assert payload["text_prompt"] == "轻柔雨声"
+            assert "prompt" not in payload
+            return httpx.Response(200, headers={"x-tt-logid": "audio-log"}, json={"data": {"url": "https://cdn.example/audio.mp3", "original_duration": 12}})
+        if request.url.path.endswith("/submit"):
+            return httpx.Response(200, headers={"x-api-status-code": "20000000", "x-tt-logid": "asr-submit"}, json={})
+        return httpx.Response(200, headers={"x-api-status-code": "20000000", "x-tt-logid": "asr-query"}, json={"audio_info": {"duration": 2500}, "result": {"text": "识别完成"}})
+
+    with relay_client(tmp_path) as client:
+        create_project(client, "speech-project")
+        _, secret = create_key(client, "speech-project", "speech-key")
+        relay = client.app.state.provider_relay
+        channel = relay.create_channel(
+            project_name="speech-project", name="speech", provider="volcengine_speech", config={},
+            secret="secret-volcengine_speech-abcdefgh", actor_id="super-admin",
+        )
+        relay.set_project_models("speech-project", [
+            {"model": "seed-audio-1.0", "channelId": channel["id"], "enabled": True},
+            {"model": "doubao-seedasr-2.0", "channelId": channel["id"], "enabled": True},
+        ], "admin")
+        relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": f"Bearer {secret}"}
+        generated = client.post("/v1/audio/generations", headers=headers, json={"model": "seed-audio-1.0", "prompt": "轻柔雨声"})
+        assert generated.status_code == 200
+        assert generated.json()["data"][0]["url"].endswith("audio.mp3")
+        submitted = client.post(
+            "/v1/audio/transcriptions", headers={**headers, "Idempotency-Key": "asr-one"},
+            json={"model": "doubao-seedasr-2.0", "url": "https://cdn.example/input.mp3"},
+        )
+        assert submitted.status_code == 202
+        task_id = submitted.json()["id"]
+        assert task_id.startswith("asr_")
+        completed = client.get(f"/v1/audio/transcriptions/{task_id}", headers=headers)
+        assert completed.status_code == 200
+        assert completed.json()["text"] == "识别完成"
+        with client.app.state.database.connect() as connection:
+            seconds = [row[0] for row in connection.execute("SELECT audio_seconds FROM inference_usage ORDER BY created_at")]
+        assert seconds == [12.0, 2.5]
+    assert calls == ["/api/v3/tts/create", "/api/v3/auc/bigmodel/submit", "/api/v3/auc/bigmodel/query"]
+
+
+def test_speech_validation_guards_and_manual_channel_test(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        create_project(client, "speech-guards")
+        _, secret = create_key(client, "speech-guards", "key")
+        relay = client.app.state.provider_relay
+        channel = relay.create_channel(
+            project_name="speech-guards", name="speech", provider="volcengine_speech", config={},
+            secret="speech-secret-abcdefgh", actor_id="owner",
+        )
+        relay.set_project_models("speech-guards", [
+            {"model": "doubao-seed-tts-2.0", "channelId": channel["id"], "enabled": True},
+            {"model": "doubao-seedasr-2.0", "channelId": channel["id"], "enabled": True},
+            {"model": "seed-audio-1.0", "channelId": channel["id"], "enabled": True},
+        ], "admin")
+        headers = {"Authorization": f"Bearer {secret}"}
+        cases = [
+            ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "", "voice": "voice"}, "audio_input_invalid"),
+            ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": ""}, "audio_voice_invalid"),
+            ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": "voice", "response_format": "wav"}, "audio_format_invalid"),
+            ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": "voice", "sample_rate": 123}, "audio_sample_rate_invalid"),
+            ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": "voice", "speed": 101}, "audio_speed_invalid"),
+            ("/v1/audio/generations", {"model": "seed-audio-1.0", "prompt": ""}, "audio_prompt_invalid"),
+            ("/v1/audio/transcriptions", {"model": "doubao-seedasr-2.0", "url": "http://private/audio.mp3"}, "audio_url_invalid"),
+            ("/v1/audio/speech", {"model": "doubao-seed-tts-2.0", "input": "hi", "voice": "voice", "unknown": 1}, "audio_parameter_unsupported"),
+            ("/v1/audio/generations", {"model": "seed-audio-1.0", "prompt": "rain", "unknown": 1}, "audio_parameter_unsupported"),
+            ("/v1/audio/transcriptions", {"model": "doubao-seedasr-2.0", "url": "https://cdn.example/a.mp3", "unknown": 1}, "audio_parameter_unsupported"),
+        ]
+        for path, body, code in cases:
+            response = client.post(path, headers=headers, json=body)
+            assert response.status_code == 422
+            assert response.json()["error"]["code"] == code
+        manual = asyncio.run(relay.test_channel(channel["id"]))
+        assert manual["status"] == "manual"
+        assert relay.get_channel(channel["id"])["lastTestStatus"] == "manual"
+        assert client.post(
+            "/v1/audio/transcriptions", headers={**headers, "Idempotency-Key": ""},
+            json={"model": "doubao-seedasr-2.0", "url": "https://cdn.example/a.mp3"},
+        ).json()["error"]["code"] == "idempotency_key_invalid"
+        assert client.post(
+            "/v1/audio/speech", headers=headers,
+            json={"model": "seed-audio-1.0", "input": "hi", "voice": "voice"},
+        ).json()["error"]["code"] == "model_modality_mismatch"
+        assert client.post(
+            "/v1/audio/generations", headers=headers,
+            json={"model": "doubao-seed-tts-2.0", "prompt": "rain"},
+        ).json()["error"]["code"] == "model_modality_mismatch"
+        assert client.post(
+            "/v1/audio/transcriptions", headers=headers,
+            json={"model": "doubao-seed-tts-2.0", "url": "https://cdn.example/a.mp3"},
+        ).json()["error"]["code"] == "model_modality_mismatch"
+
+
+def test_multimodal_embedding_and_speech_error_mapping(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        key_id, secret, channel = provision(
+            client, provider="volcengine_ark", alias="doubao-embedding-vision", upstream_model="ignored"
+        )
+        relay = client.app.state.provider_relay
+        relay.transport = httpx.MockTransport(lambda request: httpx.Response(
+            200, headers={"x-request-id": "multi-id"},
+            json={"data": [{"embedding": [0.3]}], "usage": {"prompt_tokens": 3}},
+        ))
+        good = client.post(
+            "/v1/embeddings/multimodal",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": [{"type": "text", "text": "hello"}]},
+        )
+        assert good.status_code == 200
+        relay.set_project_models("relay_project", [
+            {"model": "doubao-embedding-vision", "channelId": channel["id"], "enabled": True},
+            {"model": "glm-5.2", "channelId": channel["id"], "enabled": True},
+        ], "admin")
+        assert client.post(
+            "/v1/embeddings", headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "glm-5.2", "input": "x"},
+        ).json()["error"]["code"] == "model_modality_mismatch"
+        assert client.post(
+            "/v1/embeddings", headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": "", "dimensions": 2048},
+        ).json()["error"]["code"] == "embedding_input_invalid"
+        assert client.post(
+            "/v1/embeddings", headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": "x", "dimensions": 3},
+        ).json()["error"]["code"] == "embedding_dimensions_invalid"
+        assert client.post(
+            "/v1/embeddings", headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": "x", "unknown": 1},
+        ).json()["error"]["code"] == "embedding_parameter_unsupported"
+        with relay.database.connect() as connection:
+            connection.execute(
+                "UPDATE model_catalog SET capabilities_json=? WHERE alias='doubao-embedding-vision'",
+                ('{"embeddings":true,"multimodal":false}',),
+            )
+        assert client.post(
+            "/v1/embeddings/multimodal", headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "doubao-embedding-vision", "input": [{"type": "text", "text": "x"}]},
+        ).json()["error"]["code"] == "model_operation_unsupported"
+
+        route = relay.resolve(ApiPrincipal(key_id, "relay_project"), "doubao-embedding-vision")
+        speech_route = route.__class__(**{
+            **route.__dict__, "provider": "volcengine_speech", "modality": "audio",
+            "protocol": "speech_tts", "upstream_model": "seed-tts-2.0",
+        })
+
+        async def exercise_errors() -> None:
+            relay.transport = httpx.MockTransport(lambda request: (_ for _ in ()).throw(httpx.ConnectError("offline", request=request)))
+            with pytest.raises(ApiError) as unreachable:
+                await relay._speech_request(speech_route, "/x", {}, request_id="r", resource_id=None)
+            assert unreachable.value.code == "provider_unreachable"
+            relay.transport = httpx.MockTransport(lambda _: httpx.Response(200, headers={"x-api-status-code": "45000030", "x-api-message": "not granted"}, json={}))
+            with pytest.raises(ApiError) as denied:
+                await relay._speech_request(speech_route, "/x", {}, request_id="r", resource_id=None)
+            assert denied.value.code == "provider_request_failed"
+            relay.transport = httpx.MockTransport(
+                lambda _: httpx.Response(
+                    400, json={"code": 45001116, "message": "text_prompt is required"}
+                )
+            )
+            with pytest.raises(ApiError) as body_denied:
+                await relay._speech_request(speech_route, "/x", {}, request_id="r", resource_id=None)
+            assert body_denied.value.message == "text_prompt is required"
+            relay.transport = httpx.MockTransport(lambda _: httpx.Response(200, text="not-json"))
+            with pytest.raises(ApiError) as invalid:
+                await relay._speech_request(speech_route, "/x", {}, request_id="r", resource_id=None)
+            assert invalid.value.code == "provider_response_invalid"
+
+        asyncio.run(exercise_errors())
+
+
+def test_speech_tts_failure_responses_are_safely_mapped(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client, provider="volcengine_speech", alias="doubao-seed-tts-2.0", upstream_model="ignored"
+        )
+        relay = client.app.state.provider_relay
+        headers = {"Authorization": f"Bearer {secret}"}
+        body = {"model": "doubao-seed-tts-2.0", "input": "hello", "voice": "voice"}
+        responses = [
+            httpx.Response(503, headers={"x-api-message": "busy"}, json={}),
+            httpx.Response(200, text="event: audio\ndata: not-json\ndata: []\n"),
+            httpx.Response(200, text='data: {"code":45000030,"message":"not granted"}\n'),
+            httpx.Response(200, text='data: {"code":0,"data":"%%%"}\n'),
+        ]
+        expected = [503, 502, 502, 502]
+        for upstream, status in zip(responses, expected, strict=True):
+            relay.transport = httpx.MockTransport(lambda _, value=upstream: value)
+            result = client.post("/v1/audio/speech", headers=headers, json=body)
+            assert result.status_code == status
+        relay.transport = httpx.MockTransport(
+            lambda request: (_ for _ in ()).throw(httpx.ConnectError("offline", request=request))
+        )
+        assert client.post("/v1/audio/speech", headers=headers, json=body).status_code == 502
+
+
+def test_audio_generation_unknown_duration_and_asr_submit_failure(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        create_project(client, "speech-errors")
+        key_id, secret = create_key(client, "speech-errors", "key")
+        relay = client.app.state.provider_relay
+        channel = relay.create_channel(
+            project_name="speech-errors", name="speech", provider="volcengine_speech", config={},
+            secret="speech-secret-abcdefgh", actor_id="owner",
+        )
+        relay.set_project_models("speech-errors", [
+            {"model": "seed-audio-1.0", "channelId": channel["id"], "enabled": True},
+            {"model": "doubao-seedasr-2.0", "channelId": channel["id"], "enabled": True},
+        ], "admin")
+        headers = {"Authorization": f"Bearer {secret}"}
+        relay.transport = httpx.MockTransport(lambda _: httpx.Response(
+            200, json={"data": {"audio": "YWJj", "original_duration": "unknown"}}
+        ))
+        generated = client.post(
+            "/v1/audio/generations", headers=headers,
+            json={"model": "seed-audio-1.0", "prompt": "rain"},
+        )
+        assert generated.status_code == 200
+        with client.app.state.database.connect() as connection:
+            assert connection.execute("SELECT audio_seconds FROM inference_usage").fetchone()[0] is None
+
+        relay.transport = httpx.MockTransport(lambda _: httpx.Response(
+            500, headers={"x-api-message": "submit failed"}, json={}
+        ))
+        failed = client.post(
+            "/v1/audio/transcriptions", headers=headers,
+            json={"model": "doubao-seedasr-2.0", "url": "https://cdn.example/fail.mp3", "language": "zh"},
+        )
+        assert failed.status_code == 500
+        with client.app.state.database.connect() as connection:
+            task = dict(connection.execute("SELECT * FROM inference_tasks WHERE operation='transcription'").fetchone())
+        assert task["status"] == "failed"
+        principal = ApiPrincipal(key_id, "speech-errors")
+        assert asyncio.run(relay.refresh_transcription(principal, task["id"]))["status"] == "failed"
+        route = relay.resolve(principal, "seed-audio-1.0")
+        other, _ = relay._create_task(principal, route, "image", {"model": route.alias}, None)
+        with pytest.raises(ApiError) as wrong:
+            asyncio.run(relay.refresh_transcription(principal, other["id"]))
+        assert wrong.value.code == "transcription_task_not_found"
+
+
 def test_image_idempotency_prevents_duplicates_and_conflicts(tmp_path: Path) -> None:
     calls = 0
 
@@ -373,11 +761,11 @@ def test_non_vision_text_model_rejects_image_input(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("alias", "upstream_model", "count", "sequential", "reference_image", "legacy_controls"),
     [
-        ("seedream-5.0-pro", "doubao-seedream-5-0-pro-260628", 1, False, True, False),
-        ("seedream-5.0-lite", "doubao-seedream-5-0-lite-260128", 15, True, True, False),
-        ("seedream-5.0", "doubao-seedream-5-0-260128", 1, False, True, False),
-        ("seedream-4.5", "doubao-seedream-4-5-251128", 2, True, True, False),
-        ("seedream-4.0", "doubao-seedream-4-0-250828", 2, True, True, False),
+        ("doubao-seedream-5.0-pro", "doubao-seedream-5-0-pro-260628", 1, False, True, False),
+        ("doubao-seedream-5.0-lite", "doubao-seedream-5-0-lite-260128", 15, True, True, False),
+        ("doubao-seedream-5.0", "doubao-seedream-5-0-260128", 1, False, True, False),
+        ("doubao-seedream-4.5", "doubao-seedream-4-5-251128", 2, True, True, False),
+        ("doubao-seedream-4.0", "doubao-seedream-4-0-250828", 2, True, True, False),
     ],
 )
 def test_all_volcengine_image_models_translate_openai_image_requests(
@@ -454,12 +842,12 @@ def test_all_volcengine_image_models_translate_openai_image_requests(
 @pytest.mark.parametrize(
     ("alias", "upstream_model", "image"),
     [
-        ("seedance-2.5", "doubao-seedance-2-5-260628", None),
-        ("seedance-2.0", "doubao-seedance-2-0-260128", None),
-        ("seedance-2.0-fast", "doubao-seedance-2-0-fast-260128", None),
-        ("seedance-2.0-mini", "doubao-seedance-2-0-mini-260615", None),
-        ("seedance-1.0-pro", "doubao-seedance-1-0-pro-250528", None),
-        ("seedance-1.0-pro-fast", "doubao-seedance-1-0-pro-fast-251015", None),
+        ("doubao-seedance-2.5", "doubao-seedance-2-5-260628", None),
+        ("doubao-seedance-2.0", "doubao-seedance-2-0-260128", None),
+        ("doubao-seedance-2.0-fast", "doubao-seedance-2-0-fast-260128", None),
+        ("doubao-seedance-2.0-mini", "doubao-seedance-2-0-mini-260615", None),
+        ("doubao-seedance-1.0-pro", "doubao-seedance-1-0-pro-250528", None),
+        ("doubao-seedance-1.0-pro-fast", "doubao-seedance-1-0-pro-fast-251015", None),
     ],
 )
 def test_all_volcengine_video_models_submit_and_refresh(
@@ -547,7 +935,7 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
         _, secret, channel = provision(
             client,
             provider="volcengine_ark",
-            alias="seedance-2.5",
+            alias="doubao-seedance-2.5",
             upstream_model="ignored-model",
         )
         relay = client.app.state.provider_relay
@@ -557,7 +945,7 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
             "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
-                "model": "seedance-2.5",
+                "model": "doubao-seedance-2.5",
                 "duration": 6,
                 "seed": 42,
                 "content": [
@@ -580,14 +968,14 @@ def test_volcengine_video_advanced_payloads_are_filtered_and_forwarded(tmp_path:
 
         relay.set_project_models(
             "relay_project",
-            [{"model": "seedance-1.0-pro", "channelId": channel["id"], "enabled": True}],
+            [{"model": "doubao-seedance-1.0-pro", "channelId": channel["id"], "enabled": True}],
             "admin",
         )
         pro_10 = client.post(
             "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
-                "model": "seedance-1.0-pro",
+                "model": "doubao-seedance-1.0-pro",
                 "content": [{"type": "text", "text": "fixed camera"}],
                 "frames": 29,
                 "resolution": "720p",
@@ -665,7 +1053,7 @@ def test_ark_native_video_contract_is_owned_idempotent_and_cancellable(tmp_path:
         _, secret, _ = provision(
             client,
             provider="volcengine_ark",
-            alias="seedance-2.5",
+            alias="doubao-seedance-2.5",
             upstream_model="ignored-model",
         )
         _, other_secret = create_key(client, "relay_project", "other-key")
@@ -675,7 +1063,7 @@ def test_ark_native_video_contract_is_owned_idempotent_and_cancellable(tmp_path:
             "Idempotency-Key": "richidrama-video-1",
         }
         payload = {
-            "model": "seedance-2.5",
+            "model": "doubao-seedance-2.5",
             "content": [
                 {"type": "text", "text": "RichiDrama native request"},
                 {
@@ -726,7 +1114,7 @@ def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
         _, secret, channel = provision(
             client,
             provider="volcengine_ark",
-            alias="seedance-2.0-fast",
+            alias="doubao-seedance-2.0-fast",
             upstream_model="ignored-model",
         )
         headers = {"Authorization": f"Bearer {secret}"}
@@ -735,7 +1123,7 @@ def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
             "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
-                "model": "seedance-2.0-fast",
+                "model": "doubao-seedance-2.0-fast",
                 "content": [{"type": "text", "text": "x"}],
                 "duration": 5,
                 "resolution": "1080p",
@@ -746,7 +1134,7 @@ def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
             "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
-                "model": "seedance-2.0-fast",
+                "model": "doubao-seedance-2.0-fast",
                 "content": [{"type": "text", "text": "x"}],
                 "duration": 5,
                 "camera_fixed": True,
@@ -756,19 +1144,19 @@ def test_volcengine_video_model_capability_validation(tmp_path: Path) -> None:
 
         relay.set_project_models(
             "relay_project",
-            [{"model": "seedance-1.0-pro", "channelId": channel["id"], "enabled": True}],
+            [{"model": "doubao-seedance-1.0-pro", "channelId": channel["id"], "enabled": True}],
             "admin",
         )
         invalid_frames = client.post(
             "/api/v3/contents/generations/tasks",
             headers=headers,
-            json={"model": "seedance-1.0-pro", "content": [{"type": "text", "text": "x"}], "frames": 30},
+            json={"model": "doubao-seedance-1.0-pro", "content": [{"type": "text", "text": "x"}], "frames": 30},
         )
         unsupported_audio = client.post(
             "/api/v3/contents/generations/tasks",
             headers=headers,
             json={
-                "model": "seedance-1.0-pro",
+                "model": "doubao-seedance-1.0-pro",
                 "content": [{"type": "text", "text": "x"}],
                 "duration": 5,
                 "generate_audio": True,
@@ -1086,14 +1474,15 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
 
     assert aliases == sorted([
         "deepseek-v4-flash", "deepseek-v4-pro", "glm-5.2",
-        "image2.0", "minimax-h3", "seedream-5.0-pro",
-        "seedream-5.0-lite", "seedream-5.0", "seedream-4.5", "seedream-4.0",
+        "image2.0", "minimax-h3", "doubao-seedream-5.0-pro",
+        "doubao-seedream-5.0-lite", "doubao-seedream-5.0", "doubao-seedream-4.5", "doubao-seedream-4.0",
         "doubao-seed-2.1-pro", "doubao-seed-2.1-turbo", "doubao-seed-2.0-pro", "doubao-seed-2.0-lite",
         "doubao-seed-2.0-mini", "doubao-seed-evolving", "doubao-seed-character",
         "doubao-seed-2.0-code", "doubao-seed-translation",
-        "seedance-2.5", "seedance-2.0", "seedance-2.0-fast", "seedance-2.0-mini",
-        "seedance-1.0-pro", "seedance-1.0-pro-fast",
-        "wan3.0-video",
+        "doubao-seedance-2.5", "doubao-seedance-2.0", "doubao-seedance-2.0-fast", "doubao-seedance-2.0-mini",
+        "doubao-seedance-1.0-pro", "doubao-seedance-1.0-pro-fast",
+        "wan3.0-video", "doubao-embedding-vision", "doubao-seed-tts-2.0",
+        "doubao-seedasr-2.0", "seed-audio-1.0",
     ])
     with app.state.database.connect() as connection:
         upstream_models = dict(
@@ -1105,7 +1494,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
             row["alias"]: json.loads(row["capabilities_json"])
             for row in connection.execute(
                 "SELECT alias,capabilities_json FROM model_catalog "
-                "WHERE alias LIKE 'seedream-%' AND enabled=1"
+                "WHERE alias LIKE 'doubao-seedream-%' AND enabled=1"
             )
         }
     assert upstream_models == {
@@ -1114,11 +1503,11 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "glm-5.2": "glm-5-2-260617",
         "image2.0": "gpt-image-2",
         "minimax-h3": "MiniMax-H3",
-        "seedream-5.0-pro": "doubao-seedream-5-0-pro-260628",
-        "seedream-5.0-lite": "doubao-seedream-5-0-lite-260128",
-        "seedream-5.0": "doubao-seedream-5-0-260128",
-        "seedream-4.5": "doubao-seedream-4-5-251128",
-        "seedream-4.0": "doubao-seedream-4-0-250828",
+        "doubao-seedream-5.0-pro": "doubao-seedream-5-0-pro-260628",
+        "doubao-seedream-5.0-lite": "doubao-seedream-5-0-lite-260128",
+        "doubao-seedream-5.0": "doubao-seedream-5-0-260128",
+        "doubao-seedream-4.5": "doubao-seedream-4-5-251128",
+        "doubao-seedream-4.0": "doubao-seedream-4-0-250828",
         "doubao-seed-2.1-pro": "doubao-seed-2-1-pro-260628",
         "doubao-seed-2.1-turbo": "doubao-seed-2-1-turbo-260628",
         "doubao-seed-2.0-pro": "doubao-seed-2-0-pro-260215",
@@ -1128,13 +1517,17 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "doubao-seed-character": "doubao-seed-character-260628",
         "doubao-seed-2.0-code": "doubao-seed-2-0-code-preview-260215",
         "doubao-seed-translation": "doubao-seed-translation-250915",
-        "seedance-2.5": "doubao-seedance-2-5-260628",
-        "seedance-2.0": "doubao-seedance-2-0-260128",
-        "seedance-2.0-fast": "doubao-seedance-2-0-fast-260128",
-        "seedance-2.0-mini": "doubao-seedance-2-0-mini-260615",
-        "seedance-1.0-pro": "doubao-seedance-1-0-pro-250528",
-        "seedance-1.0-pro-fast": "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seedance-2.5": "doubao-seedance-2-5-260628",
+        "doubao-seedance-2.0": "doubao-seedance-2-0-260128",
+        "doubao-seedance-2.0-fast": "doubao-seedance-2-0-fast-260128",
+        "doubao-seedance-2.0-mini": "doubao-seedance-2-0-mini-260615",
+        "doubao-seedance-1.0-pro": "doubao-seedance-1-0-pro-250528",
+        "doubao-seedance-1.0-pro-fast": "doubao-seedance-1-0-pro-fast-251015",
         "wan3.0-video": "wan3.0-video",
+        "doubao-embedding-vision": "doubao-embedding-vision-251215",
+        "doubao-seed-tts-2.0": "seed-tts-2.0",
+        "doubao-seedasr-2.0": "volc.seedasr.auc",
+        "seed-audio-1.0": "seed-audio-1.0",
     }
     assert seedream_capabilities
     assert all(
@@ -1151,6 +1544,63 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "doubao-seed-1.8": 0,
         "doubao-seed-1.6-vision": 0,
     }
+
+
+def test_doubao_alias_migration_rewrites_configuration_and_rejects_old_alias(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        key_id, secret, channel = provision(
+            client,
+            provider="volcengine_ark",
+            alias="doubao-seedance-2.0",
+            upstream_model="doubao-seedance-2-0-260128",
+        )
+        database = client.app.state.database
+        with database.connect() as connection:
+            connection.execute(
+                "INSERT INTO model_catalog "
+                "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
+                "SELECT 'seedance-2.0',display_name,provider,modality,protocol,upstream_model,capabilities_json "
+                "FROM model_catalog WHERE alias='doubao-seedance-2.0'"
+            )
+            connection.execute(
+                "UPDATE project_model_bindings SET model_alias='seedance-2.0' "
+                "WHERE project_name='relay_project' AND model_alias='doubao-seedance-2.0'"
+            )
+            connection.execute(
+                "INSERT INTO api_key_model_permissions(api_key_id,model_alias,enabled) VALUES (?,?,1)",
+                (key_id, "seedance-2.0"),
+            )
+            connection.execute(
+                "INSERT INTO billing_model_rates"
+                "(id,model_alias,metric,resolution,effective_month,unit_size,unit_price_micros,created_by) "
+                "VALUES ('legacy-rate','seedance-2.0','video_second','720p','2026-09',1,1000,'test')"
+            )
+
+        database.initialize()
+        database.initialize()
+
+        with database.connect() as connection:
+            assert connection.execute(
+                "SELECT 1 FROM model_catalog WHERE alias='seedance-2.0'"
+            ).fetchone() is None
+            assert connection.execute(
+                "SELECT model_alias FROM project_model_bindings WHERE project_name='relay_project'"
+            ).fetchone()[0] == "doubao-seedance-2.0"
+            assert connection.execute(
+                "SELECT model_alias FROM api_key_model_permissions WHERE api_key_id=?", (key_id,)
+            ).fetchone()[0] == "doubao-seedance-2.0"
+            assert connection.execute(
+                "SELECT model_alias FROM billing_model_rates WHERE id='legacy-rate'"
+            ).fetchone()[0] == "doubao-seedance-2.0"
+
+        rejected = client.post(
+            "/api/v3/contents/generations/tasks",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "seedance-2.0", "content": [{"type": "text", "text": "x"}]},
+        )
+        assert rejected.status_code == 403
+        assert rejected.json()["error"]["code"] == "model_not_allowed"
+        assert channel["provider"] == "volcengine_ark"
 
 
 def test_super_admin_channel_creation_requires_reauth_totp_and_audit_redacts_secret(tmp_path: Path) -> None:

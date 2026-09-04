@@ -84,7 +84,7 @@ describe("model request body limits", () => {
   });
 
   it("publishes stable relay aliases instead of upstream video model ids", () => {
-    expect(compose).toContain("seedance-2.0|Doubao-Seedance-2.0");
-    expect(compose).not.toContain("VITE_VIDEO_MODELS:-doubao-seedance-");
+    expect(compose).toContain("doubao-seedance-2.0|Doubao-Seedance-2.0");
+    expect(compose).not.toContain("doubao-seedance-2-0-260128");
   });
 });

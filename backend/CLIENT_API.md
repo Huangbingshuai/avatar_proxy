@@ -1,11 +1,11 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.3
+版本：5.5
 
 更新日期：2026-09-04
 正式地址：`https://api.richbest.cn`
 
-本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、OpenAI 兼容文本与图片接口，以及火山方舟兼容的统一异步视频任务接口。
+本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、文本、图片、视频、多模态向量与音频模型接口。
 
 本文档是客户公开 HTTP 契约的完整事实来源。[MODEL_RELAY_API.md](MODEL_RELAY_API.md) 是模型中转快速接入说明，[RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md) 只描述 RichiDrama 调用方需要进行的改造；两者不得覆盖或重新定义本文档中的路径、字段、响应和错误规则。模型的实时可用性及能力始终以当前业务 Key 调用 `/v1/models` 的结果为准。
 
@@ -292,7 +292,7 @@ GET    /api/v3/contents/generations/tasks/{taskId}
 DELETE /api/v3/contents/generations/tasks/{taskId}
 ```
 
-调用方仍使用瑞池业务 API Key，不提交供应商 API Key。`model` 必须填写 `/v1/models` 返回的稳定别名，例如 `seedance-2.0`、`wan3.0-video` 或 `minimax-h3`；服务端会把别名转换为固定的上游模型 ID，并使用该项目绑定渠道的加密凭证请求对应供应商。客户端不能覆盖真实模型 ID、供应商、渠道、项目或 Base URL。
+调用方仍使用瑞池业务 API Key，不提交供应商 API Key。`model` 必须填写 `/v1/models` 返回的稳定别名，例如 `doubao-seedance-2.0`、`wan3.0-video` 或 `minimax-h3`；服务端会把别名转换为固定的上游模型 ID，并使用该项目绑定渠道的加密凭证请求对应供应商。客户端不能覆盖真实模型 ID、供应商、渠道、项目或 Base URL。
 
 ### 10.1 创建任务
 
@@ -302,7 +302,7 @@ curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: video-order-20260903-001" \
   -d '{
-    "model": "seedance-2.0",
+    "model": "doubao-seedance-2.0",
     "content": [
       {"type": "text", "text": "海边日出，镜头缓慢向前推进"},
       {
@@ -338,7 +338,7 @@ curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
 
 | 模型 | `content` | 支持的创建参数 | 当前默认值 |
 |---|---|---|---|
-| `seedance-*` | 文本；能力允许的图片、视频、音频 | `duration`、`frames`、`resolution`、`ratio`、`generate_audio`、`draft`、`seed`、`camera_fixed`、`watermark`、`return_last_frame`、`service_tier`、`execution_expires_after`、`task_type`；具体以模型能力为准 | 由对应 Seedance 模型决定 |
+| `doubao-seedance-*` | 文本；能力允许的图片、视频、音频 | `duration`、`frames`、`resolution`、`ratio`、`generate_audio`、`draft`、`seed`、`camera_fixed`、`watermark`、`return_last_frame`、`service_tier`、`execution_expires_after`、`task_type`；具体以模型能力为准 | 由对应 Seedance 模型决定 |
 | `wan3.0-video` | 文本；最多一张 HTTP(S) 首帧图片，角色必须为 `first_frame` | `duration`、`resolution`、`ratio`、`generate_audio`、`watermark` | `resolution=1080P`、`ratio=adaptive`、`generate_audio=true`；服务端固定启用提示词扩写 |
 | `minimax-h3` | 文本和 HTTP(S) 图片；总计不超过 20 项 | `duration`、`resolution`、`ratio`、`seed`、`watermark` | `resolution=768P`、`ratio=adaptive` |
 
@@ -403,7 +403,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 ```json
 {
   "id": "vid_0123456789abcdef",
-  "model": "seedance-2.0",
+  "model": "doubao-seedance-2.0",
   "status": "succeeded",
   "created_at": 1788422400,
   "resolution": "720p",
@@ -486,6 +486,12 @@ curl -X DELETE "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 | `POST` | `/v1/chat/completions` | OpenAI 兼容文本对话，支持 JSON/SSE |
 | `POST` | `/v1/responses` | OpenAI 兼容 Responses，支持 JSON/SSE |
 | `POST` | `/v1/images/generations` | OpenAI 兼容图片生成 |
+| `POST` | `/v1/embeddings` | OpenAI 兼容文本向量化 |
+| `POST` | `/v1/embeddings/multimodal` | 火山兼容多模态向量化 |
+| `POST` | `/v1/audio/speech` | 文本转语音，直接返回音频二进制 |
+| `POST` | `/v1/audio/transcriptions` | 创建异步录音识别任务 |
+| `GET` | `/v1/audio/transcriptions/{taskId}` | 查询录音识别任务 |
+| `POST` | `/v1/audio/generations` | 根据提示词生成音频 |
 | `POST` | `/api/v3/contents/generations/tasks` | 创建统一异步视频任务 |
 | `GET` | `/api/v3/contents/generations/tasks/{taskId}` | 查询异步视频任务 |
 | `DELETE` | `/api/v3/contents/generations/tasks/{taskId}` | 取消支持取消的视频任务 |
@@ -501,7 +507,7 @@ curl "$BASE_URL/v1/models" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-只返回当前 Key 所属项目已绑定且渠道处于启用状态的模型。内置别名如下；实际是否可用以该接口返回为准：
+只返回当前 Key 所属项目已绑定且渠道处于启用状态的模型。内置别名如下；实际是否可用以该接口返回为准。Doubao 系列统一使用 `doubao-` 前缀；旧的 `seedance-*`、`seedream-*` 短别名已经停用，请勿继续发送：
 
 响应示例：
 
@@ -544,18 +550,22 @@ curl "$BASE_URL/v1/models" \
 | `doubao-seed-character` | 文本对话、角色扮演 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
 | `doubao-seed-2.0-code` | 文本、识图、编程 | 火山方舟 | `POST /v1/chat/completions`<br>`POST /v1/responses` | JSON 或 SSE 流式响应 |
 | `doubao-seed-translation` | 文本翻译 | 火山方舟 | `POST /v1/responses` | 同步 JSON；必须使用翻译结构化输入 |
-| `seedream-5.0-pro` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
-| `seedream-5.0-lite` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
-| `seedream-5.0` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
-| `seedream-4.5` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
-| `seedream-4.0` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `doubao-seedream-5.0-pro` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `doubao-seedream-5.0-lite` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `doubao-seedream-5.0` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `doubao-seedream-4.5` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `doubao-seedream-4.0` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `image2.0` | 生图；单次 1 张结果 | OpenAI | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
-| `seedance-2.5` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `seedance-2.0` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `seedance-2.0-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `doubao-embedding-vision` | 文本、图片和视频多模态向量化 | 火山方舟 | `POST /v1/embeddings`<br>`POST /v1/embeddings/multimodal` | 同步 JSON |
+| `doubao-seed-tts-2.0` | 语音合成 | 火山语音 | `POST /v1/audio/speech` | 音频二进制响应 |
+| `doubao-seedasr-2.0` | 异步录音识别 | 火山语音 | `POST /v1/audio/transcriptions` | `GET /v1/audio/transcriptions/{taskId}` |
+| `seed-audio-1.0` | 音频生成 | 火山语音 | `POST /v1/audio/generations` | 同步 JSON |
+| `doubao-seedance-2.5` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `doubao-seedance-2.0` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `doubao-seedance-2.0-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `doubao-seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `doubao-seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `doubao-seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `wan3.0-video` | 异步视频 | 阿里百炼 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `minimax-h3` | 异步视频 | MiniMax | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 
@@ -672,7 +682,7 @@ curl "$BASE_URL/v1/images/generations" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: image-order-20260902-001" \
   -d '{
-    "model": "seedream-5.0-lite",
+    "model": "doubao-seedream-5.0-lite",
     "prompt": "白色背景上的东方瓷器产品摄影",
     "image": "https://customer.example.com/reference.jpg",
     "n": 1,
@@ -689,7 +699,7 @@ curl "$BASE_URL/v1/images/generations" \
 ```json
 {
   "created": 1788336000,
-  "model": "seedream-5.0-lite",
+  "model": "doubao-seedream-5.0-lite",
   "data": [
     {"url": "https://provider.example.com/result.png"}
   ],
@@ -754,6 +764,69 @@ curl "$BASE_URL/v1/images/generations" \
 
 排查 `/v1/*` 时请保留响应体中的 `request_id`；排查 `/api/v3/*` 时请保留响应头 `X-Request-Id`。不要提供业务 Key、供应商 Key 或完整图片/视频私有 URL。
 
-### 13.6 当前不提供的模型接口
+### 13.6 向量与音频接口
 
-当前没有 `/v1/audio/speech`，TTS 语音合成不经过本系统。调用方不得把 `vap_live_*` 当作豆包语音 AppID、Access Token、Cluster 或其他语音服务凭证使用。
+向量和音频接口与其他模型接口一样使用瑞池业务 Key 鉴权，客户端只提交 `/v1/models` 返回的公开别名，不能提交或覆盖火山语音 AppID、Access Token、Cluster、资源 ID等上游配置。
+
+| 方法 | 路径 | 模型 |
+|---|---|---|
+| `POST` | `/v1/embeddings` | `doubao-embedding-vision` 文本向量化 |
+| `POST` | `/v1/embeddings/multimodal` | `doubao-embedding-vision` 多模态向量化 |
+| `POST` | `/v1/audio/speech` | `doubao-seed-tts-2.0` 语音合成 |
+| `POST` | `/v1/audio/transcriptions` | `doubao-seedasr-2.0` 创建异步录音识别任务 |
+| `GET` | `/v1/audio/transcriptions/{taskId}` | 查询录音识别任务 |
+| `POST` | `/v1/audio/generations` | `seed-audio-1.0` 音频生成 |
+
+具体请求字段和能力必须以 `/v1/models` 返回的 `capabilities` 为准。语音合成直接返回音频二进制；录音识别创建成功返回 `202`，后续使用同一枚业务 Key 查询任务。
+
+文本向量化示例：
+
+```bash
+curl "$BASE_URL/v1/embeddings" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"doubao-embedding-vision","input":"瑞池模型中转服务","dimensions":2048}'
+```
+
+多模态向量化使用 `/v1/embeddings/multimodal`，`input` 为火山多模态内容数组，可组合文本、图片和视频。不要把私有网络地址或本机文件路径作为媒体 URL。
+
+语音合成示例（`voice` 必须是当前语音项目已开通的 TTS 2.0 音色 ID）：
+
+```bash
+curl "$BASE_URL/v1/audio/speech" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"doubao-seed-tts-2.0",
+    "input":"欢迎使用瑞池创作空间",
+    "voice":"zh_female_vv_uranus_bigtts",
+    "response_format":"mp3"
+  }' \
+  --output speech.mp3
+```
+
+录音识别只接受公网可访问的 HTTPS 音频 URL，并使用异步任务：
+
+```bash
+curl "$BASE_URL/v1/audio/transcriptions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: asr-order-001" \
+  -d '{"model":"doubao-seedasr-2.0","url":"https://example.com/meeting.mp3"}'
+
+curl "$BASE_URL/v1/audio/transcriptions/asr_xxx" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+任务状态为 `queued`、`running`、`succeeded` 或 `failed`；成功时响应包含 `text` 和供应商返回的真实 `duration`。
+
+音频生成示例：
+
+```bash
+curl "$BASE_URL/v1/audio/generations" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"seed-audio-1.0","prompt":"雨夜咖啡馆，轻柔爵士乐与窗外雨声","format":"mp3"}'
+```
+
+响应可能包含临时 `url` 或音频 Base64。临时 URL 由供应商托管并可能过期，调用方应及时下载；中转站不会自动归档媒体。

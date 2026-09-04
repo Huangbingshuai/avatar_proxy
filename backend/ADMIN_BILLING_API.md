@@ -145,7 +145,7 @@ curl -b admin-cookies.txt -X PUT \
 
 ```bash
 curl -b admin-cookies.txt -X PUT \
-  "$BASE_URL/api/internal/billing/rates/seedream-5.0-pro" \
+  "$BASE_URL/api/internal/billing/rates/doubao-seedream-5.0-pro" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: <CSRF_TOKEN>" \
   -d '{
@@ -161,7 +161,7 @@ curl -b admin-cookies.txt -X PUT \
 
 ```bash
 curl -b admin-cookies.txt -X PUT \
-  "$BASE_URL/api/internal/billing/rates/seedance-2.5" \
+  "$BASE_URL/api/internal/billing/rates/doubao-seedance-2.5" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: <CSRF_TOKEN>" \
   -d '{
@@ -183,7 +183,7 @@ curl -b admin-cookies.txt -X PUT \
 ```json
 {
   "rate": {
-    "model": "seedance-2.5",
+    "model": "doubao-seedance-2.5",
     "modality": "video",
     "month": "2026-09",
     "prices": {

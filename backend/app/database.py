@@ -12,11 +12,11 @@ BUILTIN_MODEL_CATALOG = (
     ("deepseek-v4-flash", "DeepSeek V4 Flash", "volcengine_ark", "text", "openai_text", "deepseek-v4-flash-260425", {"chat": True, "responses": True, "stream": True}),
     ("deepseek-v4-pro", "DeepSeek V4 Pro", "volcengine_ark", "text", "openai_text", "deepseek-v4-pro-ga-260813", {"chat": True, "responses": True, "stream": True}),
     ("glm-5.2", "GLM 5.2", "volcengine_ark", "text", "openai_text", "glm-5-2-260617", {"chat": True, "responses": True, "stream": True}),
-    ("seedream-5.0-pro", "Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-pro-260628", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "maxN": 1}),
-    ("seedream-5.0-lite", "Seedream 5.0 Lite", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-lite-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15, "outputFormat": True, "webSearch": True}),
-    ("seedream-5.0", "Seedream 5.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "maxN": 1, "outputFormat": True, "webSearch": True}),
-    ("seedream-4.5", "Seedream 4.5", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-5-251128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15}),
-    ("seedream-4.0", "Seedream 4.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-0-250828", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15}),
+    ("doubao-seedream-5.0-pro", "Doubao Seedream 5.0 Pro", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-pro-260628", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "maxN": 1}),
+    ("doubao-seedream-5.0-lite", "Doubao Seedream 5.0 Lite", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-lite-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15, "outputFormat": True, "webSearch": True}),
+    ("doubao-seedream-5.0", "Doubao Seedream 5.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-5-0-260128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "maxN": 1, "outputFormat": True, "webSearch": True}),
+    ("doubao-seedream-4.5", "Doubao Seedream 4.5", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-5-251128", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15}),
+    ("doubao-seedream-4.0", "Doubao Seedream 4.0", "volcengine_ark", "image", "openai_image", "doubao-seedream-4-0-250828", {"generations": True, "imageInput": True, "maxInputImages": 10, "maxInputImageBytes": SEEDREAM_MAX_INPUT_IMAGE_BYTES, "sequentialImages": True, "maxN": 15}),
     ("doubao-seed-2.1-pro", "Doubao Seed 2.1 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-1-pro-260628", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.1-turbo", "Doubao Seed 2.1 Turbo", "volcengine_ark", "text", "openai_text", "doubao-seed-2-1-turbo-260628", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-2.0-pro", "Doubao Seed 2.0 Pro", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-pro-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
@@ -26,15 +26,36 @@ BUILTIN_MODEL_CATALOG = (
     ("doubao-seed-character", "Doubao Seed Character", "volcengine_ark", "text", "openai_text", "doubao-seed-character-260628", {"chat": True, "responses": True, "stream": True}),
     ("doubao-seed-2.0-code", "Doubao Seed 2.0 Code", "volcengine_ark", "text", "openai_text", "doubao-seed-2-0-code-preview-260215", {"chat": True, "responses": True, "stream": True, "imageInput": True, "vision": True}),
     ("doubao-seed-translation", "Doubao Seed Translation", "volcengine_ark", "text", "openai_text", "doubao-seed-translation-250915", {"chat": False, "responses": True, "stream": False, "translation": True}),
-    ("seedance-2.5", "Seedance 2.5", "volcengine_ark", "video", "async_video", "doubao-seedance-2-5-260628", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 30, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 50, "maxN": 1}),
-    ("seedance-2.0", "Seedance 2.0", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 20, "maxN": 1}),
-    ("seedance-2.0-fast", "Seedance 2.0 Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-fast-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
-    ("seedance-2.0-mini", "Seedance 2.0 Mini", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-mini-260615", {"text": True, "image": True, "video": True, "audio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
-    ("seedance-1.0-pro", "Seedance 1.0 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-250528", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
-    ("seedance-1.0-pro-fast", "Seedance 1.0 Pro Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-fast-251015", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
+    ("doubao-seedance-2.5", "Doubao Seedance 2.5", "volcengine_ark", "video", "async_video", "doubao-seedance-2-5-260628", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 30, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 50, "maxN": 1}),
+    ("doubao-seedance-2.0", "Doubao Seedance 2.0", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p", "1080p"], "maxContent": 20, "maxN": 1}),
+    ("doubao-seedance-2.0-fast", "Doubao Seedance 2.0 Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-fast-260128", {"text": True, "image": True, "video": True, "audio": True, "generateAudio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
+    ("doubao-seedance-2.0-mini", "Doubao Seedance 2.0 Mini", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-mini-260615", {"text": True, "image": True, "video": True, "audio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
+    ("doubao-seedance-1.0-pro", "Doubao Seedance 1.0 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-250528", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
+    ("doubao-seedance-1.0-pro-fast", "Doubao Seedance 1.0 Pro Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-fast-251015", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
     ("wan3.0-video", "Wan 3.0 Video", "aliyun_bailian", "video", "async_video", "wan3.0-video", {"image": True, "maxN": 1}),
     ("minimax-h3", "MiniMax H3", "minimax", "video", "async_video", "MiniMax-H3", {"image": True, "maxN": 1}),
     ("image2.0", "Image 2.0", "openai", "image", "openai_image", "gpt-image-2", {"generations": True}),
+    ("doubao-embedding-vision", "Doubao Embedding Vision", "volcengine_ark", "embedding", "ark_embedding", "doubao-embedding-vision-251215", {"embeddings": True, "multimodal": True, "inputTypes": ["text", "image", "video"], "dimensions": [1024, 2048], "billingMetric": "input_tokens", "billingUnit": 1000000}),
+    ("doubao-seed-tts-2.0", "Doubao Seed TTS 2.0", "volcengine_speech", "audio", "speech_tts", "seed-tts-2.0", {"speech": True, "formats": ["mp3", "pcm", "ogg_opus"], "billingMetric": "characters", "billingUnit": 10000}),
+    ("doubao-seedasr-2.0", "Doubao Seed ASR 2.0", "volcengine_speech", "audio", "speech_asr", "volc.seedasr.auc", {"transcriptions": True, "async": True, "billingMetric": "audio_second", "billingUnit": 3600}),
+    ("seed-audio-1.0", "Seed Audio 1.0", "volcengine_speech", "audio", "speech_audio_generation", "seed-audio-1.0", {"audioGenerations": True, "maxDuration": 120, "billingMetric": "audio_second", "billingUnit": 60}),
+)
+
+
+BUILTIN_MODEL_ALIAS_MIGRATIONS = (
+    ("seedream-5.0-pro", "doubao-seedream-5.0-pro"),
+    ("seedream-5.0-lite", "doubao-seedream-5.0-lite"),
+    ("seedream-5.0", "doubao-seedream-5.0"),
+    ("seedream-4.5", "doubao-seedream-4.5"),
+    ("seedream-4.0", "doubao-seedream-4.0"),
+    ("seedance-2.5", "doubao-seedance-2.5"),
+    ("seedance-2.0", "doubao-seedance-2.0"),
+    ("seedance-2.0-fast", "doubao-seedance-2.0-fast"),
+    ("seedance-2.0-mini", "doubao-seedance-2.0-mini"),
+    ("seedance-1.0-pro", "doubao-seedance-1.0-pro"),
+    ("seedance-1.0-pro-fast", "doubao-seedance-1.0-pro-fast"),
+    ("glm-5.3", "glm-5.2"),
+    ("wan3.0", "wan3.0-video"),
 )
 
 
@@ -350,10 +371,10 @@ CREATE TABLE IF NOT EXISTS provider_channels (
     id TEXT PRIMARY KEY,
     project_name TEXT NOT NULL,
     name TEXT NOT NULL,
-    provider TEXT NOT NULL CHECK(provider IN ('openai','volcengine_ark','aliyun_bailian','minimax')),
+    provider TEXT NOT NULL CHECK(provider IN ('openai','volcengine_ark','volcengine_speech','aliyun_bailian','minimax')),
     config_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
-    last_test_status TEXT CHECK(last_test_status IN ('success','failed')),
+    last_test_status TEXT CHECK(last_test_status IN ('success','failed','manual')),
     last_test_at TEXT,
     last_test_latency_ms INTEGER,
     last_test_error TEXT,
@@ -379,7 +400,7 @@ CREATE TABLE IF NOT EXISTS model_catalog (
     alias TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
     provider TEXT NOT NULL,
-    modality TEXT NOT NULL CHECK(modality IN ('text','image','video')),
+    modality TEXT NOT NULL CHECK(modality IN ('text','image','video','embedding','audio')),
     protocol TEXT NOT NULL,
     upstream_model TEXT NOT NULL,
     capabilities_json TEXT NOT NULL DEFAULT '{}',
@@ -458,6 +479,8 @@ CREATE TABLE IF NOT EXISTS inference_usage (
     video_seconds REAL,
     video_width INTEGER,
     video_height INTEGER,
+    input_characters INTEGER,
+    audio_seconds REAL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     settled_at TEXT,
     FOREIGN KEY(task_id) REFERENCES inference_tasks(id) ON DELETE SET NULL,
@@ -469,7 +492,7 @@ CREATE TABLE IF NOT EXISTS inference_usage (
 CREATE TABLE IF NOT EXISTS billing_model_rates (
     id TEXT PRIMARY KEY,
     model_alias TEXT NOT NULL,
-    metric TEXT NOT NULL CHECK(metric IN ('input_tokens','output_tokens','image','video_second')),
+    metric TEXT NOT NULL CHECK(metric IN ('input_tokens','output_tokens','image','video_second','characters','audio_second')),
     resolution TEXT NOT NULL DEFAULT '',
     effective_month TEXT NOT NULL,
     unit_size INTEGER NOT NULL CHECK(unit_size > 0),
@@ -630,12 +653,98 @@ CREATE INDEX IF NOT EXISTS idx_billing_statements_month
 """
 
 
+def _upgrade_relay_table_constraints(path: Path) -> None:
+    """Rebuild the three relay tables whose legacy SQLite CHECKs cannot be altered."""
+    if not path.exists():
+        return
+    connection = sqlite3.connect(path, timeout=10)
+    try:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        definitions = {
+            row[0]: row[1] or ""
+            for row in connection.execute(
+                "SELECT name,sql FROM sqlite_master WHERE type='table' AND name IN "
+                "('provider_channels','model_catalog','billing_model_rates')"
+            ).fetchall()
+        }
+        rebuild_provider = definitions.get("provider_channels") and "volcengine_speech" not in definitions["provider_channels"]
+        rebuild_catalog = definitions.get("model_catalog") and "'embedding'" not in definitions["model_catalog"]
+        rebuild_rates = definitions.get("billing_model_rates") and "'characters'" not in definitions["billing_model_rates"]
+        if not any((rebuild_provider, rebuild_catalog, rebuild_rates)):
+            return
+        connection.execute("BEGIN IMMEDIATE")
+        if rebuild_provider:
+            connection.executescript(
+                """
+                CREATE TABLE provider_channels_new (
+                    id TEXT PRIMARY KEY, project_name TEXT NOT NULL, name TEXT NOT NULL,
+                    provider TEXT NOT NULL CHECK(provider IN ('openai','volcengine_ark','volcengine_speech','aliyun_bailian','minimax')),
+                    config_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
+                    last_test_status TEXT CHECK(last_test_status IN ('success','failed','manual')),
+                    last_test_at TEXT, last_test_latency_ms INTEGER, last_test_error TEXT,
+                    created_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, deleted_at TEXT,
+                    FOREIGN KEY(project_name) REFERENCES projects(name) ON DELETE RESTRICT,
+                    UNIQUE(project_name,name)
+                );
+                INSERT INTO provider_channels_new SELECT id,project_name,name,provider,config_json,status,
+                    last_test_status,last_test_at,last_test_latency_ms,last_test_error,created_by,
+                    created_at,updated_at,deleted_at FROM provider_channels;
+                DROP TABLE provider_channels;
+                ALTER TABLE provider_channels_new RENAME TO provider_channels;
+                """
+            )
+        if rebuild_catalog:
+            connection.executescript(
+                """
+                CREATE TABLE model_catalog_new (
+                    alias TEXT PRIMARY KEY, display_name TEXT NOT NULL, provider TEXT NOT NULL,
+                    modality TEXT NOT NULL CHECK(modality IN ('text','image','video','embedding','audio')),
+                    protocol TEXT NOT NULL, upstream_model TEXT NOT NULL,
+                    capabilities_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT INTO model_catalog_new SELECT alias,display_name,provider,modality,protocol,
+                    upstream_model,capabilities_json,enabled,created_at,updated_at FROM model_catalog;
+                DROP TABLE model_catalog;
+                ALTER TABLE model_catalog_new RENAME TO model_catalog;
+                """
+            )
+        if rebuild_rates:
+            connection.executescript(
+                """
+                CREATE TABLE billing_model_rates_new (
+                    id TEXT PRIMARY KEY, model_alias TEXT NOT NULL,
+                    metric TEXT NOT NULL CHECK(metric IN ('input_tokens','output_tokens','image','video_second','characters','audio_second')),
+                    resolution TEXT NOT NULL DEFAULT '', effective_month TEXT NOT NULL,
+                    unit_size INTEGER NOT NULL CHECK(unit_size > 0),
+                    unit_price_micros INTEGER NOT NULL CHECK(unit_price_micros >= 0),
+                    created_by TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(model_alias) REFERENCES model_catalog(alias) ON DELETE RESTRICT,
+                    UNIQUE(model_alias,metric,resolution,effective_month)
+                );
+                INSERT INTO billing_model_rates_new SELECT id,model_alias,metric,resolution,effective_month,
+                    unit_size,unit_price_micros,created_by,created_at FROM billing_model_rates;
+                DROP TABLE billing_model_rates;
+                ALTER TABLE billing_model_rates_new RENAME TO billing_model_rates;
+                """
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
 class Database:
     def __init__(self, path: Path) -> None:
         self.path = path
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        _upgrade_relay_table_constraints(self.path)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
             asset_columns = {
@@ -708,6 +817,13 @@ class Database:
                 connection.execute(
                     "ALTER TABLE inference_tasks ADD COLUMN billing_metadata_json TEXT NOT NULL DEFAULT '{}'"
                 )
+            inference_usage_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(inference_usage)").fetchall()
+            }
+            if inference_usage_columns and "input_characters" not in inference_usage_columns:
+                connection.execute("ALTER TABLE inference_usage ADD COLUMN input_characters INTEGER")
+            if inference_usage_columns and "audio_seconds" not in inference_usage_columns:
+                connection.execute("ALTER TABLE inference_usage ADD COLUMN audio_seconds REAL")
             billing_item_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(billing_usage_items)").fetchall()
             }
@@ -778,13 +894,10 @@ class Database:
                 "AND NOT EXISTS (SELECT 1 FROM billing_usage_items b WHERE b.model_alias=model_catalog.alias)",
                 removed_aliases,
             )
-            # Early local catalogs used two aliases that did not match the fixed
-            # upstream IDs. Migrate every reference atomically so existing project
-            # bindings, legacy key permissions, tasks and usage remain available.
-            for legacy_alias, canonical_alias in (
-                ("glm-5.3", "glm-5.2"),
-                ("wan3.0", "wan3.0-video"),
-            ):
+            # Public aliases are canonical identifiers, not loose compatibility names.
+            # Migrate stored references atomically before deleting a superseded alias;
+            # requests using the old value are rejected after startup.
+            for legacy_alias, canonical_alias in BUILTIN_MODEL_ALIAS_MIGRATIONS:
                 if not connection.execute(
                     "SELECT 1 FROM model_catalog WHERE alias=?", (legacy_alias,)
                 ).fetchone():
@@ -801,11 +914,30 @@ class Database:
                     "api_key_model_permissions.api_key_id AND current.model_alias=?)",
                     (legacy_alias, canonical_alias),
                 )
+                duplicate_rates = connection.execute(
+                    "SELECT legacy.id,canonical.id FROM billing_model_rates legacy "
+                    "JOIN billing_model_rates canonical ON canonical.model_alias=? "
+                    "AND canonical.metric=legacy.metric AND canonical.resolution=legacy.resolution "
+                    "AND canonical.effective_month=legacy.effective_month "
+                    "WHERE legacy.model_alias=?",
+                    (canonical_alias, legacy_alias),
+                ).fetchall()
+                for legacy_rate_id, canonical_rate_id in duplicate_rates:
+                    connection.execute(
+                        "UPDATE billing_usage_components SET rate_id=? WHERE rate_id=?",
+                        (canonical_rate_id, legacy_rate_id),
+                    )
+                    connection.execute(
+                        "DELETE FROM billing_model_rates WHERE id=?", (legacy_rate_id,)
+                    )
                 for table in (
                     "project_model_bindings",
                     "api_key_model_permissions",
                     "inference_tasks",
                     "inference_usage",
+                    "billing_model_rates",
+                    "billing_usage_items",
+                    "billing_statement_lines",
                 ):
                     connection.execute(
                         f"UPDATE {table} SET model_alias=? WHERE model_alias=?",

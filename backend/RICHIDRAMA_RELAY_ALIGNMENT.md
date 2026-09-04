@@ -96,7 +96,7 @@ Authorization: Bearer vap_live_xxx
 RichiDrama 不应：
 
 - 维护另一套火山真实 Model ID 作为中转站请求值；
-- 将 `seedance-2.0` 再转换为 `doubao-seedance-2-0-260128`；
+- 将 `doubao-seedance-2.0` 再转换为 `doubao-seedance-2-0-260128`；
 - 展示 `/v1/models` 未返回的模型；
 - 根据模型名字猜测供应商或自行拼接上游 URL；
 - 要求终端用户理解“漫剧别名”和“中转站别名”两套名称。
@@ -156,7 +156,7 @@ POST /v1/images/generations
 
 ```json
 {
-  "model": "seedream-5.0",
+  "model": "doubao-seedream-5.0",
   "prompt": "电影感室内场景，暖色灯光，不要拼贴画面",
   "image": ["https://example.com/reference.png"],
   "size": "2K",
@@ -222,7 +222,7 @@ DELETE /api/v3/contents/generations/tasks/{taskId}
 
 ```json
 {
-  "model": "seedance-2.0",
+  "model": "doubao-seedance-2.0",
   "content": [
     {"type": "text", "text": "人物走向镜头，电影感运镜"},
     {
@@ -265,7 +265,7 @@ RichiDrama 必须保存这个中转站任务 ID，不要保存或猜测真实上
 ```json
 {
   "id": "vid_0123456789abcdef",
-  "model": "seedance-2.0",
+  "model": "doubao-seedance-2.0",
   "status": "succeeded",
   "resolution": "720p",
   "ratio": "16:9",

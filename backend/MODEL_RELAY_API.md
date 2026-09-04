@@ -41,7 +41,7 @@ curl "https://api.richbest.cn/v1/models" \
   "object": "list",
   "data": [
     {
-      "id": "seedream-5.0",
+      "id": "doubao-seedream-5.0",
       "object": "model",
       "owned_by": "richbest",
       "display_name": "Seedream 5.0",
@@ -117,7 +117,7 @@ curl "https://api.richbest.cn/v1/images/generations" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: image-order-001" \
   -d '{
-    "model": "seedream-5.0",
+    "model": "doubao-seedream-5.0",
     "prompt": "电影感室内场景，暖色灯光",
     "image": ["https://example.com/reference.png"],
     "size": "2K",
@@ -174,7 +174,7 @@ curl -X POST "https://api.richbest.cn/api/v3/contents/generations/tasks" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: video-order-001" \
   -d '{
-    "model": "seedance-2.0",
+    "model": "doubao-seedance-2.0",
     "content": [
       {"type": "text", "text": "人物走向镜头，电影感运镜"},
       {
@@ -220,7 +220,22 @@ curl "https://api.richbest.cn/api/v3/contents/generations/tasks/vid_0123456789ab
 
 火山任务支持取消；未完成取消适配验证的其他供应商会返回 `422 video_cancel_unsupported`，不会伪装成取消成功。
 
-## 6. 幂等与重试
+## 6. 向量与音频
+
+```text
+POST /v1/embeddings
+POST /v1/embeddings/multimodal
+POST /v1/audio/speech
+POST /v1/audio/transcriptions
+GET  /v1/audio/transcriptions/{taskId}
+POST /v1/audio/generations
+```
+
+`doubao-embedding-vision` 使用项目的火山方舟渠道。`doubao-seed-tts-2.0`、`doubao-seedasr-2.0` 和 `seed-audio-1.0` 使用独立豆包语音渠道，调用方仍只持有瑞池业务 Key，不接触语音供应商凭证。完整字段、响应结构和 curl 示例见 [CLIENT_API.md 的“向量与音频接口”](CLIENT_API.md#136-向量与音频接口)。
+
+语音合成直接返回音频二进制；录音识别为异步任务，必须使用提交任务时的同一枚业务 Key 查询。语音模型调用会产生真实费用，不应使用渠道测试按钮自动探测。
+
+## 7. 幂等与重试
 
 图片和视频创建可发送长度 1～128 的 `Idempotency-Key`：
 
@@ -236,7 +251,7 @@ Idempotency-Key: video-generation-12345
 
 调用方自身仍应维护任务状态。发生网络超时时，应先使用原幂等键重试，不要立即生成新键。
 
-## 7. 错误格式
+## 8. 错误格式
 
 `/v1/*` 错误遵循 OpenAI 风格：
 
@@ -276,7 +291,7 @@ Idempotency-Key: video-generation-12345
 | `429` | 项目或 Key 额度/限流触发；可恢复时读取 `Retry-After` |
 | `502` / `504` | 上游供应商拒绝、异常或超时 |
 
-## 8. RichiDrama 对接要求
+## 9. RichiDrama 对接要求
 
 1. 将文本、图片和视频服务的 Base URL 设置为 `https://api.richbest.cn`。
 2. `Authorization` 使用 Star Proxy 的 `vap_live_*`，不要使用火山方舟 Key。
@@ -284,13 +299,13 @@ Idempotency-Key: video-generation-12345
 4. 请求中的 `model` 使用 `data[].id`，不要继续发送 `doubao-...-版本号` 等上游 ID。
 5. Seedream 隐藏或删除 `quality` 和 `negative_prompt`；视频只发送 `ratio`。
 6. 没有被 `/v1/models` 返回的模型必须隐藏，不能尝试绕过中转站模型权限。
-7. TTS 不在当前中转范围内。豆包语音继续由 RichiDrama 使用 AppID、Access Token 和 Cluster 直连；不得把语音凭证误填为中转站业务 Key。
+7. RichiDrama 如需改用中转站语音接口，只提交 `/v1/models` 返回的音频模型别名和瑞池业务 Key，不提交 AppID、Access Token 或 Cluster。
 8. 不在日志中记录完整业务 Key、上游 Key、用户提示词、TTS 文本或素材 Data URL。
 
-## 9. 接口边界
+## 10. 接口边界
 
 - 中转站不向调用方暴露供应商凭证、真实渠道 ID、项目名或真实上游任务 ID。
 - 图片和视频结果 URL 不自动进入素材库，也不保证永久有效。
 - 素材库上传与 Seedream 参考图是两条独立链路。素材库可上传本地文件到 TOS 后登记，也可直接登记公网 URL。
-- 当前没有 `/v1/audio/speech`；语音合成不经过 Star Proxy。
+- 向量接口使用 `/v1/embeddings` 或 `/v1/embeddings/multimodal`；音频接口使用 `/v1/audio/speech`、`/v1/audio/transcriptions` 或 `/v1/audio/generations`。
 - 生产环境不开放交互式 API 文档，本文档与 `/v1/models` 是调用方的契约来源。

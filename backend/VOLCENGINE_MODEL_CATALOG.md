@@ -13,12 +13,34 @@
 | `doubao-seed-character` | `doubao-seed-character-260628` | `/v1/chat/completions`、`/v1/responses` | JSON、SSE |
 | `doubao-seed-2.0-code` | `doubao-seed-2-0-code-preview-260215` | `/v1/chat/completions`、`/v1/responses` | JSON、SSE |
 | `doubao-seed-translation` | `doubao-seed-translation-250915` | `/v1/responses` | 同步 JSON |
+| `doubao-embedding-vision` | `doubao-embedding-vision-251215` | `/v1/embeddings`、`/v1/embeddings/multimodal` | 同步 JSON |
+| `doubao-seed-tts-2.0` | `seed-tts-2.0` | `/v1/audio/speech` | 音频二进制 |
+| `doubao-seedasr-2.0` | `volc.seedasr.auc` | `/v1/audio/transcriptions` | 异步任务 |
+| `seed-audio-1.0` | `seed-audio-1.0` | `/v1/audio/generations` | 同步 JSON |
 
 模型别名与上游 ID 在 `backend/app/database.py` 中一一固定。管理员只为项目选择供应商渠道并启用模型，客户和管理员都不能在请求中改写上游模型 ID。
 
+向量模型复用项目的火山方舟渠道。后三个语音模型属于豆包语音产品线，必须创建独立的 `volcengine_speech` 渠道并填写语音技术控制台新建的 API Key；方舟 Key 与语音 Key 不可混用。语音渠道没有免费的鉴权探测接口，控制台“测试”只提示需要真实模型调用，不会为了探测凭证自动产生费用。
+
+## 对外别名命名规范与 5.5 迁移
+
+Star Proxy 对外模型别名是稳定的客户接口契约，不等同于火山方舟带日期的上游模型 ID。豆包产品线统一保留 `doubao-` 前缀：
+
+| 旧别名（停止接受） | 标准别名 |
+|---|---|
+| `seedream-5.0` | `doubao-seedream-5.0` |
+| `seedream-5.0-lite` | `doubao-seedream-5.0-lite` |
+| `seedance-2.0` | `doubao-seedance-2.0` |
+| `seedance-2.0-fast` | `doubao-seedance-2.0-fast` |
+| `seedance-2.5` | `doubao-seedance-2.5` |
+
+其余 Seedream 4.x、Seedream 5.0 Pro、Seedance 1.0 Pro 与 Seedance 2.0 Mini 采用相同规则。未使用 Doubao 品牌的官方模型系列（例如 `seed-audio-1.0`）保留其官方名称，不机械增加前缀。
+
+本次变更不提供旧请求别名兼容层：客户端必须先通过 `GET /v1/models` 获取可用模型，并将静态配置更新为标准别名；继续传旧别名会返回 `model_not_allowed`。服务启动时只对已有数据库引用执行一次原子迁移，覆盖项目模型绑定、API Key 模型权限、推理任务、用量、费率与账单记录，避免历史数据和权限断裂。上游固定 ID 继续由中转站维护，客户不得直接传入或依赖它。
+
 ## 2026-09-04 验收记录
 
-使用本地 `test_hb` 项目及其业务 Key 从客户视角发起真实请求，以上五个模型均返回 HTTP 200。真实用量合计 307 Tokens，供应商请求 ID 和分项用量保存在本地 `inference_usage` 中；文档、测试输出和 Git 变更均不保存业务 Key 或供应商凭证明文。
+使用本地 `test_hb` 项目及其业务 Key 从客户视角发起真实请求，文本模型新增项均返回 HTTP 200。真实用量合计 307 Tokens，供应商请求 ID 和分项用量保存在本地 `inference_usage` 中；文档、测试输出和 Git 变更均不保存业务 Key 或供应商凭证明文。向量和语音模型需使用对应产品渠道另行验收，自动测试不会产生真实调用费用。
 
 翻译模型必须使用 Responses 结构化输入：
 

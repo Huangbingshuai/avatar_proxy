@@ -39,6 +39,12 @@ def test_client_api_lists_current_public_model_routes() -> None:
         "/v1/chat/completions",
         "/v1/responses",
         "/v1/images/generations",
+        "/v1/embeddings",
+        "/v1/embeddings/multimodal",
+        "/v1/audio/speech",
+        "/v1/audio/transcriptions",
+        "/v1/audio/transcriptions/{task_id}",
+        "/v1/audio/generations",
         "/api/v3/contents/generations/tasks",
         "/api/v3/contents/generations/tasks/{task_id}",
     }
@@ -52,7 +58,8 @@ def test_specialized_docs_defer_to_client_contract() -> None:
     relay = _text(MODEL_RELAY_DOC)
     richidrama = _text(RICHIDRAMA_DOC)
 
-    assert "版本：5.3" in client
+    assert "版本：5.5" in client
+    assert "旧的 `seedance-*`、`seedream-*` 短别名已经停用" in client
     assert "CLIENT_API.md" in relay
     assert "CLIENT_API.md" in richidrama
     assert "negative_prompt" not in IMAGE_FIELDS

@@ -245,12 +245,12 @@ def test_image_and_video_rate_books_and_validation(tmp_path: Path) -> None:
         create_project(client)
         month = current_month()
         image = client.put(
-            "/api/internal/billing/rates/seedream-5.0-pro",
+            "/api/internal/billing/rates/doubao-seedream-5.0-pro",
             headers=ADMIN_HEADERS,
             json={"effectiveMonth": month, "prices": {"perImageYuan": "0.75"}, "currentPassword": PASSWORD},
         )
         video = client.put(
-            "/api/internal/billing/rates/seedance-2.5",
+            "/api/internal/billing/rates/doubao-seedance-2.5",
             headers=ADMIN_HEADERS,
             json={
                 "effectiveMonth": month,
@@ -260,7 +260,7 @@ def test_image_and_video_rate_books_and_validation(tmp_path: Path) -> None:
         )
         listed = client.get(f"/api/internal/billing/rates?month={month}", headers=ADMIN_HEADERS)
         invalid_resolution = client.put(
-            "/api/internal/billing/rates/seedance-2.5",
+            "/api/internal/billing/rates/doubao-seedance-2.5",
             headers=ADMIN_HEADERS,
             json={"effectiveMonth": month, "prices": {"perSecondByResolution": {"4k": "1"}}, "currentPassword": PASSWORD},
         )
@@ -272,7 +272,7 @@ def test_image_and_video_rate_books_and_validation(tmp_path: Path) -> None:
 
     assert image.json()["rate"]["prices"]["perImageYuan"] == "0.750000"
     assert video.json()["rate"]["prices"]["perSecondByResolution"]["720p"] == "0.200000"
-    assert any(item["model"] == "seedream-5.0-pro" for item in listed.json()["rates"])
+    assert any(item["model"] == "doubao-seedream-5.0-pro" for item in listed.json()["rates"])
     assert invalid_resolution.status_code == 422
     assert invalid_resolution.json()["error"]["code"] == "billing_resolution_invalid"
     assert missing_model.status_code == 404
@@ -286,8 +286,8 @@ def test_image_video_and_legacy_video_usage_are_rated_but_failed_tasks_are_exclu
         month = current_month()
         _enable_project(client, month, 9000)
         for alias, prices in (
-            ("seedream-5.0-pro", {"perImageYuan": "1.00"}),
-            ("seedance-2.5", {"perSecondByResolution": {"720p": "0.50"}}),
+            ("doubao-seedream-5.0-pro", {"perImageYuan": "1.00"}),
+            ("doubao-seedance-2.5", {"perSecondByResolution": {"720p": "0.50"}}),
         ):
             assert client.put(
                 f"/api/internal/billing/rates/{alias}",
@@ -302,8 +302,8 @@ def test_image_video_and_legacy_video_usage_are_rated_but_failed_tasks_are_exclu
                 ("media-channel", "drama_prod", "media", "volcengine_ark"),
             )
             for values in (
-                ("img-use", "img-request", "seedream-5.0-pro", 2, None, None, None),
-                ("vid-use", "vid-request", "seedance-2.5", None, 4.0, 1280, 720),
+                ("img-use", "img-request", "doubao-seedream-5.0-pro", 2, None, None, None),
+                ("vid-use", "vid-request", "doubao-seedance-2.5", None, 4.0, 1280, 720),
             ):
                 connection.execute(
                     "INSERT INTO inference_usage(id,request_id,api_key_id,project_name,model_alias,channel_id,status,"
@@ -509,7 +509,7 @@ def test_rate_term_and_statement_error_boundaries(tmp_path: Path) -> None:
             f"/api/internal/billing/projects/absent?month={month}", headers=ADMIN_HEADERS
         )
         bad_video_shape = client.put(
-            "/api/internal/billing/rates/seedance-2.5",
+            "/api/internal/billing/rates/doubao-seedance-2.5",
             headers=ADMIN_HEADERS,
             json={"effectiveMonth": month, "prices": {"perSecondByResolution": ["0.1"]}, "currentPassword": PASSWORD},
         )
@@ -607,6 +607,17 @@ def test_billing_internal_normalization_and_maintenance_failure_isolation(tmp_pa
     assert BillingManager._principal_actor(type("Actor", (), {"id": "admin-1"})()) == "admin-1"
     assert BillingManager._relay_measurements({"modality": "image", "generated_images": None}) == (None, "usage_unknown")
     assert BillingManager._relay_measurements({"modality": "image", "generated_images": 3})[0][0][2] == 3
+    assert BillingManager._relay_measurements({"modality": "embedding", "input_tokens": 12})[0] == [
+        ("input_tokens", "", 12)
+    ]
+    assert BillingManager._relay_measurements({
+        "modality": "audio", "capabilities_json": '{"billingMetric":"characters"}',
+        "input_characters": 8, "audio_seconds": None,
+    })[0] == [("characters", "", 8)]
+    assert BillingManager._relay_measurements({
+        "modality": "audio", "capabilities_json": '{"billingMetric":"audio_second"}',
+        "input_characters": None, "audio_seconds": 2.5,
+    })[0] == [("audio_second", "", pytest.approx(2.5))]
     assert BillingManager._relay_measurements({"modality": "video", "video_seconds": 0}) == (None, "usage_unknown")
     unresolved_video = {
         "modality": "video", "video_seconds": 4, "billing_metadata_json": "{}",

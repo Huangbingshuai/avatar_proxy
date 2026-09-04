@@ -55,7 +55,7 @@ export type ModelIconKey = keyof typeof MODEL_ICON_ASSETS;
 const MODEL_ICON_OVERRIDES: Record<string, ModelIconKey> = {
   "image2.0": "openai",
   "gpt-image-2": "openai",
-  "seedream-5.0-pro": "doubao",
+  "doubao-seedream-5.0-pro": "doubao",
   "doubao-seedream-5-0-260128": "doubao",
   "deepseek-v4-flash": "deepseek",
   "deepseek-v4-pro": "deepseek",
@@ -75,6 +75,7 @@ const PROVIDER_ICON_KEYS: Record<string, ModelIconKey> = {
   alibaba_cloud: "alibabaCloud",
   zhipu: "zhipu",
   volcengine_ark: "volcengine",
+  volcengine_speech: "volcengine",
   bytedance: "doubao",
   minimax: "minimax",
   moonshot: "moonshot",
