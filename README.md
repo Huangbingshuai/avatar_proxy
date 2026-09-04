@@ -306,6 +306,7 @@ PAYMENT_ORIGIN_HOST=drama.richbest.cn
 
 - [客户 API 接入文档](backend/CLIENT_API.md)
 - [模型中转接口文档](backend/MODEL_RELAY_API.md)
+- [RichiDrama 对接中转站改造说明](backend/RICHIDRAMA_RELAY_ALIGNMENT.md)
 - [管理端计费账单 API 文档](backend/ADMIN_BILLING_API.md)
 - [多供应商模型中转实施与安全边界](backend/MULTI_PROVIDER_RELAY_PLAN.md)
 - [后端生产部署说明](backend/DEPLOYMENT.md)

@@ -1,11 +1,13 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.1
+版本：5.2
 
 更新日期：2026-09-03
 正式地址：`https://api.richbest.cn`
 
-本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、OpenAI 兼容文本与图片接口，以及火山方舟兼容的 Seedance 视频任务接口。
+本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、OpenAI 兼容文本与图片接口，以及火山方舟兼容的统一异步视频任务接口。
+
+本文档是客户公开 HTTP 契约的完整事实来源。[MODEL_RELAY_API.md](MODEL_RELAY_API.md) 是模型中转快速接入说明，[RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md) 只描述 RichiDrama 调用方需要进行的改造；两者不得覆盖或重新定义本文档中的路径、字段、响应和错误规则。模型的实时可用性及能力始终以当前业务 Key 调用 `/v1/models` 的结果为准。
 
 客户业务 API 不返回模型价目、项目折扣、账单或支付信息。项目计费由管理员在内部控制台统一配置，不需要也不支持客户为每个 API Key 单独设置；内部管理接口另见 [管理端计费账单 API 文档](ADMIN_BILLING_API.md)。
 
@@ -20,7 +22,7 @@ Accept: application/json
 
 JSON 请求还需携带 `Content-Type: application/json`。
 
-业务 API Key 已在服务端绑定火山项目。请求中不需要、也不能覆盖 `projectName`。请只在服务端保存 API Key，不要写入网页代码、公开仓库、日志或 URL。
+业务 API Key 已在服务端绑定瑞池客户项目。素材接口需要的火山 ProjectName、模型接口使用的供应商渠道和真实模型 ID 均由服务端决定；请求中不需要、也不能覆盖 `projectName`、供应商、渠道、项目、Base URL 或供应商 API Key。请只在服务端保存业务 API Key，不要写入网页代码、公开仓库、日志或 URL。
 
 ## 2. 支持的素材规格
 
@@ -484,11 +486,11 @@ curl -X DELETE "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 | `POST` | `/v1/chat/completions` | OpenAI 兼容文本对话，支持 JSON/SSE |
 | `POST` | `/v1/responses` | OpenAI 兼容 Responses，支持 JSON/SSE |
 | `POST` | `/v1/images/generations` | OpenAI 兼容图片生成 |
-| `POST` | `/api/v3/contents/generations/tasks` | 创建 Seedance 异步视频任务 |
-| `GET` | `/api/v3/contents/generations/tasks/{taskId}` | 查询 Seedance 视频任务 |
-| `DELETE` | `/api/v3/contents/generations/tasks/{taskId}` | 取消 Seedance 视频任务 |
+| `POST` | `/api/v3/contents/generations/tasks` | 创建统一异步视频任务 |
+| `GET` | `/api/v3/contents/generations/tasks/{taskId}` | 查询异步视频任务 |
+| `DELETE` | `/api/v3/contents/generations/tasks/{taskId}` | 取消支持取消的视频任务 |
 
-## 13. 多供应商 OpenAI 兼容模型接口
+## 13. 模型中转接口
 
 该能力由管理员按客户项目启用。管理员完成“供应商渠道 → 项目模型绑定”后，该项目下所有有效的 `vap_live_*` 都能调用项目已启用的模型，无需逐 Key 授权或重新签发 Key。客户不能在请求中指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
 
@@ -652,7 +654,7 @@ curl "$BASE_URL/v1/images/generations" \
 
 `image` 可填写单个 HTTP(S) 图片 URL、图片 Data URL 或 URL 数组，具体数量由 `/v1/models` 的 `maxInputImages` 决定。`n` 必须是 1～15 的整数，并且不能超过该模型返回的 `maxN`；`n>1` 只在支持组图的 Seedream 模型上生效，中转层会转换为方舟组图参数。还可按模型能力使用 `size`、`output_format`、`watermark`、`sequential_image_generation`、`sequential_image_generation_options`、`optimize_prompt_options` 和 `tools`。不支持的模型能力会返回明确的 `422`，不会盲目透传。
 
-图片接口不会把 OpenAI 的 `quality`、`style`、`user` 等供应商无关字段转发给方舟。当前公开接口只提供非流式 JSON 响应；传入 `stream=true` 会返回 `image_stream_unsupported`。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
+图片接口允许部分 OpenAI 兼容字段，但不会把 `quality`、`style`、`user` 等供应商无关字段转发给火山 Seedream，因此调用方不能把它们展示为对 Seedream 生效的控制项。`negative_prompt` 不属于当前公开图片契约，传入会返回 `422 image_parameter_unsupported`；负向要求应直接写入 `prompt`。当前公开接口只提供非流式 JSON 响应；传入 `stream=true` 会返回 `image_stream_unsupported`。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
 
 成功响应示例：
 
@@ -723,3 +725,7 @@ curl "$BASE_URL/v1/images/generations" \
 | `503` | `multi_provider_disabled` | 多供应商功能尚未启用 |
 
 排查 `/v1/*` 时请保留响应体中的 `request_id`；排查 `/api/v3/*` 时请保留响应头 `X-Request-Id`。不要提供业务 Key、供应商 Key 或完整图片/视频私有 URL。
+
+### 13.6 当前不提供的模型接口
+
+当前没有 `/v1/audio/speech`，TTS 语音合成不经过本系统。调用方不得把 `vap_live_*` 当作豆包语音 AppID、Access Token、Cluster 或其他语音服务凭证使用。

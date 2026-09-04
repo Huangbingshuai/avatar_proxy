@@ -1,6 +1,6 @@
 # Star Proxy 模型中转接口
 
-本文档面向接入 Star Proxy 的服务端应用，例如 RichiDrama。素材库接口、管理接口和完整错误码仍以 [CLIENT_API.md](CLIENT_API.md) 为准。
+本文档面向接入 Star Proxy 的服务端应用，例如 RichiDrama，是 [CLIENT_API.md](CLIENT_API.md) 中模型接口的快速接入版。公开路径、字段、响应和错误规则如有疑问，以 `CLIENT_API.md` 为准；模型实时可用性和能力以当前业务 Key 调用 `/v1/models` 的结果为准。RichiDrama 侧的具体改造项和验收清单见 [RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md)。
 
 ## 1. 接入信息
 
@@ -58,13 +58,7 @@ curl "https://api.richbest.cn/v1/models" \
 }
 ```
 
-`data[].id` 是 Star Proxy 对外稳定别名。调用方只传该别名，不能传火山完整 Model ID。当前内置别名如下；某个业务 Key 实际可用的子集仍以 `/v1/models` 为准。
-
-| 类型 | 稳定别名 |
-|---|---|
-| 文本/视觉理解 | `deepseek-v4-flash`、`glm-5.2`、`doubao-seed-2.1-pro`、`doubao-seed-2.1-turbo`、`doubao-seed-2.0-pro`、`doubao-seed-2.0-lite`、`doubao-seed-2.0-mini` |
-| 图片 | `seedream-5.0-pro`、`seedream-5.0-lite`、`seedream-5.0`、`seedream-4.5`、`seedream-4.0`、`image2.0` |
-| 视频 | `seedance-2.5`、`seedance-2.0`、`seedance-2.0-fast`、`seedance-2.0-mini`、`seedance-1.0-pro`、`seedance-1.0-pro-fast`、`wan3.0-video`、`minimax-h3` |
+`data[].id` 是 Star Proxy 对外稳定别名。调用方只传该别名，不能传火山完整 Model ID。当前内置模型总表见 [CLIENT_API.md 的“可用模型”](CLIENT_API.md#131-可用模型)；某个业务 Key 实际可用的子集仍只以 `/v1/models` 为准。
 
 别名由 Star Proxy 映射到固定的真实上游模型。模型升级、渠道轮换和供应商差异由中转站管理，调用方不依赖真实 Model ID。
 
