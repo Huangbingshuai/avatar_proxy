@@ -855,3 +855,23 @@ curl "$BASE_URL/v1/audio/generations" \
 ```
 
 响应可能包含临时 `url` 或音频 Base64。临时 URL 由供应商托管并可能过期，调用方应及时下载；中转站不会自动归档媒体。
+
+### 13.7 RichiDrama 对接最小契约
+
+RichiDrama 对接模型中转时只需要在后端保存一枚 Star Proxy 业务 Key，并使用根地址 `https://api.richbest.cn`。漫剧终端用户不直接持有业务 Key，也不需要按用户创建 Star Proxy 项目或火山项目。
+
+模型生成与素材库是两套调用协议：
+
+| RichiDrama 用途 | Star Proxy 路径 | 对接要求 |
+|---|---|---|
+| 同步模型目录 | `GET /v1/models` | 使用 `data[].id` 作为请求模型，使用 `display_name` 展示 |
+| 文本生成 | `POST /v1/chat/completions` 或 `/v1/responses` | 可使用 JSON 或 SSE；不得把别名转换为火山 Model ID |
+| Seedream 图片 | `POST /v1/images/generations` | 不发送 `negative_prompt`、`quality`；负向要求写入主提示词 |
+| 异步视频 | `/api/v3/contents/generations/tasks*` | 请求只发送 `ratio`，不要发送 `aspect_ratio`；保存返回的 `vid_*` |
+| 素材库 | `/api/asset*`、`/api/asset-group*` | 可继续由漫剧内部 `richbest_asset_v3` 适配；素材 ID 可按模型能力通过 `asset://` 引用 |
+
+`richbest`、`richbest_asset_v3` 是 RichiDrama 自己的本地配置名称，不是 Star Proxy 请求字段。RichiDrama 发往中转站的请求不得包含 `provider`、供应商 Key、火山 ProjectName、渠道 ID、Base URL 覆盖值或真实上游模型 ID。
+
+图片和视频创建建议分别使用漫剧自身生成记录 ID 构造 `Idempotency-Key`。视频创建后必须用同一枚业务 Key 查询或取消任务；成功返回的图片、视频和音频 URL 可能过期，应及时转存到 RichiDrama 自己的媒体存储。
+
+截至 RichiDrama `main@de5cdc36a75950b48b8f95a2242e1b56dd745bf3`，素材库中转已经接入，但模型生成仍需按 [RichiDrama 对接 Star Proxy 改造说明](RICHIDRAMA_RELAY_ALIGNMENT.md) 完成适配。

@@ -2,7 +2,9 @@
 
 本文档用于指导 RichiDrama 将文本、图片和视频生成从“直接调用供应商”切换为统一调用 Star Proxy。本文档只规定 RichiDrama 侧的改造和验收，不重新定义中转站接口；完整公开路径、请求字段、响应结构和错误码以 [CLIENT_API.md](CLIENT_API.md) 为准，[MODEL_RELAY_API.md](MODEL_RELAY_API.md) 仅作为模型中转快速接入说明。
 
-本文档基于 RichiDrama `main@fd5d7043bd171c8099343d3322d294d1e5239806`（2026-09-03）核对。RichiDrama 后续代码发生变化时，应重新检查本文列出的调用点。
+本文档基于 RichiDrama `main@de5cdc36a75950b48b8f95a2242e1b56dd745bf3`（2026-09-04）重新核对。RichiDrama 后续代码发生变化时，应重新检查本文列出的调用点。
+
+当前审计结论：RichiDrama 已通过 `richbest_asset_v3` 接入 Star Proxy 素材库，但文本、图片和视频生成仍使用原有供应商配置与调用路径，尚未完成模型中转切换。素材接入和模型中转是两套配置；可以使用同一枚业务 Key，但不能把素材服务类型直接当成模型供应商实现。
 
 ## 1. 对接目标
 
@@ -36,19 +38,20 @@ RichiDrama 浏览器
 
 | 当前行为 | 对接影响 | 目标行为 |
 |---|---|---|
-| 配置指南要求填写火山 Key 和真实端点 ID | RichiDrama 继续依赖火山账号和模型版本 | 只配置 Star Proxy 业务 Key，并从 `/v1/models` 取模型 |
+| 目前只有素材服务使用 `richbest_asset_v3`，模型配置仍要求供应商 Key 和真实模型 ID | 模型生成继续依赖火山账号和具体版本 | 为文本、图片和视频增加独立 `richbest` 分支，只配置 Star Proxy 业务 Key |
 | 视频连接测试拿视频模型请求 `/chat/completions`，且部分非 `401/403` 错误也会被当作联通 | 可能把模型类型错误误报为测试成功 | 使用 `GET /v1/models` 做无费用验证 |
-| Seedream 请求会添加 `negative_prompt` 和 `quality` | `negative_prompt` 被中转站明确拒绝，`quality` 不会在火山生效 | 负向要求合并进 `prompt`，不发送这两个生成参数 |
+| Seedream 已把 `negative_prompt` 合并进主提示词，但仍会发送 `quality` | 负向词处理已经符合中转站要求；`quality` 对 Seedream 不生效 | 保留负向词合并逻辑，Star Proxy 分支不发送 `negative_prompt`、`quality` |
 | 经典 Seedance 请求同时发送 `ratio` 和 `aspect_ratio` | 中转站返回 `422` | 只发送 `ratio` |
 | 非官方 `volcengine_omni` 默认使用 `/v1/videos/generations` | 创建路径与中转站不一致 | 固定使用 `/api/v3/contents/generations/tasks` |
 | `VOLC_MODEL_ALIASES` 会把部分展示名转换成火山真实 ID | 绕过中转站稳定别名治理 | `richbest` 分支原样提交 `/v1/models` 返回的 `id` |
+| 前端模型选项从 `ai_service_configs.model` 汇总 | 无法自动感知中转站授权、下线和别名变化 | 后端拉取 `/v1/models` 并向前端返回动态目录 |
 | 图片和视频请求未传递 HTTP `Idempotency-Key` | 网络超时重试时存在重复生成、重复费用风险 | 使用漫剧内部生成记录 ID 构造稳定幂等键 |
 
 这些差异需要在 RichiDrama 修复，中转站不再为漫剧保留另一套私有路径、火山 Model ID 或无效参数兼容。
 
 ## 3. 统一接入配置
 
-RichiDrama 应增加独立供应商类型 `richbest`，不要继续用 `volcengine` 表示 Star Proxy。这样可以防止代码误用火山默认域名、真实模型 ID 映射或供应商专属探测逻辑。
+RichiDrama 应为文本、图片和视频增加独立供应商类型 `richbest`，不要继续用 `volcengine` 表示 Star Proxy。现有 `richbest_asset_v3` 只负责素材上传、素材组和素材状态，不应复用为模型生成协议。这样可以防止代码误用火山默认域名、真实模型 ID 映射或供应商专属探测逻辑。
 
 统一配置：
 
@@ -67,6 +70,7 @@ api_key=vap_live_xxx
 | 图片 | `POST /v1/images/generations` | 同步返回 |
 | 视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | 取消视频 | `DELETE /api/v3/contents/generations/tasks/{taskId}` | 不适用 |
+| 素材库 | `/api/asset*`、`/api/asset-group*` | 继续使用现有 `richbest_asset_v3` 适配 |
 
 所有请求统一携带：
 
@@ -122,6 +126,7 @@ RichiDrama 当前 OpenAI Chat Completions 请求结构可以保留，主要修�
 3. 不再把模型映射成火山完整版本号。
 4. 识图请求继续使用 OpenAI `image_url` 内容结构，但只允许 `capabilities.imageInput=true` 的模型。
 5. 流式响应可继续使用 SSE；需要用量时保留 `stream_options.include_usage=true`。
+6. 连接测试改为调用 `/v1/models`，不能再用视频模型探测 `/chat/completions`。
 
 示例：
 
@@ -166,7 +171,7 @@ POST /v1/images/generations
 }
 ```
 
-RichiDrama 对 Seedream 必须停止发送：
+RichiDrama 最新代码已经把 Seedream 的负向要求合并进主提示词；进入 `richbest` 分支后必须继续保持该行为，不得发送：
 
 ```text
 negative_prompt
@@ -182,7 +187,7 @@ style
 user
 ```
 
-因此 RichiDrama 对 Seedream 应隐藏 `quality`，不要把用户选择保存为“已生效的模型参数”。`quality` 仍可用于 RichiDrama 自己压缩本地参考图，但不能混同为生成质量参数。
+因此 RichiDrama 对 Seedream 应隐藏 `quality`，且构造 Star Proxy 请求时不要携带该字段。`quality` 仍可用于 RichiDrama 自己压缩本地参考图，但不能混同为生成质量参数。当前 `imageClient.js` 的通用请求体仍会在 `quality` 非空时发送它，这一分支需要按 `richbest`/Seedream 显式过滤。
 
 参考图规则：
 
@@ -239,7 +244,7 @@ DELETE /api/v3/contents/generations/tasks/{taskId}
 }
 ```
 
-视频请求只发送 `ratio`，不得同时发送 `aspect_ratio`。RichiDrama 当前经典 Seedance 分支会同时构造两个字段，必须删除发往 Star Proxy 的 `aspect_ratio`，否则返回 `422 video_parameter_unsupported`。
+视频请求只发送 `ratio`，不得同时发送 `aspect_ratio`。截至本次审计，RichiDrama 的经典视频请求体仍同时构造两个字段；必须在 `richbest` 分支删除 `aspect_ratio`，否则返回 `422 video_parameter_unsupported`。漫剧数据库或界面内部继续使用 `aspect_ratio` 作为业务字段不受影响，限制只针对发送给 Star Proxy 的 HTTP 请求体。
 
 允许字段以 [MODEL_RELAY_API.md](MODEL_RELAY_API.md) 为准。不同模型的字段能力不完全相同，RichiDrama 应读取 `/v1/models` 的 `capabilities`，不要因为统一表单中存在某个选项就向所有模型发送。
 
@@ -349,13 +354,13 @@ RichiDrama 应完整保存以下排障信息：
 
 | 文件 | 需要修改 |
 |---|---|
-| `backend-node/src/services/aiConfigService.js` | 增加 `richbest` 配置模板；连接测试改为 `GET /v1/models`；禁止为 Star Proxy 拼供应商探测路径 |
+| `backend-node/src/services/aiConfigService.js` | 在现有 `richbest_asset_v3` 之外增加模型供应商 `richbest`；连接测试改为 `GET /v1/models`；禁止为 Star Proxy 拼供应商探测路径 |
 | `backend-node/src/services/aiClient.js` | 使用中转站模型别名和统一路径；保留 OpenAI Chat Completions/SSE 格式 |
-| `backend-node/src/services/imageClient.js` | Seedream 不发送 `negative_prompt`、`quality`；参考图限制与模型能力一致 |
-| `backend-node/src/services/videoClient.js` | 固定 `/api/v3/contents/generations/tasks`；只发送 `ratio`；不把别名转换为火山 Model ID；查询和取消使用同一 Key |
+| `backend-node/src/services/imageClient.js` | 保留现有负向词合并逻辑；`richbest`/Seedream 请求不发送 `negative_prompt`、`quality`；参考图限制与模型能力一致 |
+| `backend-node/src/services/videoClient.js` | 为 `richbest` 固定 `/api/v3/contents/generations/tasks`；请求体只发送 `ratio`；不把别名转换为火山 Model ID；查询和取消使用同一 Key |
 | `backend-node/src/routes/aiConfig.js` | 返回动态模型目录；保存时验证所选模型属于当前 Key |
-| `frontweb/src/components/AIConfigContent.vue` | 增加“瑞池中转”配置；按模型目录显示名称和能力；不向普通用户展示供应商 Key |
-| `frontweb/src/composables/useModelOptions.js` | 使用 `data[].id` 作为唯一提交值，删除硬编码火山版本号兜底 |
+| `frontweb/src/components/AIConfigContent.vue` | 在现有“Richbest 多类型素材 API v3”之外增加“瑞池模型中转”；按模型目录显示名称和能力；不向普通用户展示业务 Key |
+| `frontweb/src/composables/useModelOptions.js` | 不再只从本地 `ai_service_configs.model` 汇总；使用 `/v1/models` 的 `data[].id` 作为唯一提交值，删除硬编码火山版本号兜底 |
 
 RichiDrama 当前 `VOLC_MODEL_ALIASES` 只适用于直连火山。进入 `richbest` 分支后不得调用该映射；否则会把中转站稳定别名重新变成真实上游 ID，破坏中转站的版本治理。
 
@@ -379,6 +384,7 @@ RichiDrama 当前 `VOLC_MODEL_ALIASES` 只适用于直连火山。进入 `richbe
 ### P0：上线前必须通过
 
 - [ ] RichiDrama 后端可以使用业务 Key 获取 `/v1/models`。
+- [ ] 素材继续走 `richbest_asset_v3`，模型生成走独立 `richbest` 分支，两者没有混用协议。
 - [ ] 前端只展示接口返回的模型，提交值为 `data[].id`。
 - [ ] 浏览器网络请求和前端资源中不存在业务 Key。
 - [ ] 文本同步和流式请求成功，返回模型名仍为稳定别名。
