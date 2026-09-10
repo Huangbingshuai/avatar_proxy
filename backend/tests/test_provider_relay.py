@@ -1399,11 +1399,18 @@ def test_channel_delete_protection_and_business_admin_cannot_manage_secrets(tmp_
                 "totpCode": "123456",
             },
         )
+        rename_forbidden = client.put(
+            f"/api/internal/provider/channels/{channel['id']}/name",
+            headers=ADMIN_HEADERS,
+            json={"name": "forbidden-rename"},
+        )
         with client.app.state.database.connect() as connection:
             dump = " ".join(connection.iterdump())
 
     assert forbidden.status_code == 403
     assert forbidden.json()["error"]["code"] == "super_admin_required"
+    assert rename_forbidden.status_code == 403
+    assert rename_forbidden.json()["error"]["code"] == "super_admin_required"
     assert "must-not-be-stored" not in dump
 
 

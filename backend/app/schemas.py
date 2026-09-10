@@ -51,6 +51,10 @@ class AdminProviderChannelCreate(ApiModel):
     totp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 
+class AdminProviderChannelRename(ApiModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
 class AdminProviderSecretRotate(ApiModel):
     secret: str = Field(min_length=8, max_length=4096)
     current_password: str = Field(min_length=1, max_length=128)

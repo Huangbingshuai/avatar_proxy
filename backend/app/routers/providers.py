@@ -3,6 +3,7 @@ from fastapi import APIRouter, Query, Request, status
 from ..admin_auth import AdminPrincipal
 from ..schemas import (
     AdminProviderChannelCreate,
+    AdminProviderChannelRename,
     AdminProviderDelete,
     AdminProviderSecretRotate,
     AdminProviderStatusUpdate,
@@ -129,6 +130,28 @@ async def test_provider_channel(
         after={"status": result["status"], "latencyMs": result["latencyMs"]},
     )
     return {"test": result}
+
+
+@router.put("/provider/channels/{channel_id}/name")
+def rename_provider_channel(
+    channel_id: str,
+    payload: AdminProviderChannelRename,
+    request: Request,
+    principal: AdminDependency,
+) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    before = request.app.state.provider_relay.get_channel(channel_id)
+    channel = request.app.state.provider_relay.rename_channel(channel_id, payload.name)
+    _audit(
+        request,
+        principal,
+        "provider.channel.rename",
+        "provider_channel",
+        channel_id,
+        before={"name": before.get("name") if before else None},
+        after={"name": channel["name"]},
+    )
+    return {"channel": channel}
 
 
 @router.post("/provider/channels/{channel_id}/rotate-key")

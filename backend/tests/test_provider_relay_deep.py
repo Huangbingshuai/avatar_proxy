@@ -166,6 +166,17 @@ def test_channel_full_lifecycle_and_not_found_branches(tmp_path: Path) -> None:
             secret="another-secret-abcdefgh", actor_id="owner"
         )) == "provider_channel_name_invalid"
 
+        renamed = relay.rename_channel(first["id"], "  OpenAI production  ")
+        assert renamed["name"] == "OpenAI production"
+        assert error_code(lambda: relay.rename_channel(first["id"], "   ")) == "provider_channel_name_invalid"
+        assert error_code(lambda: relay.rename_channel("missing", "new-name")) == "provider_channel_not_found"
+        duplicate = relay.create_channel(
+            project_name="channels", name="openai-main", provider="openai", config={},
+            secret="duplicate-secret-abcdefgh", actor_id="owner"
+        )
+        assert error_code(lambda: relay.rename_channel(first["id"], "openai-main")) == "provider_channel_exists"
+        relay.delete_channel(duplicate["id"])
+
         rotated = relay.rotate_channel_secret(first["id"], "rotated-secret-abcdefgh", "owner")
         assert rotated["secretHint"].endswith("efgh")
         with client.app.state.database.connect() as connection:
@@ -502,6 +513,14 @@ def test_super_admin_provider_management_routes_cover_full_lifecycle(tmp_path: P
         assert created.status_code == 201, created.text
         channel_id = created.json()["channel"]["id"]
 
+        renamed = client.put(
+            f"/api/internal/provider/channels/{channel_id}/name",
+            headers=csrf,
+            json={"name": "renamed-openai"},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["channel"]["name"] == "renamed-openai"
+
         client.app.state.provider_relay.transport = httpx.MockTransport(
             lambda _: httpx.Response(200, json={"data": []})
         )
@@ -548,6 +567,6 @@ def test_super_admin_provider_management_routes_cover_full_lifecycle(tmp_path: P
                 "SELECT action FROM admin_audit_logs WHERE action LIKE 'provider.channel.%' ORDER BY id"
             )]
         assert actions == [
-            "provider.channel.create", "provider.channel.test", "provider.channel.rotate",
+            "provider.channel.create", "provider.channel.rename", "provider.channel.test", "provider.channel.rotate",
             "provider.channel.status", "provider.channel.delete",
         ]

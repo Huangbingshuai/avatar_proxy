@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   KeyRound,
   LoaderCircle,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -80,6 +81,8 @@ export default function ProviderChannelsPanel({
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [renameTarget, setRenameTarget] = useState<Channel | null>(null);
+  const [renameName, setRenameName] = useState("");
   const [rotateTarget, setRotateTarget] = useState<Channel | null>(null);
   const [rotateForm, setRotateForm] = useState({
     secret: "",
@@ -160,6 +163,29 @@ export default function ProviderChannelsPanel({
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "渠道测试失败");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function renameChannel(event: FormEvent) {
+    event.preventDefault();
+    if (!renameTarget) return;
+    setBusy(`rename-${renameTarget.id}`);
+    setError("");
+    try {
+      await adminApi(
+        `/api/internal/provider/channels/${encodeURIComponent(renameTarget.id)}/name`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ name: renameName }),
+        },
+      );
+      setRenameTarget(null);
+      setRenameName("");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "渠道名称修改失败");
     } finally {
       setBusy("");
     }
@@ -298,6 +324,17 @@ export default function ProviderChannelsPanel({
               <p className="providerTestError">{channel.lastTestError}</p>
             )}
             <footer>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setRenameTarget(channel);
+                  setRenameName(channel.name);
+                }}
+                disabled={Boolean(busy)}
+              >
+                <Pencil size={13} />
+                改名
+              </button>
               <button
                 className="secondary"
                 onClick={() => void testChannel(channel)}
@@ -516,6 +553,54 @@ export default function ProviderChannelsPanel({
                   </>
                 ) : (
                   "加密保存渠道"
+                )}
+              </button>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {renameTarget && (
+        <div className="modalBackdrop">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rename-channel-title"
+          >
+            <header>
+              <h2 id="rename-channel-title">修改渠道名称</h2>
+              <button
+                onClick={() => {
+                  setRenameTarget(null);
+                  setRenameName("");
+                }}
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </header>
+            <form className="stackForm" onSubmit={renameChannel}>
+              <label>
+                新渠道名称
+                <input
+                  required
+                  maxLength={100}
+                  value={renameName}
+                  onChange={(event) => setRenameName(event.target.value)}
+                />
+              </label>
+              <button
+                className="primary wide"
+                disabled={busy === `rename-${renameTarget.id}`}
+              >
+                {busy === `rename-${renameTarget.id}` ? (
+                  <>
+                    <LoaderCircle size={15} className="spin" />
+                    正在保存
+                  </>
+                ) : (
+                  "保存名称"
                 )}
               </button>
             </form>

@@ -410,6 +410,25 @@ class ProviderRelay:
             )
         return self.get_channel(channel_id) or {}
 
+    def rename_channel(self, channel_id: str, name: str) -> dict[str, Any]:
+        normalized_name = name.strip()
+        if not normalized_name or len(normalized_name) > 100:
+            raise ApiError("渠道名称长度无效", 422, "provider_channel_name_invalid")
+        with self.database.connect() as connection:
+            try:
+                cursor = connection.execute(
+                    "UPDATE provider_channels SET name=?,updated_at=CURRENT_TIMESTAMP "
+                    "WHERE id=? AND deleted_at IS NULL",
+                    (normalized_name, channel_id),
+                )
+            except Exception as error:
+                if "UNIQUE constraint" in str(error):
+                    raise ApiError("项目中已存在同名渠道", 409, "provider_channel_exists") from error
+                raise
+            if cursor.rowcount != 1:
+                raise ApiError("供应商渠道不存在", 404, "provider_channel_not_found")
+        return self.get_channel(channel_id) or {}
+
     def set_channel_status(self, channel_id: str, enabled: bool) -> dict[str, Any]:
         with self.database.connect() as connection:
             cursor = connection.execute(

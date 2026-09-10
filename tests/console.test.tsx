@@ -104,6 +104,12 @@ function installFetch(data: MockData = {}) {
     }
     if (url.pathname === "/api/internal/provider/channels") return jsonResponse({ channels: url.searchParams.get("projectName") ? providerChannels.filter((item) => item.projectName === url.searchParams.get("projectName")) : providerChannels });
     if (/\/api\/internal\/provider\/channels\/[^/]+\/test$/.test(url.pathname)) return jsonResponse({ test: { status: "success", latencyMs: 77 } });
+    if (/\/api\/internal\/provider\/channels\/[^/]+\/name$/.test(url.pathname) && init?.method === "PUT") {
+      const channelId = url.pathname.split("/").at(-2);
+      const body = JSON.parse(String(init.body));
+      providerChannels = providerChannels.map((item) => item.id === channelId ? { ...item, name: body.name } : item);
+      return jsonResponse({ channel: providerChannels.find((item) => item.id === channelId) });
+    }
     if (/\/api\/internal\/provider\/channels\/[^/]+\/(rotate-key|status)$/.test(url.pathname)) return jsonResponse({ channel: providerChannels[0] });
     if (/\/api\/internal\/provider\/channels\/[^/]+$/.test(url.pathname) && init?.method === "DELETE") return jsonResponse({ deleted: true });
     if (url.pathname === "/api/internal/model/catalog") return jsonResponse({ models: modelCatalog });
@@ -533,6 +539,16 @@ describe("内部控制台", () => {
     const user = await login();
     expect(await screen.findByRole("heading", { name: "供应商渠道" })).toBeInTheDocument();
     expect(screen.getByText("ark****1234")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "改名" }));
+    const renameDialog = screen.getByRole("dialog", { name: "修改渠道名称" });
+    const renameInput = within(renameDialog).getByLabelText("新渠道名称");
+    await user.clear(renameInput);
+    await user.type(renameInput, "客户A方舟生产渠道");
+    await user.click(within(renameDialog).getByRole("button", { name: "保存名称" }));
+    await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/provider/channels/channel-ark/name" && call.init?.method === "PUT")).toBe(true));
+    const renameCall = calls.find((call) => call.path === "/api/internal/provider/channels/channel-ark/name");
+    expect(JSON.parse(String(renameCall?.init?.body))).toEqual({ name: "客户A方舟生产渠道" });
+    expect(await screen.findByText("客户A方舟生产渠道")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "创建渠道" }));
     const dialog = screen.getByRole("dialog", { name: "创建供应商渠道" });
     expect(within(dialog).queryByLabelText(/火山 ProjectName/)).not.toBeInTheDocument();
