@@ -539,7 +539,8 @@ describe("内部控制台", () => {
     const user = await login();
     expect(await screen.findByRole("heading", { name: "供应商渠道" })).toBeInTheDocument();
     expect(screen.getByText("ark****1234")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "改名" }));
+    expect(screen.queryByRole("button", { name: "改名" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "修改“客户A方舟”名称" }));
     const renameDialog = screen.getByRole("dialog", { name: "修改渠道名称" });
     const renameInput = within(renameDialog).getByLabelText("新渠道名称");
     await user.clear(renameInput);

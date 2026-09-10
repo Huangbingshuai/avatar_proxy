@@ -550,6 +550,11 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .providerChannelCard header { display: flex; align-items: center; gap: 10px; }
 .providerChannelCard header > span { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; color: var(--coral-dark); background: var(--coral-soft); }
 .providerChannelCard header > div { display: grid; gap: 3px; flex: 1; }
+.providerChannelTitle { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.channelRenameButton { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 7px; color: var(--muted); background: transparent; cursor: pointer; }
+.channelRenameButton:hover { color: var(--coral-dark); background: var(--coral-soft); }
+.channelRenameButton:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+.channelRenameButton:disabled { cursor: not-allowed; opacity: .45; }
 .providerChannelCard header small { color: var(--muted); }
 .providerChannelCard header i { font-style: normal; font-size: 12px; padding: 4px 9px; border-radius: 999px; }
 .providerChannelCard header i.active { color: #177451; background: #e9f7f0; }

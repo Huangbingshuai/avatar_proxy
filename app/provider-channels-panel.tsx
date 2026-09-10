@@ -283,7 +283,22 @@ export default function ProviderChannelsPanel({
                 <ServerCog size={18} />
               </span>
               <div>
-                <b>{channel.name}</b>
+                <div className="providerChannelTitle">
+                  <b>{channel.name}</b>
+                  <button
+                    type="button"
+                    className="channelRenameButton"
+                    onClick={() => {
+                      setRenameTarget(channel);
+                      setRenameName(channel.name);
+                    }}
+                    disabled={Boolean(busy)}
+                    aria-label={`修改“${channel.name}”名称`}
+                    title="修改名称"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </div>
                 <small>
                   {providerLabels[channel.provider]} · {channel.projectName}
                 </small>
@@ -324,17 +339,6 @@ export default function ProviderChannelsPanel({
               <p className="providerTestError">{channel.lastTestError}</p>
             )}
             <footer>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setRenameTarget(channel);
-                  setRenameName(channel.name);
-                }}
-                disabled={Boolean(busy)}
-              >
-                <Pencil size={13} />
-                改名
-              </button>
               <button
                 className="secondary"
                 onClick={() => void testChannel(channel)}
