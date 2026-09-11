@@ -1,6 +1,6 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.7
+版本：5.8
 
 更新日期：2026-09-11
 正式地址：`https://api.richbest.cn`
@@ -20,6 +20,13 @@
 - 图片和视频任务支持调用方提供 `Idempotency-Key`，任务与用量始终按业务 Key 和项目隔离。
 - `/v1/models` 是当前项目可用模型及能力的唯一实时来源；本文档中的列表用于说明接口范围，不代表每个项目默认全部开通。
 - `/v1/pricing` 只返回当前项目已经启用且渠道可用的模型价目，支持按模型别名或展示名称过滤。
+
+### 5.8 文档基线
+
+- 修正 `/api/auth/me` 的响应字段，使示例与实际接口一致。
+- 补充素材组、素材列表、向量和音频接口的参数边界及响应约定。
+- 明确 `/api/*`、`/api/v3/*` 与 `/v1/*` 的额度错误格式及 `Retry-After` 行为。
+- 客户主文档只保留通用公开契约，特定调用方的开发状态继续由各自的对接文档维护。
 
 ## 1. 鉴权
 
@@ -95,10 +102,11 @@ curl "$BASE_URL/api/auth/me" \
 ```json
 {
   "authenticated": true,
-  "apiKeyId": "3ee92a25-4dd8-42c6-9af5-b8d74891f870",
-  "projectName": "customer_project"
+  "apiKeyId": "3ee92a25-4dd8-42c6-9af5-b8d74891f870"
 }
 ```
+
+该接口不会返回客户项目名、供应商凭证或模型渠道信息。
 
 ## 5. 上传本地素材
 
@@ -154,7 +162,14 @@ curl -X POST "$BASE_URL/api/asset/upload-file" \
 
 ## 6. 素材组
 
+除 `/api/asset/upload-file` 外，素材组和素材管理接口会保留火山方舟的 HTTP 状态码、JSON 响应结构和字段大小写，不把上游响应改写成另一套格式。客户端应以 HTTP `2xx` 判断请求是否被接收，并保留响应中的 `ResponseMetadata.RequestId` 以便排查；上游错误也按第 11 节说明透传。
+
 ### 6.1 创建素材组
+
+| 字段 | 必填 | 约束 |
+|---|---:|---|
+| `name` | 是 | 1～128 个字符 |
+| `description` | 否 | 最多 1000 个字符；省略时为空字符串 |
 
 ```bash
 curl -X POST "$BASE_URL/api/asset-group/create" \
@@ -175,7 +190,12 @@ curl "$BASE_URL/api/asset-group/list?pageNumber=1&pageSize=20" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-可选参数包括 `name` 和可重复传递的 `groupIds`。
+| 查询参数 | 必填 | 默认值与约束 |
+|---|---:|---|
+| `pageNumber` | 否 | 默认 `1`，最小为 `1` |
+| `pageSize` | 否 | 默认 `20`，范围为 `1`～`100` |
+| `name` | 否 | 按名称筛选 |
+| `groupIds` | 否 | 可重复传递，例如 `groupIds=g1&groupIds=g2` |
 
 ### 6.3 查询、修改和删除素材组
 
@@ -191,6 +211,8 @@ curl -X PUT "$BASE_URL/api/asset-group/update" \
 curl -X DELETE "$BASE_URL/api/asset-group/delete?groupId=group-xxxxxxxx" \
   -H "Authorization: Bearer $API_KEY"
 ```
+
+查询和删除时 `groupId` 必填且不能为空。修改时 `groupId` 必填，并且 `name`、`description` 至少提供一项；`name` 为 1～128 个字符，`description` 最多 1000 个字符。
 
 ## 7. 登记素材
 
@@ -277,7 +299,17 @@ curl "$BASE_URL/api/asset/list?groupId=group-xxxxxxxx&pageNumber=1&pageSize=20" 
   -H "Authorization: Bearer $API_KEY"
 ```
 
-可选参数：`name`、可重复传递的 `statuses`、`sortBy` 和 `sortOrder`。
+| 查询参数 | 必填 | 默认值与约束 |
+|---|---:|---|
+| `groupId` | 是 | 目标素材组 ID，不能为空 |
+| `pageNumber` | 否 | 默认 `1`，最小为 `1` |
+| `pageSize` | 否 | 默认 `20`，范围为 `1`～`100` |
+| `name` | 否 | 按素材名称筛选 |
+| `statuses` | 否 | 可重复传递，例如 `statuses=Active&statuses=Failed` |
+| `sortBy` | 否 | 默认 `CreateTime`，原样传递给方舟 |
+| `sortOrder` | 否 | 默认 `Desc`，原样传递给方舟 |
+
+列表响应保持方舟原始分页结构。调用方不要把本系统素材账本状态当作列表响应字段；客户可见素材状态以方舟响应为准。
 
 ## 9. 修改和删除素材
 
@@ -473,6 +505,30 @@ curl -X DELETE "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 | 413 | `file_too_large` | 文件超过对应类型的大小上限 |
 | 415 | `unsupported_media_type` | 不支持该 MIME 类型 |
 | 429 | `quota_exceeded` / `rate_limit_exceeded` | 项目或 API Key 额度不足 |
+
+额度错误分为两种客户可见格式：
+
+- `/api/*` 与 `/api/v3/*` 会在 `error` 中返回 `metric`、`scope`、`limit`、`used`、`resetAt` 和 `requestId`；
+- `/v1/*` 保持 OpenAI 风格错误，返回 `error.code=quota_exceeded` 和顶层 `request_id`，不返回上述额度明细。
+
+`scope` 为 `project` 或 `api_key`。按分钟或按日自动恢复的限制会同时返回 `Retry-After` 响应头；素材总量、存储总量等没有固定恢复时间的限制不会返回该响应头，`resetAt` 为 `null`。所有接口还会返回 `X-Request-Id` 响应头，联系支持时应优先提供该值。
+
+`/api/*` 或 `/api/v3/*` 的额度错误示例：
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "额度已用尽",
+    "metric": "writeQpm",
+    "scope": "project",
+    "limit": 100,
+    "used": 100,
+    "resetAt": "2026-09-11T10:31:00+08:00",
+    "requestId": "req_0123456789abcdef"
+  }
+}
+```
 
 方舟返回的错误响应会原样透传，包括 `ResponseMetadata.Error.Code`、`ResponseMetadata.Error.Message` 和 `RequestId`。排查问题时请保留完整响应以及 `RequestId`，但不要提供业务 API Key。
 
@@ -742,6 +798,28 @@ curl -N "$BASE_URL/v1/chat/completions" \
 
 服务端逐段透传标准 SSE 数据，并以供应商的结束事件为准。客户端应逐行消费 `data:` 事件，不能等待整个响应完成后再一次性解析。流式连接中断后，服务端不会自动重放写请求；供应商没有返回最终 `usage` 时，用量字段保持未知。
 
+Chat Completions 当前接受的顶层字段为：
+
+```text
+model, messages, stream, stream_options, frequency_penalty, function_call,
+functions, logit_bias, logprobs, top_logprobs, max_completion_tokens,
+max_tokens, n, parallel_tool_calls, presence_penalty, reasoning_effort,
+response_format, seed, service_tier, stop, store, temperature, tool_choice,
+tools, top_p, user, metadata
+```
+
+Responses 当前接受的顶层字段为：
+
+```text
+model, input, stream, background, conversation, include, instructions,
+max_output_tokens, max_tool_calls, metadata, parallel_tool_calls,
+previous_response_id, prompt, reasoning, safety_identifier, service_tier,
+store, stream_options, temperature, text, tool_choice, tools, top_logprobs,
+top_p, truncation, user
+```
+
+两类接口的 `model` 均必填且最长 128 个字符，`stream` 如提供必须为布尔值。上述字段表示中转站允许接收的顶层字段；具体模型是否支持其中某项能力，仍以 `/v1/models` 和供应商响应为准。
+
 Responses 示例：
 
 ```bash
@@ -820,6 +898,8 @@ curl "$BASE_URL/v1/images/generations" \
 ```
 
 `image` 可填写单个 HTTP(S) 图片 URL、图片 Data URL 或 URL 数组，具体数量由 `/v1/models` 的 `maxInputImages` 决定。`n` 必须是 1～15 的整数，并且不能超过该模型返回的 `maxN`；`n>1` 只在支持组图的 Seedream 模型上生效，中转层会转换为方舟组图参数。还可按模型能力使用 `size`、`output_format`、`watermark`、`sequential_image_generation`、`sequential_image_generation_options`、`optimize_prompt_options` 和 `tools`。不支持的模型能力会返回明确的 `422`，不会盲目透传。
+
+`model` 必填且最长 128 个字符，`prompt` 必填且为 1～32000 个字符。`response_format` 只允许 `url` 或 `b64_json`，默认 `url`。除上述能力字段外，接口还允许供应商适配所需的 `background`、`moderation`、`output_compression`、`guidance_scale` 和 `seed`；是否实际生效取决于 `/v1/models` 返回的模型能力。
 
 图片接口允许部分 OpenAI 兼容字段，但不会把 `quality`、`style`、`user` 等供应商无关字段转发给火山 Seedream，因此调用方不能把它们展示为对 Seedream 生效的控制项。`negative_prompt` 不属于当前公开图片契约，传入会返回 `422 image_parameter_unsupported`；负向要求应直接写入 `prompt`。当前公开接口只提供非流式 JSON 响应；传入 `stream=true` 会返回 `image_stream_unsupported`。返回 URL 属于供应商临时资源，本系统不会自动转存到 TOS，请在供应商有效期内下载。
 
@@ -906,7 +986,59 @@ curl "$BASE_URL/v1/images/generations" \
 | `GET` | `/v1/audio/transcriptions/{taskId}` | 查询录音识别任务 |
 | `POST` | `/v1/audio/generations` | `doubao-seed-audio-1.0` 音频生成 |
 
-具体请求字段和能力必须以 `/v1/models` 返回的 `capabilities` 为准。语音合成直接返回音频二进制；录音识别创建成功返回 `202`，后续使用同一枚业务 Key 查询任务。
+具体模型能力以 `/v1/models` 返回的 `capabilities` 为准；请求字段及本系统校验边界如下。
+
+向量接口字段：
+
+| 字段 | `/v1/embeddings` | `/v1/embeddings/multimodal` | 说明 |
+|---|---:|---:|---|
+| `model` | 必填 | 必填 | 使用 `/v1/models` 返回的别名，最长 128 个字符 |
+| `input` | 必填 | 必填 | 文本接口当前一次只接受一个字符串或仅含一个字符串的数组；多模态接口接受内容数组 |
+| `dimensions` | 可选 | 可选 | 只允许 `1024` 或 `2048` |
+| `encoding_format` | 可选 | 可选 | 原样传递给供应商 |
+| `instructions` | 可选 | 可选 | 原样传递给供应商 |
+| `user` | 可选 | 不支持 | OpenAI 兼容字段 |
+| `sparse_embedding` | 可选 | 不支持 | 当前文本适配不会向 embedding-vision 上游传递该字段 |
+
+文本向量成功响应为 OpenAI 风格的 `object=list`，`data[].embedding` 为向量数组，`model` 会改写为客户提交的公开别名；响应头包含 `X-Request-Id`。
+
+语音合成字段：
+
+| 字段 | 必填 | 默认值与约束 |
+|---|---:|---|
+| `model` | 是 | 必须为可用的 `doubao-seed-tts-2.0` 别名 |
+| `input` | 是 | 1～10000 个字符 |
+| `voice` | 是 | 当前语音项目已开通的 TTS 2.0 音色 ID，最长 128 个字符 |
+| `response_format` | 否 | 默认 `mp3`；可选 `mp3`、`pcm`、`ogg_opus` |
+| `sample_rate` | 否 | 默认 `24000`；可选 `8000`、`16000`、`22050`、`24000`、`32000`、`44100`、`48000` |
+| `speed` | 否 | 默认 `0`；范围 `-50`～`100` 的整数 |
+
+语音合成成功时直接返回音频二进制，Content-Type 分别为 `audio/mpeg`、`audio/L16` 或 `audio/ogg`，响应头包含 `X-Request-Id`，不要把响应体按 JSON 解析。
+
+录音识别字段：
+
+| 字段 | 必填 | 默认值与约束 |
+|---|---:|---|
+| `model` | 是 | 必须为可用的 `doubao-seedasr-2.0` 别名 |
+| `url` | 是 | 公网可访问的 HTTPS 音频 URL，最长 2048 个字符 |
+| `language` | 否 | 语言提示；省略时由供应商处理 |
+| `enable_speaker_info` | 否 | 默认 `false`，是否返回说话人信息 |
+
+录音识别创建成功返回 `202`。创建和查询都必须使用同一枚业务 Key；`Idempotency-Key` 可选，规则与第 13.6 节一致。任务响应固定包含 `id`、`object=audio.transcription`、`model`、`status` 和 `created_at`；成功后增加 `text` 和可用时的 `duration`，失败时增加 `error.code` 与 `error.message`。
+
+音频生成字段：
+
+| 字段 | 必填 | 说明 |
+|---|---:|---|
+| `model` | 是 | 必须为可用的 `doubao-seed-audio-1.0` 别名 |
+| `prompt` | 是 | 1～4000 个字符 |
+| `speaker` | 否 | 供应商支持的音色或说话人参数 |
+| `audio_url` / `audio_data` | 否 | 可选音频参考输入 |
+| `image_url` / `image_data` | 否 | 可选图片参考输入 |
+| `duration` | 否 | 期望时长，由供应商校验 |
+| `format` | 否 | 期望输出格式，由供应商校验 |
+
+音频生成成功响应包含 `created`、公开模型别名 `model` 和 `data` 数组；`data[0]` 可能包含 `url`、`audio`、`duration`、`original_duration` 或 `subtitle`，只返回供应商实际提供的字段，响应头包含 `X-Request-Id`。
 
 文本向量化示例：
 
@@ -960,22 +1092,17 @@ curl "$BASE_URL/v1/audio/generations" \
 
 响应可能包含临时 `url` 或音频 Base64。临时 URL 由供应商托管并可能过期，调用方应及时下载；中转站不会自动归档媒体。
 
-### 13.8 RichiDrama 对接最小契约
+### 13.8 客户系统对接检查表
 
-RichiDrama 对接模型中转时只需要在后端保存一枚 Star Proxy 业务 Key，并使用根地址 `https://api.richbest.cn`。漫剧终端用户不直接持有业务 Key，也不需要按用户创建 Star Proxy 项目或火山项目。
-
-模型生成与素材库是两套调用协议：
-
-| RichiDrama 用途 | Star Proxy 路径 | 对接要求 |
+| 用途 | 接口 | 客户端要求 |
 |---|---|---|
-| 同步模型目录 | `GET /v1/models` | 使用 `data[].id` 作为请求模型，使用 `display_name` 展示 |
-| 文本生成 | `POST /v1/chat/completions` 或 `/v1/responses` | 可使用 JSON 或 SSE；不得把别名转换为火山 Model ID |
-| Seedream 图片 | `POST /v1/images/generations` | 不发送 `negative_prompt`、`quality`；负向要求写入主提示词 |
-| 异步视频 | `/api/v3/contents/generations/tasks*` | 请求只发送 `ratio`，不要发送 `aspect_ratio`；保存返回的 `vid_*` |
-| 素材库 | `/api/asset*`、`/api/asset-group*` | 可继续由漫剧内部 `richbest_asset_v3` 适配；素材 ID 可按模型能力通过 `asset://` 引用 |
+| 同步模型目录 | `GET /v1/models` | 使用 `data[].id` 发起请求，使用 `display_name` 展示，不猜测或自行拼接模型名 |
+| 查询价格 | `GET /v1/pricing` | 金额按十进制字符串处理；`configured=false` 或价格为空不表示免费 |
+| 文本生成 | `POST /v1/chat/completions` 或 `/v1/responses` | 根据模型能力选择接口和流式模式，不把公开别名转换成供应商 Model ID |
+| 图片生成 | `POST /v1/images/generations` | Seedream 不发送 `negative_prompt`；只展示当前模型真正支持的参数 |
+| 异步视频 | `/api/v3/contents/generations/tasks*` | 只发送 `ratio`，不发送 `aspect_ratio`；保存返回的 `vid_*`，并使用创建任务的同一枚业务 Key 查询或取消 |
+| 素材库 | `/api/asset*`、`/api/asset-group*` | 上传与登记分两步；素材变为 `Active` 后再用于生成任务 |
 
-`richbest`、`richbest_asset_v3` 是 RichiDrama 自己的本地配置名称，不是 Star Proxy 请求字段。RichiDrama 发往中转站的请求不得包含 `provider`、供应商 Key、火山 ProjectName、渠道 ID、Base URL 覆盖值或真实上游模型 ID。
+业务 Key 只能保存在客户自己的服务端，不应下发给浏览器或终端用户。请求不得包含 `provider`、供应商 Key、火山 ProjectName、渠道 ID、Base URL 覆盖值或真实上游模型 ID。图片和视频创建建议使用客户自己的业务记录 ID 构造唯一 `Idempotency-Key`；供应商返回的图片、视频和音频 URL 可能过期，应及时转存到客户自己的媒体存储。
 
-图片和视频创建建议分别使用漫剧自身生成记录 ID 构造 `Idempotency-Key`。视频创建后必须用同一枚业务 Key 查询或取消任务；成功返回的图片、视频和音频 URL 可能过期，应及时转存到 RichiDrama 自己的媒体存储。
-
-截至 RichiDrama `main@de5cdc36a75950b48b8f95a2242e1b56dd745bf3`，素材库中转已经接入，但模型生成仍需按 [RichiDrama 对接 Star Proxy 改造说明](RICHIDRAMA_RELAY_ALIGNMENT.md) 完成适配。
+特定系统的代码改造和版本进度不属于客户公开 HTTP 契约，应在独立对接文档中维护。例如 RichiDrama 的适配要求见 [RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md)，该文档不能覆盖本文档定义的公开路径、字段、响应和错误规则。
