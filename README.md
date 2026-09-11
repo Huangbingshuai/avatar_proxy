@@ -316,6 +316,14 @@ npm test
 - `POST /minidrama/payments/callbacks/wechat` 透明转发微信支付通知到 LocalMiniDrama；
 - 生产环境应保持 `ENABLE_API_DOCS=false`。
 
+### 生产发布基线（2026-09-11）
+
+- 当前生产应用 Release 为 `20260911-model-pricing-5b87232`，对应代码提交 `5b87232`；后续仅修改文档并推送 Git 不代表生产应用已经再次部署。
+- 本次发布只重建 `api` 和 `console`，客户工具 `edge` 与 HTTPS `api-gateway` 容器均未重启；网关仅在配置校验通过后执行无中断 reload。
+- 发布前使用 SQLite 在线备份生成一致性快照，并同时保留 `admin_totp.key`、`provider_credentials.key`、生产环境配置和旧 API/控制台镜像标签。回滚备份位于 `/opt/avatar-proxy/backups/20260911-model-pricing-before-5b87232`。
+- 发布后已确认 API 健康、控制台首页可访问、SQLite `integrity_check` 通过、容器无异常重启；`/v1/pricing` 正确执行业务 Key 鉴权，微信回调路由仍只接受 `POST`，素材接口在切换后已有真实请求成功返回。
+- 后续同类发布应继续采用“先备份与校验 → 在新 Release 预构建和隔离预检 → 单独替换 API → 健康后替换控制台 → reload 网关 → 回归素材、模型、价格和支付回调”的顺序。仅当前端或后端发生变化时，不应重建无关的 `edge`、`api-gateway` 或其他宿主机业务容器。
+
 支付回调上游只通过服务端部署变量配置：
 
 ```dotenv
