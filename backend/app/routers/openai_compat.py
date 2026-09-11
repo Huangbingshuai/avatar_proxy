@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Header, Request
+from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from ..errors import ApiError
@@ -67,6 +67,16 @@ def _payload(value: Any) -> dict[str, Any]:
 @router.get("/models")
 def models(request: Request, principal: PrincipalDependency) -> dict:
     return {"object": "list", "data": request.app.state.provider_relay.available_models(principal)}
+
+
+@router.get("/pricing")
+def pricing(
+    request: Request,
+    principal: PrincipalDependency,
+    model: str | None = Query(default=None, min_length=1, max_length=128),
+) -> dict:
+    available = request.app.state.provider_relay.available_models(principal)
+    return request.app.state.billing.public_rates(principal.project_name, available, model)
 
 
 async def _text(

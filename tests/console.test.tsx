@@ -321,6 +321,34 @@ describe("内部控制台", () => {
     expect(new Headers(confirm?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
   });
 
+  it("超级管理员可以按厂商、类型、状态和名称筛选全局模型价目", async () => {
+    installFetch({ role: "super_admin" });
+    const user = await login();
+    const heading = await screen.findByRole("heading", { name: "全局模型价目" });
+    const section = heading.closest("section");
+    expect(section).not.toBeNull();
+
+    expect(within(section!).getByText("显示 2 / 2 个模型")).toBeInTheDocument();
+    await user.click(within(section!).getByRole("button", { name: "MaxModel" }));
+    expect(within(section!).getByText("gpt-image-2")).toBeInTheDocument();
+    expect(within(section!).queryByText("glm-5.2")).not.toBeInTheDocument();
+
+    await user.click(within(section!).getByRole("button", { name: /已定价/ }));
+    expect(within(section!).getByText("没有符合当前筛选条件的模型。")).toBeInTheDocument();
+    await user.click(within(section!).getByRole("button", { name: /待定价/ }));
+    expect(within(section!).getByText("gpt-image-2")).toBeInTheDocument();
+
+    const allButtons = within(section!).getAllByRole("button", { name: /全部/ });
+    await user.click(allButtons[0]);
+    await user.click(allButtons[2]);
+    await user.type(within(section!).getByRole("textbox", { name: "搜索价格模型" }), "GLM");
+    expect(within(section!).getByText("glm-5.2")).toBeInTheDocument();
+    expect(within(section!).getByText("输出 Token")).toBeInTheDocument();
+    expect(within(section!).queryByText("输出 / 视频 Token")).not.toBeInTheDocument();
+    expect(within(section!).queryByText("gpt-image-2")).not.toBeInTheDocument();
+    expect(within(section!).getByText("显示 1 / 2 个模型")).toBeInTheDocument();
+  });
+
   it("超级管理员只查看磁盘空间并保存阈值配置", async () => {
     const { calls } = installFetch({ role: "super_admin", monitorPercent: 68.4 });
     const user = await login();
@@ -509,6 +537,7 @@ describe("内部控制台", () => {
     expect(screen.getByText("项目级")).toBeInTheDocument();
     expect(screen.queryByLabelText(/真实模型ID/)).not.toBeInTheDocument();
     expect(screen.getAllByText("glm-5.2").length).toBeGreaterThan(0);
+    expect(screen.getByText("¥8–¥28 / 百万Token")).toBeInTheDocument();
     expect(await screen.findByText("10 / 20 tokens")).toBeInTheDocument();
 
     const catalogSection = screen.getByRole("heading", { name: "项目模型绑定" }).closest("section");

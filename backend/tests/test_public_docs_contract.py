@@ -36,6 +36,7 @@ def test_client_api_lists_current_public_model_routes() -> None:
     }
     expected_paths = {
         "/v1/models",
+        "/v1/pricing",
         "/v1/chat/completions",
         "/v1/responses",
         "/v1/images/generations",
@@ -58,7 +59,7 @@ def test_specialized_docs_defer_to_client_contract() -> None:
     relay = _text(MODEL_RELAY_DOC)
     richidrama = _text(RICHIDRAMA_DOC)
 
-    assert "版本：5.5" in client
+    assert "版本：5.6" in client
     assert "旧的 `seedance-*`、`seedream-*` 短别名已经停用" in client
     assert "CLIENT_API.md" in relay
     assert "CLIENT_API.md" in richidrama

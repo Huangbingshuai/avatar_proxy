@@ -51,6 +51,7 @@ Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素
 - 统一 `429` 限流协议、额度事件、审计与失败清理。
 - 可选的模型中转：使用同一枚 `vap_live_*` 调用文本、图片、多模态向量、音频和统一异步视频接口；按项目路由到火山方舟、豆包语音、阿里百炼、MiniMax、MaxModel 或 OpenAI 渠道。
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
+- 普通管理员在项目模型启用列表中直接查看全局税前价格；客户可通过 `/v1/pricing` 查询当前项目可用模型的全局价和项目折扣后参考价。
 - 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；图片覆盖 Doubao Seedream 4.0、4.5、5.0、5.0 Lite、5.0 Pro，以及经 MaxModel 转发的 `gpt-image-2`；视频覆盖 6 个 Doubao Seedance 模型、阿里百炼 `wan3.0-video` 和 MiniMax `minimax-h3`；另提供 Doubao 多模态向量、TTS、ASR 和 Seed Audio。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
 
 模型中转调用方可直接使用 [模型中转接口文档](backend/MODEL_RELAY_API.md)；素材库及完整客户接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。模型目录的固定映射、接入门槛和验收记录见 [火山方舟模型目录维护文档](backend/VOLCENGINE_MODEL_CATALOG.md)。
@@ -67,6 +68,7 @@ Authorization: Bearer vap_live_xxx
 
 | 能力 | 接口 |
 |---|---|
+| 当前项目模型价格 | `GET /v1/pricing`，可用 `?model=模型名称` 过滤 |
 | 文本对话 | `POST /v1/chat/completions`、`POST /v1/responses` |
 | 图片生成与改图 | `POST /v1/images/generations` |
 | 文本/多模态向量 | `POST /v1/embeddings`、`POST /v1/embeddings/multimodal` |
@@ -95,7 +97,7 @@ Authorization: Bearer vap_live_xxx
 - 启用时使用独立 Fernet 主密钥；未显式配置 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 时，系统会在 SQLite 同目录自动创建并复用 `provider_credentials.key`，SQLite 仍只保存凭证密文和尾号掩码。
 - 固定使用供应商官方 HTTPS 域名，客户请求不能指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
 - `gpt-image-2` 使用项目级 MaxModel 渠道：超级管理员只需录入 MaxModel API Key，系统固定请求 `https://aiapi.maxmaas.com/v1/images/generations`；原有 `image2.0` 别名会迁移为 `gpt-image-2`，旧 OpenAI 绑定会被清除，防止旧凭证被发送到新上游。
-- `/v1/models` 只返回当前业务 Key 所属项目已启用且渠道可用的模型；支持 Chat Completions、Responses、图片与多模态向量接口，以及豆包语音合成、异步录音识别和音频生成。
+- `/v1/models` 只返回当前业务 Key 所属项目已启用且渠道可用的模型；`/v1/pricing` 在相同项目隔离规则下返回税前价目并支持模型名称过滤；支持 Chat Completions、Responses、图片与多模态向量接口，以及豆包语音合成、异步录音识别和音频生成。
 - Seedance 视频使用与火山方舟、漫剧调用格式一致的 `/api/v3/contents/generations/tasks` 异步任务接口；任务提交后固定渠道、凭证版本和上游模型，轮换不会破坏旧任务查询。
 - 图片和视频支持 `Idempotency-Key`；相同键与相同请求复用结果，不同请求体返回 `409`。
 - 只记录供应商真实返回的 Token、图片数和视频秒数，未知字段保持为空；第一阶段不做余额或金额扣费。

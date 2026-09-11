@@ -777,6 +777,8 @@ function IntegrationPanel() {
   const [copied, setCopied] = useState("");
   const modelList = `curl "${API_BASE_URL}/v1/models" \\
   -H "Authorization: Bearer $API_KEY"`;
+  const modelPricing = `curl "${API_BASE_URL}/v1/pricing?model=glm-5.2" \\
+  -H "Authorization: Bearer $API_KEY"`;
   const createVideo = `curl -X POST "${API_BASE_URL}/api/v3/contents/generations/tasks" \\
   -H "Authorization: Bearer $API_KEY" \\
   -H "Content-Type: application/json" \\
@@ -854,6 +856,7 @@ function IntegrationPanel() {
           <header><span className="docIcon"><KeyRound size={18} /></span><div><small>STEP 1</small><h3>准备鉴权与可用模型</h3><p>所有业务请求使用同一枚业务 Key。先读取模型列表，再使用返回的模型别名发起调用。</p></div></header>
           <div className="authContract"><code>Authorization: Bearer vap_live_xxx</code><span>JSON 请求还需 Content-Type: application/json</span></div>
           <DocCode id="models" label="查询当前项目可用模型" value={modelList} copied={copied} onCopy={copyExample} />
+          <DocCode id="pricing" label="查询模型价格（可选名称过滤）" value={modelPricing} copied={copied} onCopy={copyExample} />
           <p className="docHint">若 <code>data</code> 为空，表示当前项目尚未启用模型；不要猜测或硬编码列表中未返回的模型。</p>
         </section>
 
@@ -914,11 +917,11 @@ function IntegrationPanel() {
     </div>
 
     <section className="panel endpointReference">
-      <div className="panelHead"><div><h3>业务接口总览</h3><p>以下接口全部使用业务 Bearer Key；只有 <code>/health</code> 无需鉴权。</p></div><span className="version">API v5.1</span></div>
+      <div className="panelHead"><div><h3>业务接口总览</h3><p>以下接口全部使用业务 Bearer Key；只有 <code>/health</code> 无需鉴权。</p></div><span className="version">API v5.6</span></div>
       <div className="endpointTable">
         <div className="endpointRow endpointHead"><span>模块</span><span>方法</span><span>路径</span><span>说明</span></div>
         {[
-          ["基础", "GET", "/health", "服务健康检查"], ["基础", "GET", "/api/auth/me", "验证业务 Key"], ["模型", "GET", "/v1/models", "查询当前项目可用模型"],
+          ["基础", "GET", "/health", "服务健康检查"], ["基础", "GET", "/api/auth/me", "验证业务 Key"], ["模型", "GET", "/v1/models", "查询当前项目可用模型"], ["模型", "GET", "/v1/pricing", "查询当前项目模型价格，可按名称过滤"],
           ["文本", "POST", "/v1/chat/completions", "OpenAI 兼容对话，支持 JSON / SSE"], ["文本", "POST", "/v1/responses", "OpenAI 兼容 Responses，支持 JSON / SSE"], ["图片", "POST", "/v1/images/generations", "图片生成或参考图改图"],
           ["素材组", "POST", "/api/asset-group/create", "创建素材组"], ["素材组", "GET", "/api/asset-group/list", "查询素材组列表"], ["素材组", "GET", "/api/asset-group/get", "查询素材组详情"], ["素材组", "PUT", "/api/asset-group/update", "修改素材组"], ["素材组", "DELETE", "/api/asset-group/delete", "删除素材组"],
           ["素材", "POST", "/api/asset/upload-file", "上传图片、视频或音频"], ["素材", "POST", "/api/asset/create", "登记素材"], ["素材", "GET", "/api/asset/list", "查询素材列表"], ["素材", "GET", "/api/asset/get", "查询素材详情与状态"], ["素材", "PUT", "/api/asset/update", "修改素材名称"], ["素材", "DELETE", "/api/asset/delete", "删除素材"],

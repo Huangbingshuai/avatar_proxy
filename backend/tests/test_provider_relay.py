@@ -12,6 +12,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.errors import ApiError
+from app.billing import current_month
 from app.database import Database
 from app.main import create_app
 from app.security import ApiPrincipal
@@ -256,6 +257,52 @@ def test_project_model_access_and_channel_status_are_immediate_for_all_keys(tmp_
         assert [item["id"] for item in client.get("/v1/models", headers=second_headers).json()["data"]] == ["glm-5.2"]
         client.app.state.provider_relay.set_channel_status(channel["id"], False)
         assert client.get("/v1/models", headers=headers).json()["data"] == []
+
+
+def test_public_pricing_is_project_scoped_discounted_and_filterable(tmp_path: Path) -> None:
+    with relay_client(tmp_path) as client:
+        _, secret, channel = provision(
+            client,
+            provider="volcengine_ark",
+            alias="glm-5.2",
+            upstream_model="must-be-ignored",
+        )
+        headers = {"Authorization": f"Bearer {secret}"}
+        month = current_month()
+        with client.app.state.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO project_billing_terms"
+                "(id,project_name,effective_month,enabled,discount_bps,updated_by) VALUES (?,?,?,?,?,?)",
+                ("terms-public-pricing", "relay_project", month, 1, 8000, "admin"),
+            )
+
+        response = client.get("/v1/pricing", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["month"] == month
+        assert body["currency"] == "CNY"
+        assert body["tax_inclusive"] is False
+        assert body["billing_enabled"] is True
+        assert body["discount_bps"] == 8000
+        assert [item["id"] for item in body["data"]] == ["glm-5.2"]
+        assert body["data"][0]["display_name"] == "GLM 5.2"
+        assert body["data"][0]["configured"] is True
+        prices = {
+            row["metric"]: (row["list_price_yuan"], row["effective_price_yuan"])
+            for row in body["data"][0]["prices"]
+        }
+        assert prices == {
+            "cached_input_tokens": ("2.000000", "1.600000"),
+            "input_tokens": ("8.000000", "6.400000"),
+            "output_tokens": ("28.000000", "22.400000"),
+        }
+
+        assert client.get("/v1/pricing?model=GLM", headers=headers).json()["data"][0]["id"] == "glm-5.2"
+        assert client.get("/v1/pricing?model=seedream", headers=headers).json()["data"] == []
+        assert client.get("/v1/pricing").status_code == 401
+
+        client.app.state.provider_relay.set_channel_status(channel["id"], False)
+        assert client.get("/v1/pricing", headers=headers).json()["data"] == []
 
 
 def test_chat_and_responses_rewrite_model_and_record_only_real_usage(tmp_path: Path) -> None:

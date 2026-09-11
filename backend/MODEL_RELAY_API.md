@@ -1,6 +1,6 @@
 # Star Proxy 模型中转接口
 
-本文档面向接入 Star Proxy 的服务端应用，例如 RichiDrama，是 [CLIENT_API.md](CLIENT_API.md) 中模型接口的快速接入版。公开路径、字段、响应和错误规则如有疑问，以 `CLIENT_API.md` 为准；模型实时可用性和能力以当前业务 Key 调用 `/v1/models` 的结果为准。RichiDrama 侧的具体改造项和验收清单见 [RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md)。
+本文档面向接入 Star Proxy 的服务端应用，例如 RichiDrama，是 [CLIENT_API.md](CLIENT_API.md) 中模型接口的快速接入版。公开路径、字段、响应和错误规则如有疑问，以 `CLIENT_API.md` 为准；模型实时可用性和能力以 `/v1/models` 为准，当前项目价目以 `/v1/pricing` 为准。RichiDrama 侧的具体改造项和验收清单见 [RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md)。
 
 ## 1. 接入信息
 
@@ -61,6 +61,20 @@ curl "https://api.richbest.cn/v1/models" \
 `data[].id` 是 Star Proxy 对外稳定别名。调用方只传该别名，不能传火山完整 Model ID。当前内置模型总表见 [CLIENT_API.md 的“可用模型”](CLIENT_API.md#131-可用模型)；某个业务 Key 实际可用的子集仍只以 `/v1/models` 为准。
 
 别名由 Star Proxy 映射到固定的真实上游模型。模型升级、渠道轮换和供应商差异由中转站管理，调用方不依赖真实 Model ID。
+
+### 2.1 查询当前项目价格
+
+```http
+GET /v1/pricing
+GET /v1/pricing?model=glm-5.2
+```
+
+```bash
+curl "https://api.richbest.cn/v1/pricing?model=glm-5.2" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+不传 `model` 时返回当前项目全部可用模型的价目；传入后按公开别名或展示名称进行不区分大小写的包含匹配。接口只返回已启用且渠道可用的模型，并同时给出全局税前单价 `list_price_yuan`、项目折扣后参考单价 `effective_price_yuan`、计价指标、维度和单位数量。`configured=false` 代表待定价，不代表免费。完整响应契约见 [CLIENT_API.md 的“项目模型价格表”](CLIENT_API.md#132-项目模型价格表)。
 
 ## 3. 文本与视觉理解
 

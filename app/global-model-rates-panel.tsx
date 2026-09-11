@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AdminApi } from "./admin-api";
+import ModelCatalogFilters from "./model-catalog-filters";
 import { getModelIconPath } from "./model-icon-library";
 
 type RateRule = {
@@ -44,15 +45,28 @@ const providers: Record<string, string> = {
   minimax: "MiniMax",
 };
 
+const modalities: Record<string, string> = {
+  text: "文本",
+  image: "图片",
+  video: "视频",
+  embedding: "向量",
+  audio: "音频",
+};
+
 const metrics: Record<string, string> = {
   input_tokens: "输入 Token",
   cached_input_tokens: "缓存输入 Token",
-  output_tokens: "输出 / 视频 Token",
+  output_tokens: "输出 Token",
   image: "图片",
   video_second: "视频时长",
   characters: "字符",
   audio_second: "音频时长",
 };
+
+function metricLabel(rate: GlobalRate, rule: RateRule) {
+  if (rate.modality === "video" && rule.metric === "output_tokens") return "视频 Token";
+  return metrics[rule.metric] ?? rule.metric;
+}
 
 function currentMonth() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -105,6 +119,10 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
   const [rates, setRates] = useState<GlobalRate[]>([]);
   const [drafts, setDrafts] = useState<Record<string, RateRule[]>>({});
   const [password, setPassword] = useState("");
+  const [providerFilter, setProviderFilter] = useState("");
+  const [modalityFilter, setModalityFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -131,6 +149,16 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
   }, [load]);
 
   const configuredCount = useMemo(() => rates.filter((rate) => rate.configured).length, [rates]);
+  const filteredRates = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase("zh-CN");
+    return rates.filter((rate) => {
+      if (providerFilter && rate.provider !== providerFilter) return false;
+      if (modalityFilter && rate.modality !== modalityFilter) return false;
+      if (statusFilter === "configured" && !rate.configured) return false;
+      if (statusFilter === "pending" && rate.configured) return false;
+      return !needle || rate.displayName.toLocaleLowerCase("zh-CN").includes(needle) || rate.model.toLocaleLowerCase("zh-CN").includes(needle);
+    });
+  }, [modalityFilter, providerFilter, rates, search, statusFilter]);
 
   function updatePrice(model: string, index: number, value: string) {
     setDrafts((current) => ({
@@ -182,10 +210,33 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
         </div>
       </div>
       <div className="globalRatesSummary"><b>{configuredCount}/{rates.length}</b><span>个模型已配置全局价格</span><em>空价目表示待计价，不会按 ¥0 结算</em></div>
+      <ModelCatalogFilters
+        className="globalRateFilters"
+        items={rates}
+        provider={providerFilter}
+        modality={modalityFilter}
+        search={search}
+        onProviderChange={setProviderFilter}
+        onModalityChange={setModalityFilter}
+        onSearchChange={setSearch}
+        providerLabels={providers}
+        modalityLabels={modalities}
+        resultCount={filteredRates.length}
+        searchLabel="搜索价格模型"
+        status={{
+          value: statusFilter,
+          onChange: setStatusFilter,
+          options: [
+            { value: "all", label: "全部", count: rates.length },
+            { value: "configured", label: "已定价", count: configuredCount },
+            { value: "pending", label: "待定价", count: rates.length - configuredCount },
+          ],
+        }}
+      />
       {error && <div className="formError">{error}</div>}
       {message && <div className="successBanner">{message}</div>}
       <div className="globalRateList">
-        {rates.map((rate) => (
+        {filteredRates.map((rate) => (
           <article className="globalRateRow" key={rate.model}>
             <div className="globalRateIdentity">
               <span><RateIcon rate={rate} /></span>
@@ -194,7 +245,7 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
             <div className="globalRateRules">
               {(drafts[rate.model] ?? []).map((rule, index) => (
                 <label key={`${rule.metric}:${rule.dimension}`}>
-                  <span>{metrics[rule.metric] ?? rule.metric}<small>{dimensionLabel(rule.dimension)} {unitLabel(rule)}</small></span>
+                  <span>{metricLabel(rate, rule)}<small>{dimensionLabel(rule.dimension)} {unitLabel(rule)}</small></span>
                   <span className="globalRateInput"><i>¥</i><input aria-label={`${rate.model} ${rule.metric} ${rule.dimension}`} type="number" min="0" step="0.000001" value={rule.unitPriceYuan ?? ""} onChange={(event) => updatePrice(rate.model, index, event.target.value)} /></span>
                 </label>
               ))}
@@ -206,6 +257,9 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
             </div>
           </article>
         ))}
+        {loading && <div className="globalRateListState"><LoaderCircle size={18} className="spin" />正在加载模型价格…</div>}
+        {!loading && rates.length > 0 && filteredRates.length === 0 && <div className="globalRateListState">没有符合当前筛选条件的模型。</div>}
+        {!loading && rates.length === 0 && <div className="globalRateListState">当前模型目录为空。</div>}
       </div>
     </section>
   );

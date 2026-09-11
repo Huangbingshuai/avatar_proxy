@@ -1,17 +1,17 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.5
+版本：5.6
 
-更新日期：2026-09-04
+更新日期：2026-09-11
 正式地址：`https://api.richbest.cn`
 
 本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、文本、图片、视频、多模态向量与音频模型接口。
 
 本文档是客户公开 HTTP 契约的完整事实来源。[MODEL_RELAY_API.md](MODEL_RELAY_API.md) 是模型中转快速接入说明，[RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md) 只描述 RichiDrama 调用方需要进行的改造；两者不得覆盖或重新定义本文档中的路径、字段、响应和错误规则。模型的实时可用性及能力始终以当前业务 Key 调用 `/v1/models` 的结果为准。
 
-客户业务 API 不返回模型价目、项目折扣、账单或支付信息。项目计费由管理员在内部控制台统一配置，不需要也不支持客户为每个 API Key 单独设置；内部管理接口另见 [管理端计费账单 API 文档](ADMIN_BILLING_API.md)。
+客户可以通过 `/v1/pricing` 查询当前项目可用模型的全局税前价目和折扣后参考价；月度账单、调整项、支付状态及内部计费管理仍不通过客户业务 API 返回。项目计费由管理员按项目统一配置，不需要也不支持客户为每个 API Key 单独设置；内部管理接口另见 [管理端计费账单 API 文档](ADMIN_BILLING_API.md)。
 
-### 5.5 文档基线
+### 5.6 文档基线
 
 - 统一使用瑞池业务 Key 调用素材、文本、图片、视频、向量和音频接口；调用方不接触供应商凭证。
 - 视频任务统一采用火山兼容的 `/api/v3/contents/generations/tasks` 创建、查询和取消路径，不再提供 `/v1/videos`。
@@ -19,6 +19,7 @@
 - 图片参考图按照解码后的真实大小校验；素材库上传与模型参考图是两套独立规则。
 - 图片和视频任务支持调用方提供 `Idempotency-Key`，任务与用量始终按业务 Key 和项目隔离。
 - `/v1/models` 是当前项目可用模型及能力的唯一实时来源；本文档中的列表用于说明接口范围，不代表每个项目默认全部开通。
+- `/v1/pricing` 只返回当前项目已经启用且渠道可用的模型价目，支持按模型别名或展示名称过滤。
 
 ## 1. 鉴权
 
@@ -492,6 +493,7 @@ curl -X DELETE "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 | `PUT` | `/api/asset/update` | 修改素材名称 |
 | `DELETE` | `/api/asset/delete` | 删除素材 |
 | `GET` | `/v1/models` | 查询当前业务 Key 可用模型 |
+| `GET` | `/v1/pricing` | 查询当前项目可用模型的税前价目 |
 | `POST` | `/v1/chat/completions` | OpenAI 兼容文本对话，支持 JSON/SSE |
 | `POST` | `/v1/responses` | OpenAI 兼容 Responses，支持 JSON/SSE |
 | `POST` | `/v1/images/generations` | OpenAI 兼容图片生成 |
@@ -598,7 +600,61 @@ curl "$BASE_URL/v1/models" \
 
 模型是否已经对当前项目开放，以 `/v1/models` 的实时返回结果为准。请求未开通的模型会返回 `403 model_not_allowed`，请联系管理员确认项目授权和供应商渠道状态。
 
-### 13.2 Chat Completions 与 Responses
+### 13.2 项目模型价格表
+
+```bash
+curl "$BASE_URL/v1/pricing" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+该接口只返回当前业务 Key 所属项目已启用且渠道可用的模型，不会泄露其他项目或尚未开通的模型。可使用可选查询参数 `model` 按模型别名或展示名称进行不区分大小写的包含匹配：
+
+```bash
+curl "$BASE_URL/v1/pricing?model=glm-5.2" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+未匹配到模型时返回空的 `data` 数组。响应示例：
+
+```json
+{
+  "object": "list",
+  "month": "2026-09",
+  "currency": "CNY",
+  "tax_inclusive": false,
+  "billing_enabled": true,
+  "discount_bps": 8000,
+  "data": [
+    {
+      "id": "glm-5.2",
+      "object": "model_price",
+      "display_name": "GLM 5.2",
+      "provider": "volcengine_ark",
+      "modality": "text",
+      "currency": "CNY",
+      "tax_inclusive": false,
+      "configured": true,
+      "prices": [
+        {
+          "metric": "input_tokens",
+          "dimension": null,
+          "unit_size": 1000000,
+          "list_price_yuan": "8.000000",
+          "effective_price_yuan": "6.400000"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `list_price_yuan` 是超级管理员维护、所有项目共用的全局单价。
+- `effective_price_yuan` 是应用当前项目折扣后的参考单价；`discount_bps=8000` 表示八折。
+- `billing_enabled=false` 表示当前项目尚未启用账单归集，但仍可查询已开通模型的参考价。
+- `configured=false` 表示该模型当前没有可用价目，`prices` 为空；调用方不应把它解释为免费。只有返回的单价明确为 `0.000000` 才表示免费。
+- 金额均为人民币税前价格。`metric`、`dimension` 和 `unit_size` 共同定义计价单位，例如每百万 Token、每张图片、指定分辨率或输入类型。
+
+### 13.3 Chat Completions 与 Responses
 
 接口分别为：
 
@@ -697,7 +753,7 @@ curl "$BASE_URL/v1/chat/completions" \
 
 只有 `/v1/models` 返回的 `capabilities.imageInput=true` 模型接受图片内容；其他文本模型传入图片会返回 `model_image_input_unsupported`。
 
-### 13.3 图片生成
+### 13.4 图片生成
 
 Seedream 参考图片支持 HTTP(S) URL 或 `data:image/*;base64,...`。Base64 输入按解码后的真实文件大小校验，而不是按编码字符串长度估算；当前火山 Seedream 模型单张参考图上限为 10 MiB，最多 10 张。HTTP(S) 图片由火山读取并执行最终格式、尺寸和内容校验，中转站不会设置更小的文件限制。这里是生图模型的参考图规则，与素材库 `/api/asset/upload-file` 的本地文件上传规则不同；素材库还可以不上传文件，直接登记符合方舟要求的公网 HTTP(S) URL。
 
@@ -736,11 +792,11 @@ curl "$BASE_URL/v1/images/generations" \
 
 以实际响应为准：供应商没有返回的 `usage` 字段不会被补零。使用 `url` 时应及时下载结果；使用 `b64_json` 时，响应体可能明显增大。
 
-### 13.4 异步视频
+### 13.5 异步视频
 
 视频模型不使用 OpenAI `/v1/videos` 路径；创建、查询和取消统一使用第 10 节的火山兼容 `/api/v3/contents/generations/tasks` 接口。请求中的 `model` 使用中转站稳定别名，服务端负责转换为当前固定的供应商模型 ID。阿里百炼和 MiniMax 的请求、响应差异由中转站内部适配。
 
-### 13.5 幂等与错误
+### 13.6 幂等与错误
 
 图片和视频创建支持 `Idempotency-Key`，长度为 1～128 个字符：
 
@@ -789,7 +845,7 @@ curl "$BASE_URL/v1/images/generations" \
 
 排查 `/v1/*` 时请保留响应体中的 `request_id`；排查 `/api/v3/*` 时请保留响应头 `X-Request-Id`。不要提供业务 Key、供应商 Key 或完整图片/视频私有 URL。
 
-### 13.6 向量与音频接口
+### 13.7 向量与音频接口
 
 向量和音频接口与其他模型接口一样使用瑞池业务 Key 鉴权，客户端只提交 `/v1/models` 返回的公开别名，不能提交或覆盖火山语音 AppID、Access Token、Cluster、资源 ID等上游配置。
 
@@ -856,7 +912,7 @@ curl "$BASE_URL/v1/audio/generations" \
 
 响应可能包含临时 `url` 或音频 Base64。临时 URL 由供应商托管并可能过期，调用方应及时下载；中转站不会自动归档媒体。
 
-### 13.7 RichiDrama 对接最小契约
+### 13.8 RichiDrama 对接最小契约
 
 RichiDrama 对接模型中转时只需要在后端保存一枚 Star Proxy 业务 Key，并使用根地址 `https://api.richbest.cn`。漫剧终端用户不直接持有业务 Key，也不需要按用户创建 Star Proxy 项目或火山项目。
 

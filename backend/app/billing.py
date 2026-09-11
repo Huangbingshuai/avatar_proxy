@@ -360,6 +360,64 @@ class BillingManager:
             ).fetchall()]
         return [self.get_rate(alias, month) for alias in aliases]
 
+    def public_rates(
+        self,
+        project_name: str,
+        available_models: list[dict[str, Any]],
+        model_filter: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the effective public price book for one authenticated project.
+
+        The catalog is supplied by ProviderRelay so callers can never discover a
+        model that their project has not enabled or whose channel is unavailable.
+        Prices remain global; the project term only supplies its billing switch
+        and discount for the effective-price projection.
+        """
+        month = current_month()
+        terms = self.project_terms(project_name, month)
+        needle = str(model_filter or "").strip().casefold()
+        data: list[dict[str, Any]] = []
+        for available in available_models:
+            alias = str(available.get("id") or "")
+            display_name = str(available.get("display_name") or alias)
+            if needle and needle not in alias.casefold() and needle not in display_name.casefold():
+                continue
+            rate = self.get_rate(alias, month)
+            rules = []
+            for rule in rate["rules"]:
+                list_micros = yuan_to_micros(rule["unitPriceYuan"])
+                effective_micros = int(
+                    (Decimal(list_micros) * Decimal(terms["discountBps"]) / Decimal(10_000))
+                    .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                )
+                rules.append({
+                    "metric": rule["metric"],
+                    "dimension": rule["dimension"] or None,
+                    "unit_size": rule["unitSize"],
+                    "list_price_yuan": micros_to_yuan(list_micros),
+                    "effective_price_yuan": micros_to_yuan(effective_micros),
+                })
+            data.append({
+                "id": alias,
+                "object": "model_price",
+                "display_name": display_name,
+                "provider": rate["provider"],
+                "modality": rate["modality"],
+                "currency": "CNY",
+                "tax_inclusive": False,
+                "configured": rate["configured"],
+                "prices": rules,
+            })
+        return {
+            "object": "list",
+            "month": month,
+            "currency": "CNY",
+            "tax_inclusive": False,
+            "billing_enabled": terms["enabled"],
+            "discount_bps": terms["discountBps"],
+            "data": data,
+        }
+
     def _terms(self, project_name: str, month: str) -> dict[str, Any] | None:
         with self.database.connect() as connection:
             row = connection.execute(

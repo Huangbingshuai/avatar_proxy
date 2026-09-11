@@ -647,6 +647,8 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .relayFilterLine button.active { color: #fff; background: #344054; box-shadow: 0 4px 10px rgba(52, 64, 84, .18); }
 .relayFilterLine button img { width: 16px; height: 16px; object-fit: contain; }
 .relayFilterLine button.active img { filter: brightness(0) invert(1); }
+.relayFilterLine button small { display: inline-grid; min-width: 19px; min-height: 19px; place-items: center; padding: 0 5px; border-radius: 999px; color: inherit; background: rgba(255,255,255,.72); font-size: 9px; font-weight: 800; }
+.relayFilterLine button.active small { color: #344054; }
 .relayFilterLine.search { grid-template-columns: 42px minmax(230px, 360px) auto; align-items: center; }
 .relayFilterLine.search > span { padding-top: 0; }
 .relayFilterLine.search label { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: #9c948f; background: #fff; }
@@ -655,7 +657,7 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .relayFilterLine.search small { color: var(--muted); font-size: 12px; }
 
 .relayModelTable { overflow-x: auto; border-top: 1px solid var(--line); background: #fff; }
-.relayModelTableHead, .relayModelTableRow { display: grid; grid-template-columns: minmax(260px, 1.55fr) 100px minmax(190px, 1.15fr) minmax(220px, 1.25fr) 110px; align-items: center; gap: 16px; min-width: 1020px; }
+.relayModelTableHead, .relayModelTableRow { display: grid; grid-template-columns: minmax(240px, 1.45fr) 90px minmax(180px, 1.05fr) minmax(190px, 1.1fr) minmax(160px, .95fr) 100px; align-items: center; gap: 16px; min-width: 1180px; }
 .relayModelTableHead { min-height: 48px; padding: 0 22px; color: #4b413c; background: #faf9f8; font-size: 12px; font-weight: 800; }
 .relayModelTableRow { min-height: 92px; padding: 12px 22px; border-bottom: 1px solid #eee9e5; transition: background .16s ease; }
 .relayModelTableRow:last-of-type { border-bottom: 0; }
@@ -690,6 +692,12 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .relayFixedModel code { display: block; overflow: hidden; color: #4c4541; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .relayFixedModel small { color: var(--muted); font-size: 10px; }
 .relayModelTableRow.disabled .relayFixedModel { opacity: .62; }
+.relayPriceTag { display: inline-flex; align-items: center; justify-self: start; gap: 7px; max-width: 100%; padding: 7px 9px; border-radius: 10px; }
+.relayPriceTag.priced { color: #13735e; background: #ebf8f3; }
+.relayPriceTag.pending { color: #8a6b34; background: #fff6df; }
+.relayPriceTag > div { display: grid; gap: 1px; min-width: 0; }
+.relayPriceTag b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.relayPriceTag small { color: currentColor; font-size: 8px; opacity: .72; }
 .relayModelTableRow .relaySwitch { justify-items: start; }
 .relayModelTableRow.enabled .relaySwitch em { color: var(--coral-dark); }
 
@@ -788,6 +796,7 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .globalRatesSummary b { color: var(--coral); font-size: 21px; }
 .globalRatesSummary span { font-weight: 700; }
 .globalRatesSummary em { margin-left: auto; color: var(--muted); font-size: 12px; font-style: normal; }
+.globalRateFilters { margin-bottom: 14px; border: 1px solid #eee7e1; border-radius: 16px; background: linear-gradient(135deg, #fff 0%, #fffbf8 100%); }
 .globalRateList { border: 1px solid #eee7e1; border-radius: 18px; overflow: hidden; }
 .globalRateRow { display: grid; grid-template-columns: 260px minmax(0, 1fr) 150px; gap: 20px; align-items: center; padding: 18px; background: #fff; border-bottom: 1px solid #eee7e1; }
 .globalRateRow:last-child { border-bottom: 0; }
@@ -809,5 +818,6 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .globalRateAction { display: grid; justify-items: end; gap: 10px; }
 .globalRateAction a, .globalRateAction > span { color: var(--muted); font-size: 10px; text-align: right; }
 .globalRateAction a { color: #ce5744; text-decoration: none; }
+.globalRateListState { display: flex; min-height: 150px; align-items: center; justify-content: center; gap: 9px; padding: 24px; color: var(--muted); background: #fff; font-size: 13px; }
 @media (max-width: 1180px) { .globalRateRow { grid-template-columns: 220px minmax(0, 1fr); }.globalRateAction { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; }.globalRateRules { grid-template-columns: repeat(2, minmax(160px, 1fr)); } }
 @media (max-width: 760px) { .globalRatesHead,.globalRatesControls { align-items: stretch; }.globalRatesControls { display: grid; width: 100%; }.globalRatesControls input { width: 100%; }.globalRatesSummary { align-items: flex-start; flex-wrap: wrap; }.globalRatesSummary em { width: 100%; margin-left: 0; }.globalRateRow { grid-template-columns: 1fr; }.globalRateRules { grid-template-columns: 1fr; }.globalRateAction { grid-column: auto; } }

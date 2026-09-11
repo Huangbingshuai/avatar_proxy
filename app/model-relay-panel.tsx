@@ -7,13 +7,13 @@ import {
   Boxes,
   Check,
   CloudCog,
+  CircleDollarSign,
   Image as ImageIcon,
   KeyRound,
   MessageSquareText,
   Network,
   RefreshCw,
   Route,
-  Search,
   ServerCog,
   ShieldCheck,
   Video,
@@ -21,7 +21,8 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AdminApi } from "./admin-api";
-import { getModelIconPath, getProviderIconPath } from "./model-icon-library";
+import ModelCatalogFilters from "./model-catalog-filters";
+import { getModelIconPath } from "./model-icon-library";
 
 type Project = { name: string; displayName: string };
 type ApiKey = {
@@ -53,6 +54,17 @@ type ProjectModel = {
   channelId?: string | null;
   upstreamModel?: string | null;
   enabled: boolean;
+};
+type PriceRule = {
+  metric: string;
+  dimension: string;
+  unitSize: number;
+  unitPriceYuan: string;
+};
+type ModelRate = {
+  model: string;
+  configured: boolean;
+  rules: PriceRule[];
 };
 type Usage = {
   id: string;
@@ -93,6 +105,24 @@ const modalityLabel: Record<string, string> = {
   embedding: "向量",
   audio: "音频",
 };
+
+function priceSummary(rate?: ModelRate) {
+  if (!rate?.configured || !rate.rules.length) return "待定价";
+  const values = rate.rules.map((rule) => Number(rule.unitPriceYuan)).filter(Number.isFinite);
+  if (!values.length) return "待定价";
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const amount = minimum === maximum
+    ? `¥${minimum.toLocaleString("zh-CN", { maximumFractionDigits: 6 })}`
+    : `¥${minimum.toLocaleString("zh-CN", { maximumFractionDigits: 6 })}–¥${maximum.toLocaleString("zh-CN", { maximumFractionDigits: 6 })}`;
+  const first = rate.rules[0];
+  if (first.unitSize === 1_000_000) return `${amount} / 百万Token`;
+  if (first.metric === "characters" && first.unitSize === 10_000) return `${amount} / 万字符`;
+  if (first.metric === "audio_second" && first.unitSize === 3_600) return `${amount} / 小时`;
+  if (first.metric === "audio_second" && first.unitSize === 60) return `${amount} / 分钟`;
+  if (first.metric === "video_second") return `${amount} / 秒`;
+  return `${amount} / 张`;
+}
 function ModelGlyph({
   modality,
   size = 20,
@@ -121,20 +151,6 @@ function ModelBrandIcon({
   return <img src={icon} width={size} height={size} alt={`${name} 图标`} />;
 }
 
-function ProviderBrandIcon({
-  provider,
-  size = 16,
-}: {
-  provider: string;
-  size?: number;
-}) {
-  const icon = getProviderIconPath(provider);
-  if (!icon) return <CloudCog aria-hidden="true" size={size} />;
-  return (
-    <img src={icon} width={size} height={size} alt="" aria-hidden="true" />
-  );
-}
-
 export default function ModelRelayPanel({
   projects,
   apiKeys,
@@ -148,6 +164,7 @@ export default function ModelRelayPanel({
   const [catalog, setCatalog] = useState<CatalogModel[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [models, setModels] = useState<ProjectModel[]>([]);
+  const [rates, setRates] = useState<Record<string, ModelRate>>({});
   const [usage, setUsage] = useState<Usage[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [modelFilter, setModelFilter] = useState("");
@@ -199,7 +216,7 @@ export default function ModelRelayPanel({
       if (providerFilter) usageQuery.set("provider", providerFilter);
       if (startTime) usageQuery.set("start", startTime);
       if (endTime) usageQuery.set("end", endTime);
-      const [catalogData, channelData, modelData, usageData, taskData] =
+      const [catalogData, channelData, modelData, rateData, usageData, taskData] =
         await Promise.all([
           adminApi("/api/internal/model/catalog"),
           adminApi(
@@ -208,6 +225,7 @@ export default function ModelRelayPanel({
           adminApi(
             `/api/internal/project/${encodeURIComponent(activeProjectName)}/models`,
           ),
+          adminApi("/api/internal/billing/rates"),
           adminApi(`/api/internal/inference/usage?${usageQuery.toString()}`),
           adminApi(
             `/api/internal/inference/tasks?projectName=${encodeURIComponent(activeProjectName)}&limit=100`,
@@ -216,6 +234,8 @@ export default function ModelRelayPanel({
       setCatalog((catalogData.models ?? []) as CatalogModel[]);
       setChannels((channelData.channels ?? []) as Channel[]);
       setModels((modelData.models ?? []) as ProjectModel[]);
+      const nextRates = (rateData.rates ?? []) as ModelRate[];
+      setRates(Object.fromEntries(nextRates.map((rate) => [rate.model, rate])));
       setUsage((usageData.usage ?? []) as Usage[]);
       setTasks((taskData.tasks ?? []) as Task[]);
     } catch (caught) {
@@ -404,81 +424,26 @@ export default function ModelRelayPanel({
             </p>
           </div>
         </div>
-        <div className="relayMarketFilters">
-          <div className="relayFilterLine">
-            <span>厂商</span>
-            <div>
-              <button
-                type="button"
-                className={!catalogProvider ? "active" : ""}
-                onClick={() => setCatalogProvider("")}
-              >
-                全部
-              </button>
-              {Object.entries(providerLabel)
-                .filter(([provider]) =>
-                  models.some((model) => model.provider === provider),
-                )
-                .map(([provider, label]) => (
-                  <button
-                    type="button"
-                    className={catalogProvider === provider ? "active" : ""}
-                    onClick={() => setCatalogProvider(provider)}
-                    key={provider}
-                  >
-                    <ProviderBrandIcon provider={provider} />
-                    {label}
-                  </button>
-                ))}
-            </div>
-          </div>
-          <div className="relayFilterLine">
-            <span>类型</span>
-            <div>
-              <button
-                type="button"
-                className={!catalogModality ? "active" : ""}
-                onClick={() => setCatalogModality("")}
-              >
-                全部
-              </button>
-              {Object.entries(modalityLabel)
-                .filter(([modality]) =>
-                  models.some((model) => model.modality === modality),
-                )
-                .map(([modality, label]) => (
-                  <button
-                    type="button"
-                    className={catalogModality === modality ? "active" : ""}
-                    onClick={() => setCatalogModality(modality)}
-                    key={modality}
-                  >
-                    <ModelGlyph modality={modality} size={14} />
-                    {label}
-                  </button>
-                ))}
-            </div>
-          </div>
-          <div className="relayFilterLine search">
-            <span>搜索</span>
-            <label>
-              <Search size={16} />
-              <input
-                aria-label="搜索项目模型"
-                value={catalogSearch}
-                onChange={(event) => setCatalogSearch(event.target.value)}
-                placeholder="搜索模型名称或别名..."
-              />
-            </label>
-            <small>{filteredModels.length} 个模型</small>
-          </div>
-        </div>
+        <ModelCatalogFilters
+          items={models}
+          provider={catalogProvider}
+          modality={catalogModality}
+          search={catalogSearch}
+          onProviderChange={setCatalogProvider}
+          onModalityChange={setCatalogModality}
+          onSearchChange={setCatalogSearch}
+          providerLabels={providerLabel}
+          modalityLabels={modalityLabel}
+          resultCount={filteredModels.length}
+          searchLabel="搜索项目模型"
+        />
         <div className="relayModelTable">
           <div className="relayModelTableHead">
             <span>模型</span>
             <span>类型</span>
             <span>供应商渠道</span>
             <span>固定上游模型</span>
+            <span>全局价格</span>
             <span>状态</span>
           </div>
           {filteredModels.map((model) => {
@@ -538,6 +503,10 @@ export default function ModelRelayPanel({
                 <div className="relayFixedModel">
                   <code>{model.upstreamModel || "未配置"}</code>
                   <small>系统固定映射</small>
+                </div>
+                <div className={`relayPriceTag ${rates[model.model]?.configured ? "priced" : "pending"}`}>
+                  <CircleDollarSign size={14} />
+                  <div><b>{priceSummary(rates[model.model])}</b><small>税前人民币</small></div>
                 </div>
                 <label className="relaySwitch">
                   <input
