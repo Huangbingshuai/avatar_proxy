@@ -96,9 +96,10 @@ Authorization: Bearer vap_live_xxx
 
 - 控制台概览按数据库现有全部历史统计累计请求、累计异常、素材、上传量、成功模型调用次数和供应商实际返回的 Token 总量，不再只展示 24 小时或当日窗口。
 - 每个能够识别到业务 API Key 的 `/api/*`、`/v1/*` 请求写入一条调用日志，包含 Key 名称与掩码、项目、HTTP 方法、接口模板、模型别名、状态码、成功状态、耗时、返回字节数、请求 ID、来源 IP 和 User-Agent。
-- 普通管理员可在“调用日志”中先选择项目、再选择具体业务 Key；选中后立即加载并每 5 秒自动刷新调用记录，可展开查看请求参数与返回摘要。管理接口为 `GET /api/internal/call-logs`。
-- 日志不会保存 `Authorization`、完整业务 Key、供应商凭证、密码、Cookie、签名、幂等键原文、带签名的 URL 查询参数、文件正文、Data URI 或 Base64 媒体；命中的敏感字段会替换为脱敏标记，长内容只保留有限预览。
-- 默认保留 180 天，可通过 `API_CALL_LOG_RETENTION_DAYS` 调整；明细过期清理后，全量请求与异常累计计数仍会保留。单次 JSON 捕获上限和摘要字符上限分别由 `API_CALL_LOG_CAPTURE_BYTES`、`API_CALL_LOG_SUMMARY_CHARS` 控制。未知 Key 无法安全归属到客户，因此只返回鉴权错误，不进入逐 Key 日志。
+- 普通管理员可在“调用日志”中先选择项目、再选择具体业务 Key；选中后立即加载并每 5 秒自动刷新，可展开查看完整文本请求参数与完整 JSON/SSE 返回结果。管理接口为 `GET /api/internal/call-logs`。
+- 选择具体业务 Key 后，可通过 `GET /api/internal/call-logs/export.csv?apiKeyId=...` 流式导出该 Key 近 30 天的全部调用日志；CSV 使用 UTF-8 BOM，并包含接口、模型、结果、耗时、完整请求参数和完整返回结果。
+- 日志不会保存 `Authorization`、完整业务 Key、供应商凭证、密码、Cookie、签名、幂等键原文、带签名的 URL 查询参数、文件正文、Data URI、Base64 或音视频/图片二进制；这些敏感或媒体字段会替换为脱敏标记或体积元数据，其余 JSON 与 SSE 文本不截断。
+- 调用明细固定滚动保留近 30 天，不提供延长配置；过期明细清理后，全量请求与异常累计计数仍会保留。未知 Key 无法安全归属到客户，因此只返回鉴权错误，不进入逐 Key 日志。
 - 已产生调用日志的 Key 删除时会不可逆注销并保留 Key 墓碑；存在调用历史的项目不允许物理删除，历史日志、用量和账单归属不会被级联删除。
 
 ### 多供应商模型中转
@@ -179,7 +180,7 @@ Authorization: Bearer vap_live_xxx
 | `app/` | 管理控制台页面、管理员 API 客户端、项目/Key/额度、计费账单与安全管理 UI |
 | `backend/app/routers/` | FastAPI 业务与内部管理路由 |
 | `backend/app/database.py` | SQLite 表结构、兼容迁移和数据访问 |
-| `backend/app/call_logging.py` | 业务请求脱敏、摘要截断与逐 Key 调用日志中间件 |
+| `backend/app/call_logging.py` | 业务请求安全脱敏、完整文本内容与逐 Key 调用日志中间件 |
 | `backend/app/admin_auth.py` | 管理员、Session、CSRF、TOTP、角色和审计 |
 | `backend/app/quota.py` | 项目与 Key 额度、原子预占及事件 |
 | `backend/app/storage.py` | TOS 上传、素材账本清理与后台重试 |
@@ -222,9 +223,6 @@ DATABASE_PATH=./data/avatar_proxy.db
 ADMIN_COOKIE_SECURE=false
 CORS_ORIGINS=http://localhost:3001,http://localhost:3002
 ENABLE_API_DOCS=false
-API_CALL_LOG_RETENTION_DAYS=180
-API_CALL_LOG_CAPTURE_BYTES=262144
-API_CALL_LOG_SUMMARY_CHARS=32768
 ```
 
 本地 HTTP 环境使用 `ADMIN_COOKIE_SECURE=false`；生产 HTTPS 必须设为 `true`。完整配置和说明见 [backend/.env.example](backend/.env.example)。

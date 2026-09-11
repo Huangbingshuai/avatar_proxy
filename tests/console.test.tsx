@@ -218,6 +218,7 @@ describe("内部控制台", () => {
     expect(keyFilter).toBeDisabled();
     expect(within(keyFilter).getByRole("option", { name: "请先选择客户项目" })).toBeInTheDocument();
     expect(screen.getByText("选择业务 Key 后自动展示调用记录")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "导出近 30 天" })).not.toBeInTheDocument();
     expect(calls.some((call) => call.path.startsWith("/api/internal/call-logs?"))).toBe(false);
     await user.selectOptions(screen.getByLabelText("客户项目"), "customer_a");
     expect(keyFilter).toBeEnabled();
@@ -234,6 +235,10 @@ describe("内部控制台", () => {
     expect(await screen.findByText("/v1/chat/completions")).toBeInTheDocument();
     expect(screen.getByText("glm-5.2")).toBeInTheDocument();
     expect(screen.getByText("vap_live_a… · customer_a")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "导出近 30 天" })).toHaveAttribute(
+      "href",
+      "/api/internal/call-logs/export.csv?apiKeyId=key-a",
+    );
     expect(calls.some((call) => call.path.startsWith("/api/internal/call-logs?") && call.path.includes("apiKeyId=key-a"))).toBe(true);
   });
 

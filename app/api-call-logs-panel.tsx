@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock3,
+  Download,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -135,7 +136,7 @@ export default function ApiCallLogsPanel({
         <div>
           <p className="eyebrow">REQUEST LEDGER</p>
           <h2>业务调用日志</h2>
-          <p>先选择项目与业务 Key，系统会立即展示该 Key 的接口调用明细。</p>
+          <p>完整记录该 Key 的业务请求参数与返回结果，敏感字段自动脱敏，仅滚动保留近 30 天。</p>
         </div>
         <span className={`callLogLive${apiKeyId ? " active" : ""}`}>
           <i />{apiKeyId ? "实时更新" : "等待选择 Key"}
@@ -187,7 +188,18 @@ export default function ApiCallLogsPanel({
             <h3>调用明细</h3>
             <p>{selectedKey ? `${selectedKey.name} · 共 ${total.toLocaleString()} 条，当前显示 ${first.toLocaleString()}–${last.toLocaleString()}` : "选择业务 Key 后自动展示调用记录"}</p>
           </div>
-          <span className="callLogPrivacy"><Braces size={14} />敏感字段已脱敏</span>
+          <div className="callLogPanelActions">
+            <span className="callLogPrivacy"><Braces size={14} />敏感字段已脱敏</span>
+            {apiKeyId && (
+              <a
+                className="secondary callLogExport"
+                href={`/api/internal/call-logs/export.csv?${new URLSearchParams({ apiKeyId }).toString()}`}
+                download
+              >
+                <Download size={15} />导出近 30 天
+              </a>
+            )}
+          </div>
         </div>
         <div className="dataTable callLogTable">
           <div className="tableRow tableHead">
@@ -229,8 +241,8 @@ export default function ApiCallLogsPanel({
                     <div className="callLogError"><b>{item.errorCode || `HTTP ${item.statusCode}`}</b><span>{item.errorMessage}</span></div>
                   )}
                   <div className="callLogPayloads">
-                    <article><header>请求参数摘要</header><pre>{pretty(item.requestParams)}</pre></article>
-                    <article><header>返回信息摘要</header><pre>{pretty(item.responseSummary)}</pre></article>
+                    <article><header>完整请求参数（已脱敏）</header><pre>{pretty(item.requestParams)}</pre></article>
+                    <article><header>完整返回结果（已脱敏）</header><pre>{pretty(item.responseSummary)}</pre></article>
                   </div>
                 </div>
               )}

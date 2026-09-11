@@ -896,7 +896,9 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .callLogFilters input:focus,.callLogFilters select:focus { border-color: #ff9f80; box-shadow: 0 0 0 4px rgba(255, 90, 95, .08); }
 .callLogFilters select:disabled { color: #aaa19b; background: #f3f0ed; cursor: not-allowed; }
 .callLogPanel { overflow: hidden; }
+.callLogPanelActions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
 .callLogPrivacy { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid #cfe8df; border-radius: 999px; color: #176c58; background: #edf8f4; font-size: 10px; font-weight: 800; }
+.callLogExport { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 12px; text-decoration: none; }
 .callLogTable { border-top: 1px solid var(--line); }
 .callLogTable .tableRow { min-width: 1280px; grid-template-columns: 150px 185px minmax(290px, 1.5fr) 150px 80px 90px 80px 36px; }
 .callLogEntry { border-top: 1px solid #f0efeb; }

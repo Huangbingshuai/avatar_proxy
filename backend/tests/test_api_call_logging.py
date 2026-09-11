@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sqlite3
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.call_logging import _response_summary
+from app.call_logging import _response_summary, _serialized_json
 from app.main import create_app
 
 from conftest import ADMIN_HEADERS, create_key, create_project
@@ -33,7 +35,7 @@ def test_known_key_requests_are_logged_with_redacted_details(
             headers={**_authorization(secret), "Idempotency-Key": "private-idempotency-value"},
             json={
                 "model": "gpt-image-2",
-                "prompt": "请生成一张测试图片",
+                "prompt": "完整长提示词" * 1500,
                 "api_key": "nested-secret",
                 "image_data": "base64-media-secret",
                 "url": "https://cdn.example.com/input.png?token=signed-secret",
@@ -85,6 +87,7 @@ def test_known_key_requests_are_logged_with_redacted_details(
     assert request_body["url"] == "https://cdn.example.com/input.png?[REDACTED]"
     assert request_body["blob"] == "[BASE64:256 chars]"
     assert request_body["note"] == "[REDACTED_SECRET]"
+    assert request_body["prompt"] == "完整长提示词" * 1500
 
     auth_log = next(item for item in items if item["path"] == "/api/auth/me")
     assert auth_log["success"] is True
@@ -106,22 +109,79 @@ def test_known_key_requests_are_logged_with_redacted_details(
         assert private_value not in serialized
 
 
-def test_stream_summary_records_completion_and_redacted_error_without_content() -> None:
+def test_stream_log_preserves_complete_content_and_redacts_inline_secrets() -> None:
+    stream_body = (
+        b'data: {"choices":[{"delta":{"content":"private output"}}]}\n\n'
+        + f'data: {{"b64_json":"{"A" * 256}"}}\n\n'.encode()
+        + b'data: {"error":{"code":"upstream_error","message":"Bearer sk-private123456789"}}\n\n'
+        + b"data: [DONE]\n\n"
+    )
     summary, code, message = _response_summary(
         "text/event-stream; charset=utf-8",
-        b'data: {"choices":[{"delta":{"content":"private output"}}]}\n\n'
-        b'data: {"error":{"code":"upstream_error","message":"Bearer sk-private123456789"}}\n\n'
-        b"data: [DONE]\n\n",
-        180,
-        4096,
+        stream_body,
+        len(stream_body),
         {},
     )
+    stored = json.loads(_serialized_json(summary))
 
     assert code == "upstream_error"
     assert message == "[REDACTED_SECRET]"
-    assert summary["stream"] is True
-    assert summary["streamCompleted"] is True
-    assert "private output" not in json.dumps(summary)
+    assert stored["stream"] is True
+    assert stored["streamCompleted"] is True
+    assert stored["events"][0]["data"]["choices"][0]["delta"]["content"] == "private output"
+    assert stored["events"][1]["data"]["b64_json"] == "[REDACTED]"
+    assert stored["events"][-1]["data"] == "[DONE]"
+    assert "sk-private123456789" not in json.dumps(stored)
+
+
+def test_json_response_is_not_truncated() -> None:
+    payload = {"items": [{"index": index, "content": "完整结果" * 100} for index in range(80)]}
+    raw = json.dumps(payload, ensure_ascii=False).encode()
+    summary, code, message = _response_summary(
+        "application/json; charset=utf-8", raw, len(raw), {}
+    )
+
+    stored = json.loads(_serialized_json(summary))
+    assert code is None
+    assert message is None
+    assert stored["body"] == payload
+
+
+def test_admin_can_export_selected_key_recent_logs_as_safe_csv(
+    tmp_path: Path, settings_factory
+) -> None:
+    app = create_app(settings_factory(tmp_path / "export.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        key_id, secret = create_key(client)
+        assert client.get(
+            "/api/auth/me",
+            headers={**_authorization(secret), "User-Agent": "=2+2"},
+        ).status_code == 200
+        exported = client.get(
+            "/api/internal/call-logs/export.csv",
+            headers=ADMIN_HEADERS,
+            params={"apiKeyId": key_id},
+        )
+        missing = client.get(
+            "/api/internal/call-logs/export.csv",
+            headers=ADMIN_HEADERS,
+            params={"apiKeyId": "missing-key"},
+        )
+
+    assert exported.status_code == 200
+    assert "api-call-logs-" in exported.headers["content-disposition"]
+    assert exported.headers["cache-control"] == "no-store"
+    assert exported.content.startswith(b"\xef\xbb\xbf")
+    rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
+    assert len(rows) == 1
+    assert rows[0]["项目"] == "drama_prod"
+    assert rows[0]["接口"] == "/api/auth/me"
+    assert rows[0]["成功"] == "1"
+    assert rows[0]["User-Agent"] == "'=2+2"
+    assert secret not in exported.text
+
+    assert missing.status_code == 404
 
 
 def test_disabled_known_key_failure_is_logged_but_unknown_key_is_not(
@@ -281,7 +341,7 @@ def test_legacy_request_log_schema_is_upgraded_idempotently(tmp_path: Path) -> N
 def test_retention_prunes_details_but_keeps_all_time_counters(tmp_path: Path) -> None:
     from app.database import Database
 
-    database = Database(tmp_path / "retention.db", request_log_retention_days=7)
+    database = Database(tmp_path / "retention.db")
     database.initialize()
     database.log_api_call(
         request_id="old-request",

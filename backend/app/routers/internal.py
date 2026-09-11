@@ -1,7 +1,11 @@
+import csv
+import io
 import sqlite3
 from datetime import datetime, timezone
+from typing import Iterator
 
 from fastapi import APIRouter, Query, Request, status
+from fastapi.responses import StreamingResponse
 
 from ..admin_auth import AdminPrincipal
 from ..database import Database
@@ -229,6 +233,75 @@ def _utc_sql_timestamp(value: datetime | None) -> str | None:
         return None
     aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
     return aware.replace(tzinfo=None).isoformat(sep=" ", timespec="seconds")
+
+
+_CALL_LOG_EXPORT_COLUMNS = (
+    ("日志 ID", "id"),
+    ("时间", "createdAt"),
+    ("项目", "projectName"),
+    ("业务 Key 名称", "apiKeyName"),
+    ("业务 Key 掩码", "apiKeyPrefix"),
+    ("请求 ID", "requestId"),
+    ("方法", "method"),
+    ("接口", "routeTemplate"),
+    ("实际路径", "path"),
+    ("操作", "action"),
+    ("模型", "modelAlias"),
+    ("模型调用", "isModelCall"),
+    ("状态码", "statusCode"),
+    ("成功", "success"),
+    ("耗时（毫秒）", "durationMs"),
+    ("返回字节数", "responseBytes"),
+    ("来源 IP", "sourceIp"),
+    ("User-Agent", "userAgent"),
+    ("完整请求参数（已脱敏）", "requestParamsJson"),
+    ("完整返回结果（已脱敏）", "responseSummaryJson"),
+    ("错误代码", "errorCode"),
+    ("错误信息", "errorMessage"),
+)
+
+
+def _csv_safe(value: object) -> str:
+    text = "" if value is None else str(value)
+    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return f"'{text}"
+    return text
+
+
+def _call_log_csv(db: Database, api_key_id: str) -> Iterator[str]:
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream)
+
+    def encoded_row(values: list[object]) -> str:
+        stream.seek(0)
+        stream.truncate(0)
+        writer.writerow([_csv_safe(value) for value in values])
+        return stream.getvalue()
+
+    yield "\ufeff"
+    yield encoded_row([title for title, _ in _CALL_LOG_EXPORT_COLUMNS])
+    for item in db.iter_api_call_logs_export(api_key_id):
+        yield encoded_row([item.get(field) for _, field in _CALL_LOG_EXPORT_COLUMNS])
+
+
+@router.get("/call-logs/export.csv")
+def export_call_logs(
+    request: Request,
+    _: AdminDependency,
+    api_key_id: str = Query(alias="apiKeyId", min_length=1, max_length=128),
+) -> StreamingResponse:
+    db = database(request)
+    if db.get_api_key_log_identity(api_key_id) is None:
+        raise ApiError("API Key 不存在", 404, "api_key_not_found")
+    return StreamingResponse(
+        _call_log_csv(db, api_key_id),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="api-call-logs-last-30-days.csv"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/call-logs")

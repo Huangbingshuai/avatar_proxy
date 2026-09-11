@@ -28,7 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        database = Database(resolved.database_path, resolved.api_call_log_retention_days)
+        database = Database(resolved.database_path)
         database.initialize()
         volcengine = VolcengineClient(resolved, database)
         app.state.settings = resolved
@@ -96,11 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ],
         expose_headers=["X-Request-Id", "X-Upstream-Service", "Retry-After"],
     )
-    app.add_middleware(
-        ApiCallLoggingMiddleware,
-        capture_bytes=resolved.api_call_log_capture_bytes,
-        summary_chars=resolved.api_call_log_summary_chars,
-    )
+    app.add_middleware(ApiCallLoggingMiddleware)
 
     @app.middleware("http")
     async def maintenance_control(request, call_next):

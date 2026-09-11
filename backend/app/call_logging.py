@@ -48,6 +48,11 @@ _INLINE_SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
 )
 _BASE64_PATTERN = re.compile(r"^[A-Za-z0-9+/\r\n]+={0,2}$")
+_DATA_URI_PATTERN = re.compile(
+    r"^data:(?:[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+)?"
+    r"(?:;[A-Za-z0-9.+-]+(?:=[^;,]*)?)*,",
+    re.IGNORECASE,
+)
 
 
 def _headers(scope: dict[str, Any]) -> dict[str, str]:
@@ -67,15 +72,15 @@ def _known_key_from_authorization(database: Any, authorization: str) -> dict[str
 
 
 def _safe_url(value: str) -> str:
-    if value.startswith("data:"):
+    if _DATA_URI_PATTERN.match(value):
         return f"[DATA_URI:{len(value)} chars]"
     try:
         parsed = urlsplit(value)
     except ValueError:
-        return value[:512]
+        return value
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return value[:512]
-    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "[REDACTED]" if parsed.query else "", ""))[:1024]
+        return value
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "[REDACTED]" if parsed.query else "", ""))
 
 
 def _sensitive_key(key: str) -> bool:
@@ -94,57 +99,41 @@ def _looks_like_base64(value: str) -> bool:
     return len(compact) >= 256 and len(compact) % 4 == 0 and bool(_BASE64_PATTERN.fullmatch(value))
 
 
-def _sanitize(value: Any, *, key: str = "", depth: int = 0) -> Any:
+def _is_json_content_type(content_type: str) -> bool:
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
+def _sanitize(value: Any, *, key: str = "") -> Any:
     if _sensitive_key(key):
         return "[REDACTED]"
-    if depth >= 8:
-        return "[MAX_DEPTH]"
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        if value.startswith("data:"):
+        if _DATA_URI_PATTERN.match(value):
             return f"[DATA_URI:{len(value)} chars]"
         if _looks_like_base64(value):
             return f"[BASE64:{len(value)} chars]"
         if value.startswith(("http://", "https://")):
             value = _safe_url(value)
-        value = _redact_inline_secrets(value)
-        if len(value) > 1024:
-            return f"{value[:1024]}…[TRUNCATED:{len(value)} chars]"
-        return value
+        return _redact_inline_secrets(value)
     if isinstance(value, list):
-        items = [_sanitize(item, depth=depth + 1) for item in value[:50]]
-        if len(value) > 50:
-            items.append(f"[TRUNCATED:{len(value) - 50} items]")
-        return items
+        return [_sanitize(item) for item in value]
     if isinstance(value, dict):
-        result: dict[str, Any] = {}
-        for index, (item_key, item_value) in enumerate(value.items()):
-            if index >= 100:
-                result["_truncated"] = f"{len(value) - 100} fields"
-                break
-            name = str(item_key)[:128]
-            result[name] = _sanitize(item_value, key=name, depth=depth + 1)
-        return result
-    return str(value)[:512]
+        return {
+            str(item_key): _sanitize(item_value, key=str(item_key))
+            for item_key, item_value in value.items()
+        }
+    return str(value)
 
 
-def _bounded_json(value: Any, max_chars: int) -> str:
-    serialized = json.dumps(_sanitize(value), ensure_ascii=False, separators=(",", ":"))
-    if len(serialized) <= max_chars:
-        return serialized
-    return json.dumps(
-        {"truncated": True, "preview": serialized[:max_chars]},
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
+def _serialized_json(value: Any) -> str:
+    return json.dumps(_sanitize(value), ensure_ascii=False, separators=(",", ":"))
 
 
-def _json_body(content_type: str, captured: bytes, total_bytes: int, capture_limit: int) -> Any:
-    if "application/json" not in content_type.lower():
+def _json_body(content_type: str, captured: bytes, total_bytes: int) -> Any:
+    if not _is_json_content_type(content_type):
         return None
-    if total_bytes > capture_limit:
-        return {"truncated": True, "bodyBytes": total_bytes}
     if not captured:
         return None
     try:
@@ -158,7 +147,6 @@ def _request_summary(
     headers: dict[str, str],
     body: bytes,
     body_bytes: int,
-    capture_limit: int,
 ) -> dict[str, Any]:
     raw_query = scope.get("query_string", b"").decode("utf-8", "replace")
     query = {key: values if len(values) > 1 else values[0] for key, values in parse_qs(raw_query, keep_blank_values=True).items()}
@@ -168,7 +156,7 @@ def _request_summary(
         "contentType": headers.get("content-type", "").split(";", 1)[0],
         "contentLength": int(headers["content-length"]) if headers.get("content-length", "").isdigit() else body_bytes,
     }
-    parsed_body = _json_body(headers.get("content-type", ""), body, body_bytes, capture_limit)
+    parsed_body = _json_body(headers.get("content-type", ""), body, body_bytes)
     if parsed_body is not None:
         summary["body"] = parsed_body
     elif body_bytes:
@@ -182,7 +170,6 @@ def _response_summary(
     content_type: str,
     body: bytes,
     body_bytes: int,
-    capture_limit: int,
     headers: dict[str, str],
 ) -> tuple[dict[str, Any], str | None, str | None]:
     base: dict[str, Any] = {
@@ -200,24 +187,51 @@ def _response_summary(
     if "text/event-stream" in content_type.lower():
         base["stream"] = True
         text = body.decode("utf-8", "replace")
-        base["streamCompleted"] = "[DONE]" in text
-        for line in text.splitlines():
-            if not line.startswith("data:"):
+        events: list[dict[str, Any]] = []
+        stream_completed = False
+        for block in re.split(r"\r?\n\r?\n", text):
+            if not block:
                 continue
-            try:
-                event = json.loads(line[5:].strip())
-            except json.JSONDecodeError:
+            event: dict[str, Any] = {}
+            data_lines: list[str] = []
+            comments: list[str] = []
+            for line in block.splitlines():
+                if line.startswith(":"):
+                    comments.append(line[1:].lstrip())
+                    continue
+                field, separator, raw_value = line.partition(":")
+                value = raw_value[1:] if separator and raw_value.startswith(" ") else raw_value
+                if field == "data":
+                    data_lines.append(value)
+                elif field:
+                    event[field] = value
+            if comments:
+                event["comments"] = comments
+            if data_lines:
+                data_text = "\n".join(data_lines)
+                if data_text == "[DONE]":
+                    event["data"] = "[DONE]"
+                    stream_completed = True
+                else:
+                    try:
+                        event["data"] = json.loads(data_text)
+                    except json.JSONDecodeError:
+                        event["data"] = data_text
+            events.append(event)
+            data = event.get("data")
+            if not isinstance(data, dict):
                 continue
-            error = event.get("error") if isinstance(event, dict) else None
+            error = data.get("error")
             if isinstance(error, dict):
                 error_code = str(error.get("code") or "stream_error")[:128]
                 error_message = _redact_inline_secrets(
                     str(error.get("message") or "流式响应失败")[:1024]
                 )
                 base["streamError"] = {"code": error_code, "message": error_message}
-                break
+        base["events"] = events
+        base["streamCompleted"] = stream_completed
         return base, error_code, error_message
-    parsed = _json_body(content_type, body, body_bytes, capture_limit)
+    parsed = _json_body(content_type, body, body_bytes)
     if parsed is not None:
         base["body"] = parsed
         if isinstance(parsed, dict):
@@ -245,10 +259,8 @@ def _model_alias(request_body: Any, query_string: bytes) -> str | None:
 class ApiCallLoggingMiddleware:
     """Persist one redacted record for every request tied to a known business API key."""
 
-    def __init__(self, app: ASGIApp, *, capture_bytes: int = 262_144, summary_chars: int = 16_384) -> None:
+    def __init__(self, app: ASGIApp) -> None:
         self.app = app
-        self.capture_bytes = capture_bytes
-        self.summary_chars = summary_chars
 
     async def __call__(self, scope: dict[str, Any], receive, send) -> None:
         path = str(scope.get("path") or "")
@@ -274,8 +286,8 @@ class ApiCallLoggingMiddleware:
             if message.get("type") == "http.request":
                 chunk = message.get("body", b"")
                 request_bytes += len(chunk)
-                if "application/json" in request_headers.get("content-type", "").lower() and len(request_body) < self.capture_bytes:
-                    request_body.extend(chunk[: self.capture_bytes - len(request_body)])
+                if _is_json_content_type(request_headers.get("content-type", "")):
+                    request_body.extend(chunk)
             return message
 
         async def send_with_capture(message: dict[str, Any]) -> None:
@@ -291,10 +303,10 @@ class ApiCallLoggingMiddleware:
                 chunk = message.get("body", b"")
                 response_bytes += len(chunk)
                 if (
-                    "application/json" in response_content_type.lower()
+                    _is_json_content_type(response_content_type)
                     or "text/event-stream" in response_content_type.lower()
-                ) and len(response_body) < self.capture_bytes:
-                    response_body.extend(chunk[: self.capture_bytes - len(response_body)])
+                ):
+                    response_body.extend(chunk)
             await send(message)
 
         failure: BaseException | None = None
@@ -323,20 +335,17 @@ class ApiCallLoggingMiddleware:
                         request_headers.get("content-type", ""),
                         bytes(request_body),
                         request_bytes,
-                        self.capture_bytes,
                     )
                     request_summary = _request_summary(
                         scope,
                         request_headers,
                         bytes(request_body),
                         request_bytes,
-                        self.capture_bytes,
                     )
                     response_summary, error_code, error_message = _response_summary(
                         response_content_type,
                         bytes(response_body),
                         response_bytes,
-                        self.capture_bytes,
                         response_headers,
                     )
                     if failure is not None and not error_message:
@@ -362,10 +371,10 @@ class ApiCallLoggingMiddleware:
                             )
                             or None
                         ),
-                        request_params_json=_bounded_json(request_summary, self.summary_chars),
+                        request_params_json=_serialized_json(request_summary),
                         status_code=status_code,
                         success=200 <= status_code < 400 and not error_code and failure is None,
-                        response_summary_json=_bounded_json(response_summary, self.summary_chars),
+                        response_summary_json=_serialized_json(response_summary),
                         error_code=_redact_inline_secrets(error_code) if error_code else None,
                         error_message=_redact_inline_secrets(error_message) if error_message else None,
                         duration_ms=max(0, round((time.monotonic() - started) * 1000)),

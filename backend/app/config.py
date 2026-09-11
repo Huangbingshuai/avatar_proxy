@@ -42,9 +42,6 @@ class Settings(BaseSettings):
     system_monitor_sample_interval_seconds: int = Field(default=60, ge=10, le=3600)
     system_monitor_persist_interval_seconds: int = Field(default=5 * 60, ge=60, le=24 * 60 * 60)
     system_monitor_retention_days: int = Field(default=30, ge=1, le=365)
-    api_call_log_retention_days: int = Field(default=180, ge=7, le=3650)
-    api_call_log_capture_bytes: int = Field(default=256 * 1024, ge=4096, le=2 * 1024 * 1024)
-    api_call_log_summary_chars: int = Field(default=32 * 1024, ge=4096, le=128 * 1024)
     smtp_host: str = ""
     smtp_port: int = Field(default=465, ge=1, le=65535)
     smtp_username: str = ""

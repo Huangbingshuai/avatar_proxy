@@ -780,9 +780,10 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
 
 
 class Database:
-    def __init__(self, path: Path, request_log_retention_days: int = 180) -> None:
+    REQUEST_LOG_RETENTION_DAYS = 30
+
+    def __init__(self, path: Path) -> None:
         self.path = path
-        self.request_log_retention_days = request_log_retention_days
         self._request_logs_pruned_on: str | None = None
 
     def initialize(self) -> None:
@@ -859,7 +860,7 @@ class Database:
             )
             connection.execute(
                 "DELETE FROM request_logs WHERE created_at < datetime('now', ?)",
-                (f"-{self.request_log_retention_days} days",),
+                (f"-{self.REQUEST_LOG_RETENTION_DAYS} days",),
             )
             audit_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(admin_audit_logs)").fetchall()
@@ -1455,7 +1456,7 @@ class Database:
             if self._request_logs_pruned_on != prune_day:
                 connection.execute(
                     "DELETE FROM request_logs WHERE created_at < datetime('now', ?)",
-                    (f"-{self.request_log_retention_days} days",),
+                    (f"-{self.REQUEST_LOG_RETENTION_DAYS} days",),
                 )
                 self._request_logs_pruned_on = str(prune_day)
 
@@ -1590,7 +1591,7 @@ class Database:
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, Any]:
-        clauses = ["r.log_type='http'"]
+        clauses = ["r.log_type='http'", "r.created_at>=datetime('now','-30 days')"]
         parameters: list[Any] = []
         if project_name:
             clauses.append("r.project_name=?")
@@ -1653,6 +1654,54 @@ class Database:
             item["isModelCall"] = bool(item["isModelCall"])
             items.append(item)
         return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    def get_api_key_log_identity(self, api_key_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT id,name,key_prefix AS keyPrefix,project_name AS projectName "
+                "FROM api_keys WHERE id=? LIMIT 1",
+                (api_key_id,),
+            ).fetchone()
+        return self._dict(row)
+
+    def iter_api_call_logs_export(
+        self, api_key_id: str, *, batch_size: int = 500
+    ) -> Iterator[dict[str, Any]]:
+        """Yield a stable, recent log snapshot without holding a long SQLite read lock."""
+        with self.connect() as connection:
+            max_id = int(
+                connection.execute(
+                    "SELECT COALESCE(MAX(id),0) FROM request_logs "
+                    "WHERE log_type='http' AND api_key_id=? "
+                    "AND created_at>=datetime('now','-30 days')",
+                    (api_key_id,),
+                ).fetchone()[0]
+            )
+        last_id = 0
+        while last_id < max_id:
+            with self.connect() as connection:
+                rows = connection.execute(
+                    "SELECT r.id,r.request_id AS requestId,r.api_key_id AS apiKeyId,"
+                    "COALESCE(k.name,'已删除 Key') AS apiKeyName,"
+                    "COALESCE(k.key_prefix,'') AS apiKeyPrefix,r.project_name AS projectName,"
+                    "r.method,r.path,r.route_template AS routeTemplate,r.action,"
+                    "r.model_alias AS modelAlias,r.request_params_json AS requestParamsJson,"
+                    "r.status_code AS statusCode,r.success,"
+                    "r.response_summary_json AS responseSummaryJson,r.error_code AS errorCode,"
+                    "r.error_message AS errorMessage,r.duration_ms AS durationMs,"
+                    "r.response_bytes AS responseBytes,r.source_ip AS sourceIp,"
+                    "r.user_agent AS userAgent,r.is_model_call AS isModelCall,"
+                    "r.created_at AS createdAt FROM request_logs r "
+                    "LEFT JOIN api_keys k ON k.id=r.api_key_id "
+                    "WHERE r.log_type='http' AND r.api_key_id=? AND r.id>? AND r.id<=? "
+                    "AND r.created_at>=datetime('now','-30 days') ORDER BY r.id LIMIT ?",
+                    (api_key_id, last_id, max_id, batch_size),
+                ).fetchall()
+            if not rows:
+                break
+            for row in rows:
+                yield dict(row)
+            last_id = int(rows[-1]["id"])
 
     def overview(self) -> dict[str, Any]:
         with self.connect() as connection:

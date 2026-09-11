@@ -69,7 +69,7 @@ curl https://api.example.com/health
 
 默认数据库为挂载在 `/app/data` 的 SQLite，适合单实例部署。不能让多个容器共享同一个 SQLite 文件；需要多实例高可用时，应先把 API Key、项目和日志存储迁移到 PostgreSQL 等共享数据库。
 
-业务接口会按可识别的业务 API Key 写入脱敏调用明细。默认保留 180 天，过期明细清理后累计请求和累计异常计数仍保留；通过 `API_CALL_LOG_RETENTION_DAYS`、`API_CALL_LOG_CAPTURE_BYTES`、`API_CALL_LOG_SUMMARY_CHARS` 调整保留期和摘要上限。日志不保存鉴权头、完整 Key、供应商凭证、Cookie、签名、幂等键原文、文件正文、Data URI 或 Base64 媒体。上线前应根据实际请求量评估 SQLite 持久卷增长，并将数据库备份视为包含客户请求摘要的敏感数据。
+业务接口会按可识别的业务 API Key 写入脱敏调用明细。完整 JSON 请求与 JSON/SSE 返回文本固定滚动保留近 30 天，过期明细清理后累计请求和累计异常计数仍保留；控制台可按已选 Key 流式导出保留窗口内的 CSV。日志不保存鉴权头、完整 Key、供应商凭证、Cookie、签名、幂等键原文、文件正文、Data URI、Base64 或媒体二进制，这些内容仅记录脱敏标记或体积元数据。上线前应根据实际请求量评估 SQLite 持久卷增长，并将数据库备份和日志导出文件视为包含客户业务内容的敏感数据。
 
 默认每 24 小时通过 SQLite 在线备份 API 生成一份一致性数据库快照和一份管理员审计 JSONL，并在落盘前执行 `PRAGMA integrity_check`，保留最近 30 组。使用 `ADMIN_BACKUP_INTERVAL_SECONDS`、`ADMIN_BACKUP_RETENTION` 和 `ADMIN_BACKUP_DIRECTORY` 调整策略。备份目录必须位于持久卷，并同步到独立磁盘或对象存储；同机备份不能替代异地灾备。控制台中的“立即备份”同样要求超级管理员再次输入当前密码。
 
