@@ -76,8 +76,14 @@ async def require_api_key(
     database: Database = request.app.state.database
     row = database.find_api_key(hash_api_key(credentials.credentials))
     if not row:
+        known = database.find_api_key_any_status(hash_api_key(credentials.credentials))
+        if known:
+            request.state.api_key_id = known["id"]
+            request.state.api_project_name = known.get("projectName") or "unbound"
         raise ApiError("API Key 无效或已禁用", 401, "invalid_api_key")
     project_name = (row.get("projectName") or "").strip()
+    request.state.api_key_id = row["id"]
+    request.state.api_project_name = project_name or "unbound"
     if not project_name or not database.project_exists(project_name):
         raise ApiError("API Key 未绑定有效项目", 403, "invalid_project_binding")
     principal = ApiPrincipal(id=row["id"], project_name=project_name)

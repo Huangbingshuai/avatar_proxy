@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, Request, status
 
@@ -118,6 +119,13 @@ def delete_project(payload: ProjectDelete, request: Request, admin: AdminDepende
             "project_has_billing_history",
             details={"billingCount": result["billingCount"]},
         )
+    if result.get("historyCount"):
+        raise ApiError(
+            "项目已有业务调用历史，为保证日志归属不能删除",
+            409,
+            "project_has_call_history",
+            details={"historyCount": result["historyCount"]},
+        )
     audit_action(
         request, admin, "project.delete", "project", result["projectName"],
         before={"projectName": result["projectName"]}, after={"deleted": True},
@@ -214,6 +222,40 @@ def bind_api_key_project(payload: ApiKeyBindProject, request: Request, admin: Ad
 @router.get("/overview")
 def overview(request: Request, _: AdminDependency) -> dict:
     return database(request).overview()
+
+
+def _utc_sql_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return aware.replace(tzinfo=None).isoformat(sep=" ", timespec="seconds")
+
+
+@router.get("/call-logs")
+def list_call_logs(
+    request: Request,
+    _: AdminDependency,
+    project_name: str | None = Query(default=None, alias="projectName", min_length=2, max_length=128),
+    api_key_id: str | None = Query(default=None, alias="apiKeyId", min_length=1, max_length=128),
+    search: str | None = Query(default=None, min_length=1, max_length=128),
+    model: str | None = Query(default=None, min_length=1, max_length=128),
+    success: bool | None = Query(default=None),
+    created_from: datetime | None = Query(default=None, alias="from"),
+    created_to: datetime | None = Query(default=None, alias="to"),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    return database(request).list_api_call_logs(
+        project_name=project_name,
+        api_key_id=api_key_id,
+        search=search,
+        model_alias=model,
+        success=success,
+        created_from=_utc_sql_timestamp(created_from),
+        created_to=_utc_sql_timestamp(created_to),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/project/quota")

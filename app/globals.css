@@ -120,7 +120,7 @@ code, pre, .mono { font-family: var(--font-geist-mono), Consolas, monospace; }
 .dataTable { overflow-x: auto; }
 .tableRow { min-width: 800px; padding: 14px 20px; display: grid; align-items: center; gap: 15px; border-top: 1px solid #f0efeb; font-size: 12px; }
 .tableRow:first-child { border-top: 0; }
-.recentTable .tableRow { grid-template-columns: 2fr 1fr .6fr .7fr 1.2fr; }
+.recentTable .tableRow { min-width: 980px; grid-template-columns: 2.2fr 1.15fr 1fr .55fr .65fr 1.15fr; }
 .keyTable .tableRow { grid-template-columns: 1.25fr 1.3fr 1.15fr 1.1fr .65fr .9fr; }
 .tableHead { background: #faf9f5; color: #868b85; font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
 .tableRow b, .tableRow small { display: block; }
@@ -881,3 +881,47 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .globalRateListState { display: flex; min-height: 150px; align-items: center; justify-content: center; gap: 9px; padding: 24px; color: var(--muted); background: #fff; font-size: 13px; }
 @media (max-width: 1180px) { .globalRateRow { grid-template-columns: 220px minmax(0, 1fr); }.globalRateAction { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; }.globalRateRules { grid-template-columns: repeat(2, minmax(160px, 1fr)); } }
 @media (max-width: 760px) { .globalRatesHead,.globalRatesControls { align-items: stretch; }.globalRatesControls { display: grid; width: 100%; }.globalRatesControls input { width: 100%; }.globalRatesSummary { align-items: flex-start; flex-wrap: wrap; }.globalRatesSummary em { width: 100%; margin-left: 0; }.globalRateRow { grid-template-columns: 1fr; }.globalRateRules { grid-template-columns: 1fr; }.globalRateAction { grid-column: auto; } }
+
+/* API call ledger */
+.callLogsConsole { display: grid; gap: 18px; }
+.callLogsConsole .pageIntro { margin-bottom: 0; }
+.callLogLive { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 999px; color: #8a817a; background: #fff; font-size: 10px; font-weight: 800; }
+.callLogLive i { width: 7px; height: 7px; border-radius: 50%; background: #c9c2bc; }
+.callLogLive.active { color: #176c58; border-color: #cfe8df; background: #edf8f4; }
+.callLogLive.active i { background: #28a47f; box-shadow: 0 0 0 4px rgba(40, 164, 127, .12); }
+.callLogFilters { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(135deg, #fff 0%, #fffaf7 100%); box-shadow: 0 10px 26px rgba(73, 58, 49, .045); }
+.callLogSelectors { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+.callLogFilters label { display: grid; gap: 6px; color: #6d645e; font-size: 11px; font-weight: 750; }
+.callLogFilters input,.callLogFilters select { width: 100%; min-width: 0; min-height: 40px; border: 1px solid var(--line); border-radius: 11px; padding: 0 11px; color: var(--ink); background: #fff; outline: 0; }
+.callLogFilters input:focus,.callLogFilters select:focus { border-color: #ff9f80; box-shadow: 0 0 0 4px rgba(255, 90, 95, .08); }
+.callLogFilters select:disabled { color: #aaa19b; background: #f3f0ed; cursor: not-allowed; }
+.callLogPanel { overflow: hidden; }
+.callLogPrivacy { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid #cfe8df; border-radius: 999px; color: #176c58; background: #edf8f4; font-size: 10px; font-weight: 800; }
+.callLogTable { border-top: 1px solid var(--line); }
+.callLogTable .tableRow { min-width: 1280px; grid-template-columns: 150px 185px minmax(290px, 1.5fr) 150px 80px 90px 80px 36px; }
+.callLogEntry { border-top: 1px solid #f0efeb; }
+.callLogEntry:first-of-type { border-top: 0; }
+.callLogEntry > .tableRow { border-top: 0; }
+.callLogTime { display: inline-flex; align-items: center; gap: 6px; color: #625a55; }
+.callLogRoute { display: flex !important; align-items: center; gap: 7px; min-width: 0; }
+.callLogRoute i { padding: 3px 6px; border-radius: 6px; color: #366d61; background: #edf8f4; font-size: 9px; font-style: normal; }
+.callLogRoute:not(i) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.callLogResult { display: inline-flex; align-items: center; gap: 5px; width: fit-content; font-weight: 800; }
+.callLogResult.success { color: #168260; }
+.callLogResult.failed { color: #d44e3a; }
+.callLogExpand { display: grid; width: 31px; height: 31px; place-items: center; border: 1px solid var(--line); border-radius: 10px; color: #746b65; background: #fff; cursor: pointer; }
+.callLogExpand:hover { color: var(--coral-dark); border-color: #ffc0ad; background: #fff5f1; }
+.callLogDetail { display: grid; gap: 14px; padding: 18px 22px 22px; background: #fbfaf9; box-shadow: inset 0 1px 0 #f0ece9; }
+.callLogMeta { display: grid; grid-template-columns: .75fr 1fr .55fr 2fr; gap: 10px; }
+.callLogMeta span { display: grid; gap: 4px; min-width: 0; padding: 10px 12px; border: 1px solid #ebe6e2; border-radius: 12px; color: #706761; background: #fff; font-size: 10px; overflow-wrap: anywhere; }
+.callLogMeta b { color: #a09791; font-size: 9px; }
+.callLogError { display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; border: 1px solid #f2c8be; border-radius: 12px; color: #a93828; background: #fff1ee; font-size: 11px; }
+.callLogError b { white-space: nowrap; }
+.callLogPayloads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.callLogPayloads article { min-width: 0; overflow: hidden; border: 1px solid #e8e2de; border-radius: 14px; background: #fff; }
+.callLogPayloads header { padding: 10px 13px; border-bottom: 1px solid #eee8e4; color: #5f5650; background: #fffaf7; font-size: 10px; font-weight: 800; }
+.callLogPayloads pre { min-height: 120px; max-height: 360px; margin: 0; overflow: auto; padding: 13px; color: #3c4843; background: #fff; font-size: 10px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.callLogPagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.callLogPagination button { min-height: 36px; }
+@media (max-width: 1100px) { .callLogFilters { grid-template-columns: repeat(2, minmax(150px, 1fr)); }.callLogMeta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .callLogsConsole .pageIntro { align-items: stretch; flex-direction: column; }.callLogFilters { grid-template-columns: 1fr; }.callLogPayloads,.callLogMeta { grid-template-columns: 1fr; }.callLogPagination { justify-content: space-between; } }

@@ -20,6 +20,7 @@ import {
   RefreshCw,
   ReceiptText,
   RotateCcw,
+  ScrollText,
   Server,
   ShieldCheck,
   SlidersHorizontal,
@@ -33,6 +34,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 
 import AdminPanel from "./admin-panel";
 import { AdminApiError, isPasswordChangeRequired, isSessionError, requestAdminApi, type AdminApi, type AdminUser } from "./admin-api";
+import ApiCallLogsPanel from "./api-call-logs-panel";
 import BillingPanel from "./billing-panel";
 import ModelPriceTable from "./model-price-table";
 import ModelRelayPanel from "./model-relay-panel";
@@ -57,8 +59,8 @@ type ApiKey = {
 };
 
 type Overview = {
-  stats: { projects: number; activeKeys: number; requests24h: number; errors24h: number; assetsToday: number; uploadsToday: number; uploadBytesToday: number; limitedProjects: number; openQuotaEvents: number; cleanupPending: number };
-  recent: Array<{ action: string; projectName: string; statusCode: number; durationMs: number; createdAt: string }>;
+  stats: { projects: number; activeKeys: number; requestsTotal: number; errorsTotal: number; assetsTotal: number; uploadsTotal: number; uploadBytesTotal: number; modelCalls: number; tokenUsage: number };
+  recent: Array<{ action: string; method?: string; path?: string; routeTemplate?: string; projectName: string; apiKeyId?: string; apiKeyName?: string; apiKeyPrefix?: string; statusCode: number; durationMs: number; createdAt: string }>;
 };
 
 type QuotaValues = {
@@ -112,7 +114,7 @@ type QuotaUsage = {
   cleanupObjects: CleanupObject[];
 };
 
-type Tab = "overview" | "projects" | "keys" | "models" | "prices" | "billing" | "quotas" | "integration" | "admins";
+type Tab = "overview" | "projects" | "keys" | "logs" | "models" | "prices" | "billing" | "quotas" | "integration" | "admins";
 type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -122,6 +124,7 @@ const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "概览", icon: Gauge },
   { id: "projects", label: "项目", icon: FolderKanban },
   { id: "keys", label: "API Keys", icon: KeyRound },
+  { id: "logs", label: "调用日志", icon: ScrollText },
   { id: "models", label: "项目模型", icon: Sparkles },
   { id: "prices", label: "模型价格", icon: CircleDollarSign },
   { id: "billing", label: "计费账单", icon: ReceiptText },
@@ -490,6 +493,7 @@ export default function ConsolePage() {
         {currentUser?.role !== "super_admin" && tab === "overview" && <OverviewPanel overview={overview} onOpenIntegration={() => setTab("integration")} />}
         {currentUser?.role !== "super_admin" && tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
         {currentUser?.role !== "super_admin" && tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
+        {currentUser?.role !== "super_admin" && tab === "logs" && <ApiCallLogsPanel projects={projects} apiKeys={apiKeys} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "models" && <ModelRelayPanel projects={projects} apiKeys={apiKeys} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "prices" && <ModelPriceTable adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "billing" && <BillingPanel projects={projects} adminApi={adminApi} />}
@@ -612,17 +616,17 @@ function OverviewPanel({ overview, onOpenIntegration }: { overview: Overview | n
     <div className="statGrid">
       <Stat label="项目" value={overview?.stats.projects ?? 0} note="映射火山 ProjectName" />
       <Stat label="有效 API Keys" value={overview?.stats.activeKeys ?? 0} note="仅保存 SHA-256 哈希" />
-      <Stat label="24h 请求" value={overview?.stats.requests24h ?? 0} note="公网业务接口" />
-      <Stat label="24h 异常" value={overview?.stats.errors24h ?? 0} note="上游与鉴权错误" warn={Boolean(overview?.stats.errors24h)} />
+      <Stat label="累计请求" value={overview?.stats.requestsTotal ?? 0} note="全部公网业务请求" />
+      <Stat label="累计异常" value={overview?.stats.errorsTotal ?? 0} note="全部失败业务请求" warn={Boolean(overview?.stats.errorsTotal)} />
     </div>
     <div className="statGrid riskStats">
-      <Stat label="今日创建素材" value={overview?.stats.assetsToday ?? 0} note="北京时间自然日" />
-      <Stat label="今日上传" value={overview?.stats.uploadsToday ?? 0} note={bytesLabel(overview?.stats.uploadBytesToday ?? 0)} />
-      <Stat label="启用额度项目" value={overview?.stats.limitedProjects ?? 0} note="其余项目默认不限额" />
-      <Stat label="未确认额度事件" value={overview?.stats.openQuotaEvents ?? 0} note={`${overview?.stats.cleanupPending ?? 0} 个对象待清理`} warn={Boolean(overview?.stats.openQuotaEvents || overview?.stats.cleanupPending)} />
+      <Stat label="累计素材" value={overview?.stats.assetsTotal ?? 0} note="全部项目素材" />
+      <Stat label="累计上传" value={overview?.stats.uploadsTotal ?? 0} note={bytesLabel(overview?.stats.uploadBytesTotal ?? 0)} />
+      <Stat label="模型调用次数" value={overview?.stats.modelCalls ?? 0} note="成功结算的模型用量" />
+      <Stat label="Token 消耗" value={overview?.stats.tokenUsage ?? 0} note="供应商实际返回值" />
     </div>
-    <section className="panel"><div className="panelHead"><div><h3>最近请求</h3><p>记录项目、操作与状态，不保存业务请求体。</p></div></div>
-      <div className="dataTable recentTable"><div className="tableRow tableHead"><span>操作</span><span>项目</span><span>状态</span><span>耗时</span><span>时间</span></div>{overview?.recent.length ? overview.recent.map((row, index) => <div className="tableRow" key={`${row.createdAt}-${index}`}><span className="mono">{row.action}</span><span>{row.projectName}</span><span><i className={`httpStatus ${row.statusCode < 400 ? "ok" : "bad"}`}>{row.statusCode}</i></span><span>{row.durationMs} ms</span><span>{formatTime(row.createdAt)}</span></div>) : <div className="emptyRow">暂无调用记录</div>}</div>
+    <section className="panel"><div className="panelHead"><div><h3>最近请求</h3><p>展示最近业务请求；完整脱敏参数和返回摘要请前往“调用日志”。</p></div></div>
+      <div className="dataTable recentTable"><div className="tableRow tableHead"><span>接口</span><span>API Key</span><span>项目</span><span>状态</span><span>耗时</span><span>时间</span></div>{overview?.recent.length ? overview.recent.map((row, index) => <div className="tableRow" key={`${row.createdAt}-${index}`}><span className="mono">{row.method ? `${row.method} ` : ""}{row.routeTemplate || row.path || row.action}</span><span>{row.apiKeyName || row.apiKeyPrefix || "-"}</span><span>{row.projectName}</span><span><i className={`httpStatus ${row.statusCode < 400 ? "ok" : "bad"}`}>{row.statusCode}</i></span><span>{row.durationMs} ms</span><span>{formatTime(row.createdAt)}</span></div>) : <div className="emptyRow">暂无调用记录</div>}</div>
     </section>
   </div>;
 }

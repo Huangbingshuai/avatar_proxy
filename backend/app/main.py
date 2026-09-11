@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from .admin_auth import AdminAuthService
 from .backup import BackupManager
 from .billing import BillingManager
+from .call_logging import ApiCallLoggingMiddleware
 from .config import Settings, get_settings
 from .database import Database
 from .errors import install_error_handlers
@@ -27,7 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        database = Database(resolved.database_path)
+        database = Database(resolved.database_path, resolved.api_call_log_retention_days)
         database.initialize()
         volcengine = VolcengineClient(resolved, database)
         app.state.settings = resolved
@@ -94,6 +95,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "X-CSRF-Token",
         ],
         expose_headers=["X-Request-Id", "X-Upstream-Service", "Retry-After"],
+    )
+    app.add_middleware(
+        ApiCallLoggingMiddleware,
+        capture_bytes=resolved.api_call_log_capture_bytes,
+        summary_chars=resolved.api_call_log_summary_chars,
     )
 
     @app.middleware("http")

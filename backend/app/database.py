@@ -120,7 +120,27 @@ CREATE TABLE IF NOT EXISTS request_logs (
     action TEXT NOT NULL,
     status_code INTEGER NOT NULL,
     duration_ms INTEGER NOT NULL,
+    log_type TEXT NOT NULL DEFAULT 'upstream',
+    request_id TEXT,
+    method TEXT,
+    path TEXT,
+    route_template TEXT,
+    model_alias TEXT,
+    request_params_json TEXT NOT NULL DEFAULT '{}',
+    response_summary_json TEXT NOT NULL DEFAULT '{}',
+    success INTEGER,
+    error_code TEXT,
+    error_message TEXT,
+    response_bytes INTEGER NOT NULL DEFAULT 0,
+    source_ip TEXT,
+    user_agent TEXT,
+    is_model_call INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS api_call_totals (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    requests_total INTEGER NOT NULL DEFAULT 0,
+    errors_total INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS video_usage (
     api_key_id TEXT NOT NULL,
@@ -760,8 +780,10 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
 
 
 class Database:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, request_log_retention_days: int = 180) -> None:
         self.path = path
+        self.request_log_retention_days = request_log_retention_days
+        self._request_logs_pruned_on: str | None = None
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -784,6 +806,61 @@ class Database:
             }
             if "deleted_at" not in api_key_columns:
                 connection.execute("ALTER TABLE api_keys ADD COLUMN deleted_at TEXT")
+            request_log_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(request_logs)").fetchall()
+            }
+            request_log_definitions = {
+                "request_id": "TEXT",
+                "method": "TEXT",
+                "path": "TEXT",
+                "route_template": "TEXT",
+                "model_alias": "TEXT",
+                "request_params_json": "TEXT NOT NULL DEFAULT '{}'",
+                "response_summary_json": "TEXT NOT NULL DEFAULT '{}'",
+                "success": "INTEGER",
+                "error_code": "TEXT",
+                "error_message": "TEXT",
+                "response_bytes": "INTEGER NOT NULL DEFAULT 0",
+                "source_ip": "TEXT",
+                "user_agent": "TEXT",
+                "is_model_call": "INTEGER NOT NULL DEFAULT 0",
+            }
+            if "log_type" not in request_log_columns:
+                connection.execute(
+                    "ALTER TABLE request_logs ADD COLUMN log_type TEXT NOT NULL DEFAULT 'http_legacy'"
+                )
+            for column, definition in request_log_definitions.items():
+                if column not in request_log_columns:
+                    connection.execute(f"ALTER TABLE request_logs ADD COLUMN {column} {definition}")
+            connection.execute(
+                "UPDATE request_logs SET success=CASE WHEN status_code < 400 THEN 1 ELSE 0 END "
+                "WHERE success IS NULL"
+            )
+            connection.execute(
+                "INSERT OR IGNORE INTO api_call_totals(id,requests_total,errors_total) "
+                "SELECT 1,COUNT(*),COALESCE(SUM(CASE WHEN success=0 THEN 1 ELSE 0 END),0) "
+                "FROM request_logs WHERE log_type IN ('http','http_legacy')"
+            )
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_request_logs_request_id "
+                "ON request_logs(request_id) WHERE request_id IS NOT NULL"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_request_logs_key_created "
+                "ON request_logs(api_key_id, created_at DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_request_logs_project_created "
+                "ON request_logs(project_name, created_at DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_request_logs_http_filters "
+                "ON request_logs(log_type, success, is_model_call, created_at DESC)"
+            )
+            connection.execute(
+                "DELETE FROM request_logs WHERE created_at < datetime('now', ?)",
+                (f"-{self.request_log_retention_days} days",),
+            )
             audit_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(admin_audit_logs)").fetchall()
             }
@@ -1146,7 +1223,12 @@ class Database:
                 "SELECT COUNT(*) FROM billing_statements WHERE project_name=?",
                 (canonical_name,),
             ).fetchone()[0]
-            if key_count or asset_count or channel_count or billing_count:
+            history_count = connection.execute(
+                "SELECT (SELECT COUNT(*) FROM request_logs WHERE project_name=?) + "
+                "(SELECT COUNT(*) FROM api_keys WHERE project_name=? AND status='deleted')",
+                (canonical_name, canonical_name),
+            ).fetchone()[0]
+            if key_count or asset_count or channel_count or billing_count or history_count:
                 return {
                     "deleted": False,
                     "projectName": canonical_name,
@@ -1154,6 +1236,7 @@ class Database:
                     "assetCount": asset_count,
                     "channelCount": channel_count,
                     "billingCount": billing_count,
+                    "historyCount": history_count,
                 }
             connection.execute(
                 "DELETE FROM quota_reservations WHERE scope_type='project' AND scope_id=?",
@@ -1177,6 +1260,7 @@ class Database:
             "assetCount": 0,
             "channelCount": 0,
             "billingCount": 0,
+            "historyCount": 0,
         }
 
     def project_exists(self, name: str) -> bool:
@@ -1240,8 +1324,9 @@ class Database:
                 "EXISTS(SELECT 1 FROM inference_usage WHERE api_key_id=?) OR "
                 "EXISTS(SELECT 1 FROM video_tasks WHERE api_key_id=?) OR "
                 "EXISTS(SELECT 1 FROM video_usage WHERE api_key_id=?) OR "
-                "EXISTS(SELECT 1 FROM billing_usage_items WHERE api_key_id=?)",
-                (key_id, key_id, key_id, key_id, key_id),
+                "EXISTS(SELECT 1 FROM billing_usage_items WHERE api_key_id=?) OR "
+                "EXISTS(SELECT 1 FROM request_logs WHERE api_key_id=?)",
+                (key_id, key_id, key_id, key_id, key_id, key_id),
             ).fetchone()[0]
             connection.execute(
                 "DELETE FROM quota_reservations WHERE scope_type='key' AND scope_id=?", (key_id,)
@@ -1286,6 +1371,15 @@ class Database:
             ).fetchone()
         return self._dict(row)
 
+    def find_api_key_any_status(self, key_hash: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT id, project_name AS projectName, status FROM api_keys "
+                "WHERE key_hash = ? LIMIT 1",
+                (key_hash,),
+            ).fetchone()
+        return self._dict(row)
+
     def touch_api_key(self, key_id: str) -> None:
         with self.connect() as connection:
             connection.execute("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?", (key_id,))
@@ -1293,9 +1387,77 @@ class Database:
     def log_request(self, key_id: str, project_name: str, action: str, status_code: int, duration_ms: int) -> None:
         with self.connect() as connection:
             connection.execute(
-                "INSERT INTO request_logs (api_key_id, project_name, action, status_code, duration_ms) VALUES (?, ?, ?, ?, ?)",
-                (key_id, project_name, action, status_code, duration_ms),
+                "INSERT INTO request_logs "
+                "(api_key_id,project_name,action,status_code,duration_ms,log_type,success) "
+                "VALUES (?,?,?,?,?,'upstream',?)",
+                (key_id, project_name, action, status_code, duration_ms, int(status_code < 400)),
             )
+
+    def log_api_call(
+        self,
+        *,
+        request_id: str,
+        api_key_id: str,
+        project_name: str,
+        method: str,
+        path: str,
+        route_template: str,
+        action: str,
+        model_alias: str | None,
+        request_params_json: str,
+        status_code: int,
+        success: bool,
+        response_summary_json: str,
+        error_code: str | None,
+        error_message: str | None,
+        duration_ms: int,
+        response_bytes: int,
+        source_ip: str | None,
+        user_agent: str | None,
+        is_model_call: bool,
+    ) -> None:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO request_logs "
+                "(api_key_id,project_name,action,status_code,duration_ms,log_type,request_id,"
+                "method,path,route_template,model_alias,request_params_json,response_summary_json,"
+                "success,error_code,error_message,response_bytes,source_ip,user_agent,is_model_call) "
+                "VALUES (?,?,?,?,?,'http',?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    api_key_id,
+                    project_name,
+                    action,
+                    status_code,
+                    duration_ms,
+                    request_id or None,
+                    method[:16],
+                    path[:512],
+                    route_template[:512],
+                    model_alias,
+                    request_params_json,
+                    response_summary_json,
+                    int(success),
+                    error_code,
+                    (error_message or "")[:1024] or None,
+                    max(0, response_bytes),
+                    (source_ip or "")[:128] or None,
+                    (user_agent or "")[:512] or None,
+                    int(is_model_call),
+                ),
+            )
+            if cursor.rowcount:
+                connection.execute(
+                    "UPDATE api_call_totals SET requests_total=requests_total+1,"
+                    "errors_total=errors_total+? WHERE id=1",
+                    (int(not success),),
+                )
+            prune_day = connection.execute("SELECT date('now')").fetchone()[0]
+            if self._request_logs_pruned_on != prune_day:
+                connection.execute(
+                    "DELETE FROM request_logs WHERE created_at < datetime('now', ?)",
+                    (f"-{self.request_log_retention_days} days",),
+                )
+                self._request_logs_pruned_on = str(prune_day)
 
     def create_asset_record(
         self,
@@ -1415,24 +1577,107 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_api_call_logs(
+        self,
+        *,
+        project_name: str | None = None,
+        api_key_id: str | None = None,
+        search: str | None = None,
+        model_alias: str | None = None,
+        success: bool | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        clauses = ["r.log_type='http'"]
+        parameters: list[Any] = []
+        if project_name:
+            clauses.append("r.project_name=?")
+            parameters.append(project_name)
+        if api_key_id:
+            clauses.append("r.api_key_id=?")
+            parameters.append(api_key_id)
+        if search:
+            clauses.append("(r.path LIKE ? OR r.route_template LIKE ? OR r.action LIKE ?)")
+            pattern = f"%{search}%"
+            parameters.extend((pattern, pattern, pattern))
+        if model_alias:
+            clauses.append("r.model_alias LIKE ?")
+            parameters.append(f"%{model_alias}%")
+        if success is not None:
+            clauses.append("r.success=?")
+            parameters.append(int(success))
+        if created_from:
+            clauses.append("r.created_at>=?")
+            parameters.append(created_from)
+        if created_to:
+            clauses.append("r.created_at<=?")
+            parameters.append(created_to)
+        where = " AND ".join(clauses)
+        with self.connect() as connection:
+            total = int(
+                connection.execute(
+                    f"SELECT COUNT(*) FROM request_logs r WHERE {where}", parameters
+                ).fetchone()[0]
+            )
+            rows = connection.execute(
+                "SELECT r.id,r.request_id AS requestId,r.api_key_id AS apiKeyId,"
+                "COALESCE(k.name,'已删除 Key') AS apiKeyName,"
+                "COALESCE(k.key_prefix,'') AS apiKeyPrefix,r.project_name AS projectName,"
+                "r.method,r.path,r.route_template AS routeTemplate,r.action,"
+                "r.model_alias AS modelAlias,r.request_params_json AS requestParamsJson,"
+                "r.status_code AS statusCode,r.success,"
+                "r.response_summary_json AS responseSummaryJson,r.error_code AS errorCode,"
+                "r.error_message AS errorMessage,r.duration_ms AS durationMs,"
+                "r.response_bytes AS responseBytes,r.source_ip AS sourceIp,"
+                "r.user_agent AS userAgent,r.is_model_call AS isModelCall,"
+                "r.created_at AS createdAt FROM request_logs r "
+                "LEFT JOIN api_keys k ON k.id=r.api_key_id "
+                f"WHERE {where} ORDER BY r.id DESC LIMIT ? OFFSET ?",
+                (*parameters, limit, offset),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            for source, target in (
+                ("requestParamsJson", "requestParams"),
+                ("responseSummaryJson", "responseSummary"),
+            ):
+                raw = item.pop(source, "{}")
+                try:
+                    item[target] = json.loads(raw or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    item[target] = {"unreadable": True}
+            item["success"] = bool(item["success"])
+            item["isModelCall"] = bool(item["isModelCall"])
+            items.append(item)
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
     def overview(self) -> dict[str, Any]:
         with self.connect() as connection:
             stats = connection.execute("""
                 SELECT
                     (SELECT COUNT(*) FROM projects) AS projects,
                     (SELECT COUNT(*) FROM api_keys WHERE status = 'active') AS activeKeys,
-                    (SELECT COUNT(*) FROM request_logs WHERE created_at >= datetime('now', '-24 hours')) AS requests24h,
-                    (SELECT COUNT(*) FROM request_logs WHERE status_code >= 400 AND created_at >= datetime('now', '-24 hours')) AS errors24h,
-                    (SELECT COUNT(*) FROM asset_records WHERE status IN ('registering','active') AND date(created_at, '+8 hours')=date('now', '+8 hours')) AS assetsToday,
-                    (SELECT COUNT(*) FROM asset_records WHERE source_type='tos' AND date(created_at, '+8 hours')=date('now', '+8 hours')) AS uploadsToday,
-                    (SELECT COALESCE(SUM(size_bytes),0) FROM asset_records WHERE source_type='tos' AND date(created_at, '+8 hours')=date('now', '+8 hours')) AS uploadBytesToday,
-                    (SELECT COUNT(DISTINCT project_name) FROM project_quotas WHERE enabled=1) AS limitedProjects,
-                    (SELECT COUNT(*) FROM quota_events WHERE acknowledged=0) AS openQuotaEvents,
-                    (SELECT COUNT(*) FROM asset_records WHERE status='cleanup_pending') AS cleanupPending
+                    (SELECT requests_total FROM api_call_totals WHERE id=1) AS requestsTotal,
+                    (SELECT errors_total FROM api_call_totals WHERE id=1) AS errorsTotal,
+                    (SELECT COUNT(*) FROM asset_records WHERE status IN ('registering','active')) AS assetsTotal,
+                    (SELECT COUNT(*) FROM asset_records WHERE source_type='tos') AS uploadsTotal,
+                    (SELECT COALESCE(SUM(size_bytes),0) FROM asset_records WHERE source_type='tos') AS uploadBytesTotal,
+                    ((SELECT COUNT(*) FROM inference_usage WHERE status='succeeded') +
+                     (SELECT COUNT(*) FROM video_usage)) AS modelCalls,
+                    ((SELECT COALESCE(SUM(total_tokens),0) FROM inference_usage WHERE status='succeeded') +
+                     (SELECT COALESCE(SUM(total_tokens),0) FROM video_usage)) AS tokenUsage
             """).fetchone()
             recent = connection.execute("""
-                SELECT action, project_name AS projectName, status_code AS statusCode,
-                    duration_ms AS durationMs, created_at AS createdAt
-                FROM request_logs ORDER BY id DESC LIMIT 8
+                SELECT r.action,r.method,r.path,r.route_template AS routeTemplate,
+                    r.project_name AS projectName,r.api_key_id AS apiKeyId,
+                    COALESCE(k.name,'已删除 Key') AS apiKeyName,
+                    COALESCE(k.key_prefix,'') AS apiKeyPrefix,
+                    r.status_code AS statusCode,r.duration_ms AS durationMs,
+                    r.created_at AS createdAt
+                FROM request_logs r LEFT JOIN api_keys k ON k.id=r.api_key_id
+                WHERE r.log_type IN ('http','http_legacy') ORDER BY r.id DESC LIMIT 8
             """).fetchall()
         return {"stats": dict(stats), "recent": [dict(row) for row in recent]}

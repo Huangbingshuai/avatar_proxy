@@ -151,7 +151,8 @@ function installFetch(data: MockData = {}) {
     if (/\/api\/internal\/auth\/sessions\/[^/]+$/.test(url.pathname) && init?.method === "DELETE") return jsonResponse({ revoked: true, sessionId: "session-old" });
     if (url.pathname === "/api/internal/project/list") return jsonResponse({ projects });
     if (url.pathname === "/api/internal/apikey/list") return jsonResponse({ apiKeys });
-    if (url.pathname === "/api/internal/overview") return jsonResponse({ stats: { projects: projects.length, activeKeys: apiKeys.length, requests24h: 12, errors24h: 1, assetsToday: 3, uploadsToday: 2, uploadBytesToday: 2048, limitedProjects: 1, openQuotaEvents: events.length, cleanupPending: 1 }, recent: [] });
+    if (url.pathname === "/api/internal/overview") return jsonResponse({ stats: { projects: projects.length, activeKeys: apiKeys.length, requestsTotal: 5891, errorsTotal: 8, assetsTotal: 573, uploadsTotal: 32, uploadBytesTotal: 137153741, modelCalls: 126, tokenUsage: 982144 }, recent: [] });
+    if (url.pathname === "/api/internal/call-logs") return jsonResponse({ items: [{ id: 1, requestId: "request-log-1", apiKeyId: "key-a", apiKeyName: "生产 Key", apiKeyPrefix: "vap_live_a…", projectName: "customer_a", method: "POST", path: "/v1/chat/completions", routeTemplate: "/v1/chat/completions", action: "chat_completions", modelAlias: "glm-5.2", requestParams: { body: { model: "glm-5.2", messages: [{ role: "user", content: "测试" }] } }, statusCode: 200, success: true, responseSummary: { contentType: "application/json", bodyBytes: 256 }, durationMs: 831, responseBytes: 256, sourceIp: "10.0.0.8", userAgent: "OpenAI/Python", isModelCall: true, createdAt: "2026-09-11 08:00:00" }], total: 1, limit: 50, offset: 0 });
     if (url.pathname === "/api/internal/quota/events") return jsonResponse({ events });
     if (url.pathname === "/api/internal/quota/audits") return jsonResponse({ audits });
     if (url.pathname === "/api/internal/quota/usage") {
@@ -201,6 +202,39 @@ describe("内部控制台", () => {
     expect(calls.every((call) => call.init?.credentials === "same-origin")).toBe(true);
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it("概览展示全量累计指标，并可查看逐 Key 脱敏调用日志", async () => {
+    const { calls } = installFetch();
+    const user = await login();
+    expect(screen.getByText("累计请求")).toBeInTheDocument();
+    expect(screen.getByText("模型调用次数")).toBeInTheDocument();
+    expect(screen.getByText("Token 消耗")).toBeInTheDocument();
+    expect(screen.getByText((content) => content.replace(/\D/g, "") === "982144")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "调用日志" }));
+    expect(await screen.findByRole("heading", { name: "业务调用日志" })).toBeInTheDocument();
+    const keyFilter = screen.getByLabelText("业务 Key");
+    expect(keyFilter).toBeDisabled();
+    expect(within(keyFilter).getByRole("option", { name: "请先选择客户项目" })).toBeInTheDocument();
+    expect(screen.getByText("选择业务 Key 后自动展示调用记录")).toBeInTheDocument();
+    expect(calls.some((call) => call.path.startsWith("/api/internal/call-logs?"))).toBe(false);
+    await user.selectOptions(screen.getByLabelText("客户项目"), "customer_a");
+    expect(keyFilter).toBeEnabled();
+    expect(within(keyFilter).getByRole("option", { name: "请选择业务 Key" })).toBeInTheDocument();
+    expect(within(keyFilter).getByRole("option", { name: /生产 Key/ })).toBeInTheDocument();
+    expect(within(keyFilter).queryByRole("option", { name: /批处理 Key/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("接口")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("模型")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("结果")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查询" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "刷新日志" })).not.toBeInTheDocument();
+    await user.selectOptions(keyFilter, "key-a");
+    expect(screen.getByText("实时更新")).toBeInTheDocument();
+    expect(await screen.findByText("/v1/chat/completions")).toBeInTheDocument();
+    expect(screen.getByText("glm-5.2")).toBeInTheDocument();
+    expect(screen.getByText("vap_live_a… · customer_a")).toBeInTheDocument();
+    expect(calls.some((call) => call.path.startsWith("/api/internal/call-logs?") && call.path.includes("apiKeyId=key-a"))).toBe(true);
   });
 
   it("移除视频调试入口并展示完整业务接入说明", async () => {
