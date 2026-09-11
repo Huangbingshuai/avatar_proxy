@@ -77,7 +77,53 @@ def test_legacy_relay_constraints_upgrade_preserves_rows(tmp_path: Path) -> None
         assert connection.execute("SELECT metric FROM billing_model_rates WHERE id='old-rate'").fetchone()[0] == "input_tokens"
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         provider_sql = connection.execute("SELECT sql FROM sqlite_master WHERE name='provider_channels'").fetchone()[0]
-        assert "volcengine_speech" in provider_sql and "manual" in provider_sql
+        assert "volcengine_speech" in provider_sql and "maxmodel" in provider_sql and "manual" in provider_sql
+
+
+@pytest.mark.parametrize(("provider", "expected_bindings"), [("openai", 0), ("maxmodel", 1)])
+def test_gpt_image_alias_migration_handles_legacy_bindings(
+    tmp_path: Path, provider: str, expected_bindings: int
+) -> None:
+    with relay_client(tmp_path) as client:
+        create_project(client, "legacy-image")
+        relay = client.app.state.provider_relay
+        channel = relay.create_channel(
+            project_name="legacy-image",
+            name=f"legacy-{provider}",
+            provider=provider,
+            config={},
+            secret=f"legacy-{provider}-secret",
+            actor_id="super-admin",
+        )
+        with client.app.state.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO model_catalog"
+                "(alias,display_name,provider,modality,protocol,upstream_model,capabilities_json) "
+                "VALUES ('image2.0','Image 2.0',?,'image','openai_image','gpt-image-2','{}')",
+                (provider,),
+            )
+            connection.execute(
+                "INSERT INTO project_model_bindings"
+                "(project_name,model_alias,channel_id,upstream_model,enabled,updated_by) "
+                "VALUES (?,?,?,?,1,?)",
+                ("legacy-image", "image2.0", channel["id"], "gpt-image-2", "admin"),
+            )
+
+        Database(client.app.state.database.path).initialize()
+
+        with client.app.state.database.connect() as connection:
+            provider = connection.execute(
+                "SELECT provider FROM model_catalog WHERE alias='gpt-image-2'"
+            ).fetchone()[0]
+            legacy_count = connection.execute(
+                "SELECT COUNT(*) FROM model_catalog WHERE alias='image2.0'"
+            ).fetchone()[0]
+            binding_count = connection.execute(
+                "SELECT COUNT(*) FROM project_model_bindings WHERE model_alias='gpt-image-2'"
+            ).fetchone()[0]
+        assert provider == "maxmodel"
+        assert legacy_count == 0
+        assert binding_count == expected_bindings
 
 
 def provision(
@@ -637,33 +683,41 @@ def test_image_idempotency_prevents_duplicates_and_conflicts(tmp_path: Path) -> 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
-        assert request.url == httpx.URL("https://api.openai.com/v1/images/generations")
-        assert request.headers["authorization"] == "Bearer secret-openai-abcdefgh"
+        assert request.url == httpx.URL("https://aiapi.maxmaas.com/v1/images/generations")
+        assert request.headers["authorization"] == "Bearer secret-maxmodel-abcdefgh"
         payload = json.loads(request.content)
         assert payload["model"] == "gpt-image-2"
         return httpx.Response(
             200,
-            headers={"x-request-id": "openai-image-request"},
-            json={"created": 1, "data": [{"url": "https://cdn.example.com/image.png"}]},
+            json={
+                "code": 200,
+                "msg": "",
+                "request_id": "maxmodel-image-request",
+                "data": {
+                    "created": 1,
+                    "data": [{"url": "https://cdn.example.com/image.png"}],
+                    "usage": {"input_tokens": 3, "output_tokens": 7, "total_tokens": 10},
+                },
+            },
         )
 
     with relay_client(tmp_path) as client:
         _, secret, _ = provision(
             client,
-            provider="openai",
-            alias="image2.0",
+            provider="maxmodel",
+            alias="gpt-image-2",
             upstream_model="ignored-model",
         )
         client.app.state.provider_relay.transport = httpx.MockTransport(handler)
         headers = {"Authorization": f"Bearer {secret}", "Idempotency-Key": "same-image"}
         first = client.post(
-            "/v1/images/generations", headers=headers, json={"model": "image2.0", "prompt": "cat"}
+            "/v1/images/generations", headers=headers, json={"model": "gpt-image-2", "prompt": "cat"}
         )
         second = client.post(
-            "/v1/images/generations", headers=headers, json={"model": "image2.0", "prompt": "cat"}
+            "/v1/images/generations", headers=headers, json={"model": "gpt-image-2", "prompt": "cat"}
         )
         conflict = client.post(
-            "/v1/images/generations", headers=headers, json={"model": "image2.0", "prompt": "dog"}
+            "/v1/images/generations", headers=headers, json={"model": "gpt-image-2", "prompt": "dog"}
         )
         with client.app.state.database.connect() as connection:
             task_count = connection.execute("SELECT COUNT(*) FROM inference_tasks").fetchone()[0]
@@ -674,6 +728,44 @@ def test_image_idempotency_prevents_duplicates_and_conflicts(tmp_path: Path) -> 
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "idempotency_key_conflict"
     assert calls == task_count == usage == 1
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_code"),
+    [
+        ({"code": 401, "msg": "invalid MaxModel key", "request_id": "mm-denied"}, "provider_request_failed"),
+        ({"code": 200, "msg": "", "data": {"created": 1}}, "provider_response_invalid"),
+    ],
+)
+def test_maxmodel_envelope_errors_are_not_reported_as_success(
+    tmp_path: Path, body: dict, expected_code: str
+) -> None:
+    with relay_client(tmp_path) as client:
+        _, secret, _ = provision(
+            client,
+            provider="maxmodel",
+            alias="gpt-image-2",
+            upstream_model="ignored-model",
+        )
+        client.app.state.provider_relay.transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json=body)
+        )
+        response = client.post(
+            "/v1/images/generations",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"model": "gpt-image-2", "prompt": "cat"},
+        )
+        with client.app.state.database.connect() as connection:
+            task = connection.execute(
+                "SELECT status,error_code FROM inference_tasks WHERE operation='image'"
+            ).fetchone()
+            usage_count = connection.execute("SELECT COUNT(*) FROM inference_usage").fetchone()[0]
+
+    assert response.status_code in {401, 502}
+    assert response.json()["error"]["code"] == expected_code
+    assert task["status"] == "failed"
+    assert task["error_code"] == expected_code
+    assert usage_count == 0
 
 
 @pytest.mark.parametrize(
@@ -1481,7 +1573,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
 
     assert aliases == sorted([
         "deepseek-v4-flash", "deepseek-v4-pro", "glm-5.2",
-        "image2.0", "minimax-h3", "doubao-seedream-5.0-pro",
+        "gpt-image-2", "minimax-h3", "doubao-seedream-5.0-pro",
         "doubao-seedream-5.0-lite", "doubao-seedream-5.0", "doubao-seedream-4.5", "doubao-seedream-4.0",
         "doubao-seed-2.1-pro", "doubao-seed-2.1-turbo", "doubao-seed-2.0-pro", "doubao-seed-2.0-lite",
         "doubao-seed-2.0-mini", "doubao-seed-evolving", "doubao-seed-character",
@@ -1508,7 +1600,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "deepseek-v4-flash": "deepseek-v4-flash-260425",
         "deepseek-v4-pro": "deepseek-v4-pro-ga-260813",
         "glm-5.2": "glm-5-2-260617",
-        "image2.0": "gpt-image-2",
+        "gpt-image-2": "gpt-image-2",
         "minimax-h3": "MiniMax-H3",
         "doubao-seedream-5.0-pro": "doubao-seedream-5-0-pro-260628",
         "doubao-seedream-5.0-lite": "doubao-seedream-5-0-lite-260128",

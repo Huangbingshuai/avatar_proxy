@@ -8,7 +8,6 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -21,7 +20,14 @@ from .errors import ApiError
 from .security import ApiPrincipal
 
 
-PROVIDERS = {"openai", "volcengine_ark", "volcengine_speech", "aliyun_bailian", "minimax"}
+PROVIDERS = {
+    "openai",
+    "maxmodel",
+    "volcengine_ark",
+    "volcengine_speech",
+    "aliyun_bailian",
+    "minimax",
+}
 TERMINAL_TASK_STATUSES = {"succeeded", "failed", "canceled"}
 ACTIVE_TASK_STATUSES = {"queued", "running"}
 ALIYUN_REGIONS = {
@@ -266,6 +272,7 @@ class ProviderRelay:
             raise ApiError("渠道配置必须是对象", 422, "provider_config_invalid")
         allowed: dict[str, set[str]] = {
             "openai": {"organization", "project"},
+            "maxmodel": set(),
             "volcengine_ark": {"projectName"},
             "volcengine_speech": set(),
             "aliyun_bailian": {"workspaceId", "region"},
@@ -660,6 +667,8 @@ class ProviderRelay:
     def _base_url(self, route: ModelRoute) -> str:
         if route.provider == "openai":
             return "https://api.openai.com/v1"
+        if route.provider == "maxmodel":
+            return "https://aiapi.maxmaas.com/v1"
         if route.provider == "volcengine_ark":
             return "https://ark.cn-beijing.volces.com/api/v3"
         if route.provider == "volcengine_speech":
@@ -720,6 +729,8 @@ class ProviderRelay:
                     message = error_data["message"][:500]
                 elif isinstance(data.get("message"), str):
                     message = data["message"][:500]
+                elif isinstance(data.get("msg"), str) and data["msg"]:
+                    message = data["msg"][:500]
             raise ApiError(
                 message,
                 response.status_code if 400 <= response.status_code < 600 else 502,
@@ -758,8 +769,9 @@ class ProviderRelay:
             credential_id=row["credential_id"],
             secret=self.vault.decrypt(row["secret_ciphertext"]),
         )
-        if route.provider == "volcengine_speech":
-            message = "豆包语音没有免费的凭证探测接口，请绑定模型后从用户端发起一次真实测试"
+        if route.provider in {"volcengine_speech", "maxmodel"}:
+            provider_name = "豆包语音" if route.provider == "volcengine_speech" else "MaxModel"
+            message = f"{provider_name}没有可靠的免费凭证探测接口，请绑定模型后从用户端发起一次真实测试"
             with self.database.connect() as connection:
                 connection.execute(
                     "UPDATE provider_channels SET last_test_status='manual',last_test_at=CURRENT_TIMESTAMP,"
@@ -801,29 +813,39 @@ class ProviderRelay:
         height: int | None = None,
         input_characters: int | None = None,
         audio_seconds: float | None = None,
+        usage_dimension: str | None = None,
     ) -> None:
         usage = usage or {}
         input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
         output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
         total_tokens = usage.get("total_tokens")
+        token_details = usage.get("prompt_tokens_details")
+        if not isinstance(token_details, dict):
+            token_details = usage.get("input_tokens_details")
+        token_details = token_details if isinstance(token_details, dict) else {}
+        cached_input_tokens = token_details.get(
+            "cached_tokens", usage.get("cached_input_tokens")
+        )
         with self.database.connect() as connection:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO inference_usage
                 (id,request_id,task_id,api_key_id,project_name,model_alias,channel_id,
-                 provider_request_id,status,input_tokens,output_tokens,total_tokens,
+                 provider_request_id,status,input_tokens,cached_input_tokens,output_tokens,total_tokens,usage_dimension,
                  generated_images,video_seconds,video_width,video_height,input_characters,
                  audio_seconds,settled_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
                 """,
                 (
                     f"ius_{uuid.uuid4().hex}", request_id, task_id, principal.id,
                     principal.project_name, route.alias, route.channel_id,
                     provider_request_id, status,
                     int(input_tokens) if isinstance(input_tokens, (int, float)) else None,
+                    int(cached_input_tokens) if isinstance(cached_input_tokens, (int, float)) else None,
                     int(output_tokens) if isinstance(output_tokens, (int, float)) else None,
                     int(total_tokens) if isinstance(total_tokens, (int, float)) else None,
-                    generated_images, video_seconds, width, height, input_characters, audio_seconds,
+                    usage_dimension, generated_images, video_seconds, width, height,
+                    input_characters, audio_seconds,
                 ),
             )
 
@@ -894,6 +916,31 @@ class ProviderRelay:
             raise ApiError("豆包语音服务返回了无效响应", 502, "provider_response_invalid")
         return response, data
 
+    @staticmethod
+    def _embedding_usage_dimension(payload: dict[str, Any]) -> str | None:
+        kinds: set[str] = set()
+
+        def visit(value: Any) -> None:
+            if isinstance(value, dict):
+                kind = value.get("type")
+                if isinstance(kind, str):
+                    if kind == "text":
+                        kinds.add("text")
+                    elif kind in {"image", "image_url", "input_image"}:
+                        kinds.add("image")
+                    elif kind in {"video", "video_url", "input_video"}:
+                        kinds.add("video")
+                for child in value.values():
+                    visit(child)
+            elif isinstance(value, list):
+                for child in value:
+                    visit(child)
+            elif isinstance(value, str) and not kinds:
+                kinds.add("text")
+
+        visit(payload.get("input"))
+        return next(iter(kinds)) if len(kinds) == 1 else None
+
     async def embeddings(
         self, principal: ApiPrincipal, alias: str, payload: dict[str, Any], *, multimodal: bool
     ) -> tuple[dict[str, Any], str]:
@@ -956,6 +1003,7 @@ class ProviderRelay:
             status="succeeded",
             provider_request_id=_provider_request_id(response.headers, data),
             usage=usage,
+            usage_dimension="text" if adapt_vision_text else self._embedding_usage_dimension(payload),
         )
         return data, request_id
 
@@ -1347,6 +1395,17 @@ class ProviderRelay:
             duration = payload.get("duration")
             if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration > 0:
                 billing_metadata["requestedDuration"] = duration
+            content = metadata.get("content") if isinstance(metadata.get("content"), list) else []
+            billing_metadata["containsVideoInput"] = any(
+                isinstance(item, dict) and item.get("type") == "video_url" for item in content
+            )
+        elif operation == "image":
+            image = payload.get("image")
+            billing_metadata["inputImageCount"] = len(image) if isinstance(image, list) else int(
+                isinstance(image, str) and bool(image.strip())
+            )
+            if payload.get("size") is not None:
+                billing_metadata["requestedSize"] = str(payload["size"])
         with self.database.connect() as connection:
             try:
                 connection.execute(
@@ -1458,6 +1517,30 @@ class ProviderRelay:
         upstream["model"] = route.upstream_model
         return upstream
 
+    @staticmethod
+    def _maxmodel_image_response(
+        response: httpx.Response, envelope: dict[str, Any]
+    ) -> tuple[dict[str, Any], str | None]:
+        provider_id = _provider_request_id(response.headers, envelope)
+        code = envelope.get("code")
+        try:
+            numeric_code = int(code)
+        except (TypeError, ValueError):
+            numeric_code = None
+        if numeric_code != 200:
+            message = envelope.get("msg") or envelope.get("message") or "MaxModel拒绝了图片请求"
+            status_code = numeric_code if numeric_code is not None and 400 <= numeric_code < 600 else 502
+            raise ApiError(
+                str(message)[:500],
+                status_code,
+                "provider_request_failed",
+                details={"upstreamRequestId": provider_id},
+            )
+        data = envelope.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+            raise ApiError("MaxModel返回了无效图片响应", 502, "provider_response_invalid")
+        return data, provider_id
+
     async def generate_image(
         self,
         principal: ApiPrincipal,
@@ -1479,6 +1562,9 @@ class ProviderRelay:
             raise ApiError("相同幂等请求此前执行失败", 409, "idempotency_request_failed")
         try:
             response, data = await self._request(route, "POST", "/images/generations", upstream)
+            provider_id: str | None = None
+            if route.provider == "maxmodel":
+                data, provider_id = self._maxmodel_image_response(response, data)
         except ApiError as error:
             with self.database.connect() as connection:
                 connection.execute(
@@ -1488,7 +1574,7 @@ class ProviderRelay:
                 )
             raise
         data["model"] = route.alias
-        provider_id = _provider_request_id(response.headers, data)
+        provider_id = provider_id or _provider_request_id(response.headers, data)
         images = data.get("data") if isinstance(data.get("data"), list) else []
         usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
         with self.database.connect() as connection:

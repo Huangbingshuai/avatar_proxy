@@ -22,7 +22,7 @@ Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素
   └─ Bearer vap_live_* ─────────> FastAPI
        ├─ AK/SK ──> 火山素材库与 IAM 项目校验
        ├─ AK/SK ──> TOS 文件中转
-       └─ 项目加密供应商渠道 ──> 火山方舟与语音 / 阿里百炼 / MiniMax / OpenAI
+       └─ 项目加密供应商渠道 ──> 火山方舟与语音 / 阿里百炼 / MiniMax / MaxModel / OpenAI
 
 微信支付平台
   └─ POST /minidrama/payments/callbacks/wechat
@@ -49,9 +49,9 @@ Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素
 - Seedance 视频任务创建、状态查询与取消；客户工具只在当前浏览器保存任务索引。
 - 使用业务 Key 通过火山兼容任务接口中转 Seedance 视频生成，并按任务归属隔离查询与取消。
 - 统一 `429` 限流协议、额度事件、审计与失败清理。
-- 可选的模型中转：使用同一枚 `vap_live_*` 调用文本、图片、多模态向量、音频和统一异步视频接口；按项目路由到火山方舟、豆包语音、阿里百炼、MiniMax 或 OpenAI 渠道。
+- 可选的模型中转：使用同一枚 `vap_live_*` 调用文本、图片、多模态向量、音频和统一异步视频接口；按项目路由到火山方舟、豆包语音、阿里百炼、MiniMax、MaxModel 或 OpenAI 渠道。
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
-- 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；图片覆盖 Doubao Seedream 4.0、4.5、5.0、5.0 Lite、5.0 Pro 与 OpenAI `image2.0`；视频覆盖 6 个 Doubao Seedance 模型、阿里百炼 `wan3.0-video` 和 MiniMax `minimax-h3`；另提供 Doubao 多模态向量、TTS、ASR 和 Seed Audio。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
+- 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；图片覆盖 Doubao Seedream 4.0、4.5、5.0、5.0 Lite、5.0 Pro，以及经 MaxModel 转发的 `gpt-image-2`；视频覆盖 6 个 Doubao Seedance 模型、阿里百炼 `wan3.0-video` 和 MiniMax `minimax-h3`；另提供 Doubao 多模态向量、TTS、ASR 和 Seed Audio。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
 
 模型中转调用方可直接使用 [模型中转接口文档](backend/MODEL_RELAY_API.md)；素材库及完整客户接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。模型目录的固定映射、接入门槛和验收记录见 [火山方舟模型目录维护文档](backend/VOLCENGINE_MODEL_CATALOG.md)。
 
@@ -79,7 +79,7 @@ Authorization: Bearer vap_live_xxx
 ### 管理员安全
 
 - 系统只允许通过 CLI 初始化一个 `super_admin`；控制台创建的账号固定为普通 `admin`。
-- 普通管理员负责项目、业务 API Key、额度和日常业务；超级管理员只负责账号与系统安全管理。
+- 普通管理员负责项目、业务 API Key、额度、项目计费和日常业务；超级管理员负责账号安全、供应商凭证与全局模型价目。
 - 密码使用 Argon2id 哈希；管理登录使用 HttpOnly Session Cookie 和 CSRF 双重校验。
 - 超级管理员强制绑定 TOTP，并获得仅展示一次的一组恢复码。
 - 超级管理员可在控制台验证当前密码和旧 TOTP 后自助更换验证器。
@@ -94,6 +94,7 @@ Authorization: Bearer vap_live_xxx
 - 默认 `MULTI_PROVIDER_ENABLED=false`，迁移后没有任何默认模型绑定，素材接口行为保持不变；视频生成仅通过启用后的中转渠道提供。
 - 启用时使用独立 Fernet 主密钥；未显式配置 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 时，系统会在 SQLite 同目录自动创建并复用 `provider_credentials.key`，SQLite 仍只保存凭证密文和尾号掩码。
 - 固定使用供应商官方 HTTPS 域名，客户请求不能指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
+- `gpt-image-2` 使用项目级 MaxModel 渠道：超级管理员只需录入 MaxModel API Key，系统固定请求 `https://aiapi.maxmaas.com/v1/images/generations`；原有 `image2.0` 别名会迁移为 `gpt-image-2`，旧 OpenAI 绑定会被清除，防止旧凭证被发送到新上游。
 - `/v1/models` 只返回当前业务 Key 所属项目已启用且渠道可用的模型；支持 Chat Completions、Responses、图片与多模态向量接口，以及豆包语音合成、异步录音识别和音频生成。
 - Seedance 视频使用与火山方舟、漫剧调用格式一致的 `/api/v3/contents/generations/tasks` 异步任务接口；任务提交后固定渠道、凭证版本和上游模型，轮换不会破坏旧任务查询。
 - 图片和视频支持 `Idempotency-Key`；相同键与相同请求复用结果，不同请求体返回 `409`。
@@ -103,13 +104,14 @@ Authorization: Bearer vap_live_xxx
 ### 项目计费与月度账单
 
 - 普通管理员可以按项目逐个启用计费；存量和新建项目默认关闭，启用可选择本月补算或下月生效。
-- 全局模型价目按月份版本化：文本和识图分别按输入、输出每 100 万 Token，图片按成功张数，视频按成功秒数和规范分辨率计价。
+- 全局模型价目由超级管理员统一维护并按月份版本化，全部项目共用，项目只能配置是否计费和结算折扣，不能覆盖模型单价。
+- 火山官方价目初始化自 2026-09-04 版价格文档：文本支持输入、缓存输入、输出及上下文阶梯价；图片支持张数与像素档位；Seedance 2.x 按上游返回的 `completion_tokens`、分辨率及是否有视频输入计价，不再把火山视频误按秒计费。
 - 计费只归集系统记录的真实成功用量。缺少真实用量、模型映射或单价时显示为“待计价”，不会按零元处理；只有明确配置零元单价才表示免费。
 - 金额固定为人民币税前口径，数据库使用整数微元和十进制运算；项目折扣按基点保存，避免浮点金额误差。
 - 当前自然月显示实时预估，不能提前确认；历史草稿确认后金额和明细冻结，可登记一次全额支付及凭证备注。
 - 已确认账期收到迟到用量时，不改写历史账单，而是在下一开放账期生成可追溯的系统调整项。
 - 账单详情支持 UTF-8 BOM CSV 导出和浏览器打印；该账单是内部对账凭证，不是法定发票，也不包含在线支付或充值余额。
-- 价目、项目计费、调整、确认和支付登记均要求普通管理员重新验证当前密码，并写入不含密码的审计日志。
+- 全局价目修改要求超级管理员重新验证当前密码；项目计费、调整、确认和支付登记要求普通管理员重新验证当前密码，全部写入不含密码的审计日志。
 
 #### Seedance 中转验证基线
 

@@ -154,7 +154,7 @@ user
 
 `negative_prompt` 不属于当前公开契约，传入会返回 `422 image_parameter_unsupported`。调用方应把负向要求直接写入 `prompt`，而不是发送该字段。
 
-成功响应遵循 OpenAI 图片响应结构，供应商 URL 可能过期，中转站不会自动转存到 TOS。
+成功响应遵循 OpenAI 图片响应结构，供应商 URL 可能过期，中转站不会自动转存到 TOS。`gpt-image-2` 固定通过项目的 MaxModel 渠道调用同名上游模型；调用方不能指定 MaxModel 地址或其他真实模型 ID。
 
 ## 5. Seedance 与多供应商视频
 

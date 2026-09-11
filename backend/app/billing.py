@@ -13,6 +13,12 @@ from typing import Any
 from .admin_auth import AdminPrincipal
 from .database import Database
 from .errors import ApiError
+from .official_rates import (
+    OFFICIAL_VOLCENGINE_RATES,
+    VOLCENGINE_RATE_SOURCE_URL,
+    VOLCENGINE_RATE_VERSION,
+    VOLCENGINE_SPEECH_RATE_SOURCE_URL,
+)
 
 
 SHANGHAI = timezone(timedelta(hours=8), name="Asia/Shanghai")
@@ -20,6 +26,10 @@ MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 MICROS = Decimal(1_000_000)
 TOKEN_UNIT = 1_000_000
 VIDEO_RESOLUTIONS = ("480p", "720p", "768p", "1080p")
+RATE_METRICS = {
+    "input_tokens", "cached_input_tokens", "output_tokens", "image",
+    "video_second", "characters", "audio_second",
+}
 
 
 def current_month(now: datetime | None = None) -> str:
@@ -159,6 +169,31 @@ class BillingManager:
 
     @staticmethod
     def _rate_rows(model: dict[str, Any], prices: dict[str, Any]) -> list[tuple[str, str, int, int]]:
+        rules = prices.get("rules")
+        if rules is not None:
+            if not isinstance(rules, list):
+                raise ApiError("价目规则必须为数组", 422, "billing_rate_invalid")
+            parsed: list[tuple[str, str, int, int]] = []
+            seen: set[tuple[str, str]] = set()
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    raise ApiError("价目规则格式无效", 422, "billing_rate_invalid")
+                metric = str(rule.get("metric") or "").strip()
+                dimension = str(rule.get("dimension") or "").strip()
+                try:
+                    unit_size = int(rule.get("unitSize") or 0)
+                except (TypeError, ValueError) as error:
+                    raise ApiError("计价单位必须为正整数", 422, "billing_rate_invalid") from error
+                if metric not in RATE_METRICS or len(dimension) > 80 or unit_size <= 0:
+                    raise ApiError("价目规则包含无效的计价指标、维度或单位", 422, "billing_rate_invalid")
+                if (metric, dimension) in seen:
+                    raise ApiError("同一计价指标和维度不能重复", 422, "billing_rate_invalid")
+                price = rule.get("unitPriceYuan")
+                if price is None or price == "":
+                    continue
+                seen.add((metric, dimension))
+                parsed.append((metric, dimension, unit_size, yuan_to_micros(str(price))))
+            return parsed
         modality = model["modality"]
         rows: list[tuple[str, str, int, int]] = []
         if modality == "text":
@@ -233,35 +268,69 @@ class BillingManager:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    @staticmethod
+    def _editable_rule_templates(model: dict[str, Any]) -> list[dict[str, Any]]:
+        modality = model["modality"]
+        if modality == "text":
+            raw = (("input_tokens", "", TOKEN_UNIT), ("output_tokens", "", TOKEN_UNIT))
+        elif modality == "image":
+            raw = (("image", "", 1),)
+        elif modality == "embedding":
+            raw = (("input_tokens", "", TOKEN_UNIT),)
+        elif modality == "audio":
+            capabilities = model.get("capabilities") or {}
+            raw = ((str(capabilities.get("billingMetric") or "audio_second"), "", int(capabilities.get("billingUnit") or 60)),)
+        else:
+            raw = tuple(("video_second", resolution, 1) for resolution in VIDEO_RESOLUTIONS)
+        return [
+            {"metric": metric, "dimension": dimension, "unitSize": unit_size, "unitPriceYuan": None}
+            for metric, dimension, unit_size in raw
+        ]
+
     def get_rate(self, alias: str, month: str) -> dict[str, Any]:
         validate_month(month)
         model = self._catalog_model(alias)
         rows = self._resolved_rates(alias, month)
         prices: dict[str, Any]
+        simple_rows = [row for row in rows if not row["resolution"]]
         if model["modality"] == "text":
-            mapped = {row["metric"]: micros_to_yuan(row["unit_price_micros"]) for row in rows}
+            mapped = {row["metric"]: micros_to_yuan(row["unit_price_micros"]) for row in simple_rows}
             prices = {
                 "inputPerMillionYuan": mapped.get("input_tokens"),
                 "outputPerMillionYuan": mapped.get("output_tokens"),
             }
         elif model["modality"] == "image":
-            row = next((item for item in rows if item["metric"] == "image"), None)
+            row = next((item for item in simple_rows if item["metric"] == "image"), None)
             prices = {"perImageYuan": micros_to_yuan(row["unit_price_micros"]) if row else None}
         elif model["modality"] == "embedding":
-            row = next((item for item in rows if item["metric"] == "input_tokens"), None)
+            row = next((item for item in simple_rows if item["metric"] == "input_tokens"), None)
             prices = {"inputPerMillionYuan": micros_to_yuan(row["unit_price_micros"]) if row else None}
         elif model["modality"] == "audio":
             capabilities = model.get("capabilities") or {}
             metric = capabilities.get("billingMetric")
             unit_size = int(capabilities.get("billingUnit") or 1)
-            row = next((item for item in rows if item["metric"] == metric), None)
+            row = next((item for item in simple_rows if item["metric"] == metric), None)
             field = "perTenThousandCharactersYuan" if metric == "characters" else (
                 "perHourYuan" if unit_size == 3600 else "perMinuteYuan"
             )
             prices = {field: micros_to_yuan(row["unit_price_micros"]) if row else None}
         else:
-            mapped = {row["resolution"]: micros_to_yuan(row["unit_price_micros"]) for row in rows}
+            mapped = {
+                row["resolution"]: micros_to_yuan(row["unit_price_micros"])
+                for row in rows if row["metric"] == "video_second"
+            }
             prices = {"perSecondByResolution": {resolution: mapped.get(resolution) for resolution in VIDEO_RESOLUTIONS}}
+        rules = [
+            {
+                "metric": row["metric"],
+                "dimension": row["resolution"],
+                "unitSize": row["unit_size"],
+                "unitPriceYuan": micros_to_yuan(row["unit_price_micros"]),
+                "sourceMonth": row["effective_month"],
+            }
+            for row in sorted(rows, key=lambda item: (item["metric"], item["resolution"]))
+        ]
+        official = model["provider"] in {"volcengine_ark", "volcengine_speech"}
         return {
             "model": model["alias"],
             "displayName": model["display_name"],
@@ -272,6 +341,15 @@ class BillingManager:
             "month": month,
             "sourceMonths": sorted({row["effective_month"] for row in rows}),
             "prices": prices,
+            "rules": rules,
+            "editableRules": rules or self._editable_rule_templates(model),
+            "configured": bool(rules),
+            "scope": "global",
+            "officialSource": ({
+                "version": VOLCENGINE_RATE_VERSION,
+                "url": VOLCENGINE_SPEECH_RATE_SOURCE_URL
+                if model["provider"] == "volcengine_speech" else VOLCENGINE_RATE_SOURCE_URL,
+            } if official and alias in OFFICIAL_VOLCENGINE_RATES else None),
         }
 
     def rates(self, month: str) -> list[dict[str, Any]]:
@@ -480,22 +558,69 @@ class BillingManager:
                 )
 
     @staticmethod
-    def _relay_measurements(row: dict[str, Any]) -> tuple[list[tuple[str, str, Decimal]] | None, str | None]:
+    def _text_rate_dimension(model_alias: str, input_tokens: int) -> str:
+        dimensions = {dimension for _, dimension, _, _ in OFFICIAL_VOLCENGINE_RATES.get(model_alias, ())}
+        if "tokens:0-32000" not in dimensions:
+            return ""
+        if input_tokens <= 32_000:
+            return "tokens:0-32000"
+        if input_tokens <= 128_000:
+            return "tokens:32001-128000"
+        return "tokens:128001-256000"
+
+    @staticmethod
+    def _image_pixel_bucket(value: Any) -> str | None:
+        raw = str(value or "").strip().lower().replace(" ", "")
+        match = re.fullmatch(r"(\d+)x(\d+)", raw)
+        if match:
+            pixels = int(match.group(1)) * int(match.group(2))
+            return "output:le2610000" if pixels <= 2_610_000 else "output:gt2610000"
+        # Ark size shorthands represent an area class. 1K and 2K remain in the
+        # lower official bucket; 4K belongs to the larger output-image bucket.
+        if raw in {"1k", "1.5k", "2k"}:
+            return "output:le2610000"
+        if raw == "4k":
+            return "output:gt2610000"
+        return None
+
+    @classmethod
+    def _relay_measurements(cls, row: dict[str, Any]) -> tuple[list[tuple[str, str, Decimal]] | None, str | None]:
         if row["modality"] == "text":
             if row["input_tokens"] is None or row["output_tokens"] is None:
                 return None, "usage_unknown"
-            return [
-                ("input_tokens", "", Decimal(row["input_tokens"])),
-                ("output_tokens", "", Decimal(row["output_tokens"])),
-            ], None
+            input_tokens = int(row["input_tokens"])
+            cached_tokens = int(row.get("cached_input_tokens") or 0)
+            if cached_tokens < 0 or cached_tokens > input_tokens:
+                return None, "usage_invalid"
+            dimension = cls._text_rate_dimension(str(row.get("model_alias") or ""), input_tokens)
+            measurements = [
+                ("input_tokens", dimension, Decimal(input_tokens - cached_tokens)),
+                ("output_tokens", dimension, Decimal(row["output_tokens"])),
+            ]
+            if cached_tokens:
+                measurements.append(("cached_input_tokens", dimension, Decimal(cached_tokens)))
+            return measurements, None
         if row["modality"] == "image":
             if row["generated_images"] is None:
                 return None, "usage_unknown"
+            if row.get("model_alias") == "doubao-seedream-5.0-pro":
+                billing_meta = _loaded(row.get("billing_metadata_json"), {})
+                bucket = cls._image_pixel_bucket(billing_meta.get("requestedSize"))
+                if bucket is None:
+                    return None, "image_size_unknown"
+                measurements = [("image", bucket, Decimal(row["generated_images"]))]
+                input_count = max(0, int(billing_meta.get("inputImageCount") or 0) - 1)
+                if input_count:
+                    measurements.append(("image", "input:after_first", Decimal(input_count)))
+                return measurements, None
             return [("image", "", Decimal(row["generated_images"]))], None
         if row["modality"] == "embedding":
             if row["input_tokens"] is None:
                 return None, "usage_unknown"
-            return [("input_tokens", "", Decimal(row["input_tokens"]))], None
+            dimension = str(row.get("usage_dimension") or "").strip()
+            if row.get("model_alias") == "doubao-embedding-vision" and dimension not in {"text", "image"}:
+                return None, "embedding_input_unknown"
+            return [("input_tokens", dimension, Decimal(row["input_tokens"]))], None
         if row["modality"] == "audio":
             capabilities = _loaded(row.get("capabilities_json"), {})
             metric = capabilities.get("billingMetric")
@@ -506,10 +631,24 @@ class BillingManager:
             if row.get("audio_seconds") is None or Decimal(str(row["audio_seconds"])) <= 0:
                 return None, "usage_unknown"
             return [("audio_second", "", Decimal(str(row["audio_seconds"])))], None
-        if row["video_seconds"] is None or Decimal(str(row["video_seconds"])) <= 0:
-            return None, "usage_unknown"
         billing_meta = _loaded(row.get("billing_metadata_json"), {})
         provider_meta = _loaded(row.get("metadata_json"), {})
+        if row.get("provider") == "volcengine_ark":
+            if row.get("output_tokens") is None or int(row["output_tokens"]) <= 0:
+                return None, "usage_unknown"
+            dimensions = {dimension for _, dimension, _, _ in OFFICIAL_VOLCENGINE_RATES.get(row["model_alias"], ())}
+            if dimensions == {""}:
+                return [("output_tokens", "", Decimal(row["output_tokens"]))], None
+            resolution = normalize_resolution(
+                provider_meta.get("resolution") or billing_meta.get("resolution"),
+                row.get("video_width"), row.get("video_height"),
+            )
+            if not resolution:
+                return None, "resolution_unknown"
+            variant = "video" if billing_meta.get("containsVideoInput") else "no_video"
+            return [("output_tokens", f"{resolution}:{variant}", Decimal(row["output_tokens"]))], None
+        if row["video_seconds"] is None or Decimal(str(row["video_seconds"])) <= 0:
+            return None, "usage_unknown"
         resolution = normalize_resolution(
             provider_meta.get("resolution") or billing_meta.get("resolution"),
             row.get("video_width"), row.get("video_height"),
@@ -521,7 +660,7 @@ class BillingManager:
     def _collect_sources(self, connection: Any) -> set[tuple[str, str]]:
         touched: set[tuple[str, str]] = set()
         relay_rows = connection.execute(
-            "SELECT u.*,m.modality,m.capabilities_json,t.metadata_json,t.billing_metadata_json FROM inference_usage u "
+            "SELECT u.*,m.modality,m.provider,m.capabilities_json,t.metadata_json,t.billing_metadata_json FROM inference_usage u "
             "JOIN model_catalog m ON m.alias=u.model_alias LEFT JOIN inference_tasks t ON t.id=u.task_id "
             "WHERE u.status='succeeded' ORDER BY u.created_at"
         ).fetchall()
@@ -552,15 +691,36 @@ class BillingManager:
                 continue
             measurements = None
             reason = None
-            try:
-                duration = Decimal(str(record.get("duration")))
-            except (InvalidOperation, TypeError):
-                duration = Decimal(0)
-            resolution = normalize_resolution(record.get("resolution"))
-            if reason is None and duration > 0 and resolution:
-                measurements = [("video_second", resolution, duration)]
-            elif reason is None:
-                reason = "usage_unknown" if duration <= 0 else "resolution_unknown"
+            official_rules = OFFICIAL_VOLCENGINE_RATES.get(alias or "", ())
+            token_dimensions = {dimension for metric, dimension, _, _ in official_rules if metric == "output_tokens"}
+            if token_dimensions:
+                output_tokens = row.get("output_tokens")
+                if output_tokens is None or int(output_tokens) <= 0:
+                    reason = "usage_unknown"
+                elif token_dimensions == {""}:
+                    measurements = [("output_tokens", "", Decimal(output_tokens))]
+                else:
+                    resolution = normalize_resolution(record.get("resolution"))
+                    if not resolution:
+                        reason = "resolution_unknown"
+                    else:
+                        assets = record.get("assets") if isinstance(record.get("assets"), list) else []
+                        contains_video = any(
+                            isinstance(asset, dict) and str(asset.get("assetType") or "").lower() == "video"
+                            for asset in assets
+                        )
+                        variant = "video" if contains_video else "no_video"
+                        measurements = [("output_tokens", f"{resolution}:{variant}", Decimal(output_tokens))]
+            else:
+                try:
+                    duration = Decimal(str(record.get("duration")))
+                except (InvalidOperation, TypeError):
+                    duration = Decimal(0)
+                resolution = normalize_resolution(record.get("resolution"))
+                if duration > 0 and resolution:
+                    measurements = [("video_second", resolution, duration)]
+                else:
+                    reason = "usage_unknown" if duration <= 0 else "resolution_unknown"
             self._upsert_item(
                 connection,
                 source_type="legacy_video", source_id=f"{row['api_key_id']}:{row['task_id']}",

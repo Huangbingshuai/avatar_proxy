@@ -47,7 +47,7 @@ function installFetch(data: MockData = {}) {
   let providerChannels = [{ id: "channel-ark", projectName: "customer_a", name: "客户A方舟", provider: "volcengine_ark", config: { projectName: "customer_a" }, status: "active", secretHint: "ark****1234", lastTestStatus: "success", lastTestLatencyMs: 88 }];
   const modelCatalog = [
     { id: "glm-5.2", displayName: "GLM 5.2", provider: "volcengine_ark", modality: "text", upstreamModel: "glm-5-2-260617", enabled: true },
-    { id: "image2.0", displayName: "Image 2.0", provider: "openai", modality: "image", upstreamModel: "gpt-image-2", enabled: true },
+    { id: "gpt-image-2", displayName: "GPT Image 2", provider: "maxmodel", modality: "image", upstreamModel: "gpt-image-2", enabled: true },
   ];
   const calls: Array<{ path: string; init?: RequestInit }> = [];
   let authenticated = false;
@@ -118,14 +118,14 @@ function installFetch(data: MockData = {}) {
       const enabled = body?.bindings?.some((item: { model: string }) => item.model === "glm-5.2") ?? true;
       return jsonResponse({ projectName: "customer_a", models: [
         { model: "glm-5.2", displayName: "GLM 5.2", provider: "volcengine_ark", modality: "text", channelId: enabled ? "channel-ark" : null, channelName: enabled ? "客户A方舟" : null, upstreamModel: "glm-5-2-260617", enabled },
-        { model: "image2.0", displayName: "Image 2.0", provider: "openai", modality: "image", channelId: null, upstreamModel: "gpt-image-2", enabled: false },
+        { model: "gpt-image-2", displayName: "GPT Image 2", provider: "maxmodel", modality: "image", channelId: null, upstreamModel: "gpt-image-2", enabled: false },
       ] });
     }
     if (url.pathname === "/api/internal/inference/usage") return jsonResponse({ usage: [{ id: "usage-1", projectName: "customer_a", apiKeyId: "key-a", model: "glm-5.2", provider: "volcengine_ark", status: "succeeded", inputTokens: 10, outputTokens: 20, generatedImages: null, videoSeconds: null, createdAt: "2026-09-02 08:00:00" }] });
     if (url.pathname === "/api/internal/inference/tasks") return jsonResponse({ tasks: [{ id: "task-1", object: "video", model: "wan3.0-video", status: "running", progress: 50, created_at: 1_788_000_000 }] });
     if (url.pathname === "/api/internal/billing/rates") return jsonResponse({ month: url.searchParams.get("month"), rates: [
-      { model: "glm-5.2", displayName: "GLM 5.2", provider: "volcengine_ark", modality: "text", sourceMonths: ["2026-09"], prices: { inputPerMillionYuan: "1.200000", outputPerMillionYuan: "4.000000" } },
-      { model: "image2.0", displayName: "Image 2.0", provider: "openai", modality: "image", sourceMonths: [], prices: { perImageYuan: null } },
+      { model: "glm-5.2", displayName: "GLM 5.2", provider: "volcengine_ark", modality: "text", configured: true, sourceMonths: ["2026-09"], prices: { inputPerMillionYuan: "8.000000", outputPerMillionYuan: "28.000000" }, rules: [{ metric: "input_tokens", dimension: "", unitSize: 1000000, unitPriceYuan: "8.000000" }, { metric: "output_tokens", dimension: "", unitSize: 1000000, unitPriceYuan: "28.000000" }], editableRules: [{ metric: "input_tokens", dimension: "", unitSize: 1000000, unitPriceYuan: "8.000000" }, { metric: "output_tokens", dimension: "", unitSize: 1000000, unitPriceYuan: "28.000000" }], officialSource: { version: "2026-09-04", url: "https://www.volcengine.com/docs/82379/1544106" } },
+      { model: "gpt-image-2", displayName: "GPT Image 2", provider: "maxmodel", modality: "image", configured: false, sourceMonths: [], prices: { perImageYuan: null }, rules: [], editableRules: [{ metric: "image", dimension: "", unitSize: 1, unitPriceYuan: null }], officialSource: null },
     ] });
     if (/\/api\/internal\/billing\/rates\/[^/]+$/.test(url.pathname) && init?.method === "PUT") return jsonResponse({ rate: {} });
     if (/\/api\/internal\/billing\/projects\/[^/]+$/.test(url.pathname) && init?.method === "PUT") return jsonResponse({ billing: { projectName: "customer_a", month: "2026-09", enabled: true, discountBps: 8000, sourceMonth: "2026-09" } });
@@ -217,14 +217,13 @@ describe("内部控制台", () => {
     expect(screen.getAllByText("/api/asset/upload-file", { exact: true }).length).toBeGreaterThan(0);
   });
 
-  it("普通管理员可以查看项目计费预估、价目和月度账单", async () => {
+  it("普通管理员可以查看项目计费预估和月度账单，但不能修改全局价目", async () => {
     const { calls } = installFetch();
     const user = await login();
     await user.click(screen.getByRole("button", { name: "计费账单" }));
     expect(await screen.findByRole("heading", { name: "项目计费账单" })).toBeInTheDocument();
     expect(await screen.findByText("¥8.00")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "模型价目" }));
-    expect(await screen.findByText("GLM 5.2")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "模型价目" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "月度账单" }));
     expect(await screen.findByText("RB-202609-CUSTOMERA")).toBeInTheDocument();
     expect(calls.some((call) => call.path.startsWith("/api/internal/billing/preview?"))).toBe(true);
@@ -272,7 +271,7 @@ describe("内部控制台", () => {
     expect(await screen.findByRole("heading", { name: "超级管理员二次验证" })).toBeInTheDocument();
     await user.type(screen.getByLabelText("动态验证码或恢复码"), "123456");
     await user.click(screen.getByRole("button", { name: "验证并登录" }));
-    expect(await screen.findByRole("heading", { name: "超级管理员安全中心" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "超级管理员控制中心" })).toBeInTheDocument();
     const loginCalls = calls.filter((call) => call.path === "/api/internal/auth/login");
     expect(JSON.parse(String(loginCalls.at(-1)?.init?.body))).toMatchObject({ totpCode: "123456" });
     expect(screen.queryByRole("button", { name: "项目" })).not.toBeInTheDocument();
@@ -291,7 +290,7 @@ describe("内部控制台", () => {
     expect(screen.getByRole("button", { name: "进入安全管理" })).toBeDisabled();
     await user.click(screen.getByLabelText("我已将恢复码保存在安全位置"));
     await user.click(screen.getByRole("button", { name: "进入安全管理" }));
-    expect(await screen.findByRole("heading", { name: "超级管理员安全中心" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "超级管理员控制中心" })).toBeInTheDocument();
   });
 
   it("超级管理员可以在前端安全更换TOTP验证器", async () => {
@@ -514,9 +513,8 @@ describe("内部控制台", () => {
 
     const catalogSection = screen.getByRole("heading", { name: "项目模型绑定" }).closest("section");
     expect(catalogSection).not.toBeNull();
-    await user.click(within(catalogSection!).getByRole("button", { name: "OpenAI" }));
-    expect(within(catalogSection!).getByText("image2.0")).toBeInTheDocument();
-    expect(within(catalogSection!).getByText("gpt-image-2")).toBeInTheDocument();
+    await user.click(within(catalogSection!).getByRole("button", { name: "MaxModel" }));
+    expect(within(catalogSection!).getAllByText("gpt-image-2").length).toBeGreaterThan(0);
     await user.clear(within(catalogSection!).getByRole("textbox", { name: "搜索项目模型" }));
     await user.type(within(catalogSection!).getByRole("textbox", { name: "搜索项目模型" }), "GLM");
     expect(within(catalogSection!).getByText("没有符合当前筛选条件的模型。")).toBeInTheDocument();
@@ -553,7 +551,9 @@ describe("内部控制台", () => {
     await user.click(screen.getByRole("button", { name: "创建渠道" }));
     const dialog = screen.getByRole("dialog", { name: "创建供应商渠道" });
     expect(within(dialog).queryByLabelText(/火山 ProjectName/)).not.toBeInTheDocument();
-    await user.type(within(dialog).getByLabelText("渠道名称"), "新方舟渠道");
+    await user.selectOptions(within(dialog).getByLabelText("供应商"), "maxmodel");
+    expect(within(dialog).getByText(/固定请求 https:\/\/aiapi\.maxmaas\.com/)).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText("渠道名称"), "MaxModel 图片渠道");
     await user.type(within(dialog).getByLabelText(/^供应商 API Key/), "provider-secret-value");
     await user.type(within(dialog).getByLabelText("超级管理员当前密码"), "correct-password");
     await user.type(within(dialog).getByLabelText("TOTP 动态验证码"), "123456");
@@ -561,7 +561,7 @@ describe("内部控制台", () => {
     await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST")).toBe(true));
     const createCall = calls.find((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST");
     expect(new Headers(createCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
-    expect(JSON.parse(String(createCall?.init?.body))).toMatchObject({ config: {}, secret: "provider-secret-value", currentPassword: "correct-password", totpCode: "123456" });
+    expect(JSON.parse(String(createCall?.init?.body))).toMatchObject({ provider: "maxmodel", config: {}, secret: "provider-secret-value", currentPassword: "correct-password", totpCode: "123456" });
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });

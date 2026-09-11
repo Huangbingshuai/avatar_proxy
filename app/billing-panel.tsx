@@ -1,29 +1,23 @@
 "use client";
 
 import {
-  AudioLines,
   CalendarClock,
   CheckCircle2,
   CircleDollarSign,
   Download,
   FileClock,
-  Image as ImageIcon,
   LoaderCircle,
-  MessageSquareText,
-  Network,
   Printer,
   ReceiptText,
   RefreshCw,
   Save,
   Settings2,
   Trash2,
-  Video,
   X,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AdminApi } from "./admin-api";
-import { getModelIconPath } from "./model-icon-library";
 
 type Project = { name: string; displayName: string };
 type Prices = {
@@ -44,6 +38,7 @@ type Rate = {
   billingUnit?: number;
   sourceMonths: string[];
   prices: Prices;
+  configured?: boolean;
 };
 type Terms = {
   projectName: string;
@@ -96,14 +91,6 @@ type Statement = StatementSummary & {
   }>;
 };
 
-const resolutions = ["480p", "720p", "768p", "1080p"];
-const providerNames: Record<string, string> = {
-  volcengine_ark: "火山方舟",
-  volcengine_speech: "豆包语音",
-  openai: "OpenAI",
-  aliyun_bailian: "阿里百炼",
-  minimax: "MiniMax",
-};
 const metricNames: Record<string, string> = {
   input_tokens: "输入 Token",
   output_tokens: "输出 Token",
@@ -149,21 +136,6 @@ function formatTime(value?: string | null) {
     : "—";
 }
 
-function ModelIcon({ rate }: { rate: Rate }) {
-  const path = getModelIconPath(rate.model);
-  if (path) {
-    // Icons are small local SVG assets; preserving their native viewBox avoids
-    // provider-logo distortion in this dense price table.
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={path} alt="" />;
-  }
-  if (rate.modality === "image") return <ImageIcon size={22} />;
-  if (rate.modality === "video") return <Video size={22} />;
-  if (rate.modality === "embedding") return <Network size={22} />;
-  if (rate.modality === "audio") return <AudioLines size={22} />;
-  return <MessageSquareText size={22} />;
-}
-
 export default function BillingPanel({
   projects,
   adminApi,
@@ -173,11 +145,10 @@ export default function BillingPanel({
 }) {
   const [projectName, setProjectName] = useState(projects[0]?.name || "");
   const [month, setMonth] = useState(monthNow());
-  const [view, setView] = useState<"overview" | "rates" | "statements">(
+  const [view, setView] = useState<"overview" | "statements">(
     "overview",
   );
   const [rates, setRates] = useState<Rate[]>([]);
-  const [rateDrafts, setRateDrafts] = useState<Record<string, Prices>>({});
   const [terms, setTerms] = useState<Terms | null>(null);
   const [statement, setStatement] = useState<StatementSummary | null>(null);
   const [statements, setStatements] = useState<StatementSummary[]>([]);
@@ -194,7 +165,6 @@ export default function BillingPanel({
     effectiveMonth: nextMonth(monthNow()),
     currentPassword: "",
   });
-  const [ratePassword, setRatePassword] = useState("");
   const [statementPassword, setStatementPassword] = useState("");
   const [adjustment, setAdjustment] = useState({ amountYuan: "", reason: "" });
   const [payment, setPayment] = useState({ reference: "", note: "" });
@@ -227,14 +197,6 @@ export default function BillingPanel({
       const nextRates = (rateData.rates ?? []) as Rate[];
       const nextTerms = termData.billing as Terms;
       setRates(nextRates);
-      setRateDrafts(
-        Object.fromEntries(
-          nextRates.map((rate) => [
-            rate.model,
-            JSON.parse(JSON.stringify(rate.prices)) as Prices,
-          ]),
-        ),
-      );
       setTerms(nextTerms);
       setProjectDraft((current) => ({
         ...current,
@@ -269,94 +231,10 @@ export default function BillingPanel({
   const ratedModels = useMemo(
     () =>
       rates.filter((rate) => {
-        if (rate.modality === "text")
-          return (
-            rate.prices.inputPerMillionYuan !== null &&
-            rate.prices.outputPerMillionYuan !== null
-          );
-        if (rate.modality === "image") return rate.prices.perImageYuan !== null;
-        if (rate.modality === "embedding")
-          return rate.prices.inputPerMillionYuan !== null;
-        if (rate.modality === "audio")
-          return Object.entries(rate.prices).some(
-            ([, value]) => value !== null,
-          );
-        return Object.values(rate.prices.perSecondByResolution ?? {}).some(
-          (value) => value !== null,
-        );
+        return rate.configured ?? Object.values(rate.prices).some((value) => value !== null);
       }).length,
     [rates],
   );
-
-  function updateRate(model: string, update: (value: Prices) => Prices) {
-    setRateDrafts((current) => ({
-      ...current,
-      [model]: update(current[model] ?? {}),
-    }));
-  }
-
-  async function saveRate(rate: Rate) {
-    if (!ratePassword) {
-      setError("保存价目前请输入当前管理员密码");
-      return;
-    }
-    setBusy(`rate:${rate.model}`);
-    setError("");
-    setMessage("");
-    try {
-      await adminApi(
-        `/api/internal/billing/rates/${encodeURIComponent(rate.model)}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            effectiveMonth: month,
-            prices: normalizePrices(rate, rateDrafts[rate.model] ?? {}),
-            currentPassword: ratePassword,
-          }),
-        },
-      );
-      setRatePassword("");
-      setMessage(`${rate.displayName} 价目已保存`);
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "价目保存失败");
-    } finally {
-      setBusy("");
-    }
-  }
-
-  function normalizePrices(rate: Rate, value: Prices): Prices {
-    const nullable = (input?: string | null) =>
-      input === "" || input == null ? null : input;
-    if (rate.modality === "text")
-      return {
-        inputPerMillionYuan: nullable(value.inputPerMillionYuan),
-        outputPerMillionYuan: nullable(value.outputPerMillionYuan),
-      };
-    if (rate.modality === "image")
-      return { perImageYuan: nullable(value.perImageYuan) };
-    if (rate.modality === "embedding")
-      return { inputPerMillionYuan: nullable(value.inputPerMillionYuan) };
-    if (rate.modality === "audio") {
-      if (rate.billingMetric === "characters")
-        return {
-          perTenThousandCharactersYuan: nullable(
-            value.perTenThousandCharactersYuan,
-          ),
-        };
-      if (rate.billingUnit === 3600)
-        return { perHourYuan: nullable(value.perHourYuan) };
-      return { perMinuteYuan: nullable(value.perMinuteYuan) };
-    }
-    return {
-      perSecondByResolution: Object.fromEntries(
-        resolutions.map((resolution) => [
-          resolution,
-          nullable(value.perSecondByResolution?.[resolution]),
-        ]),
-      ),
-    };
-  }
 
   async function saveProject(event: FormEvent) {
     event.preventDefault();
@@ -571,13 +449,6 @@ export default function BillingPanel({
           计费概览
         </button>
         <button
-          className={view === "rates" ? "active" : ""}
-          onClick={() => setView("rates")}
-        >
-          <Settings2 size={16} />
-          模型价目
-        </button>
-        <button
           className={view === "statements" ? "active" : ""}
           onClick={() => setView("statements")}
         >
@@ -775,198 +646,6 @@ export default function BillingPanel({
             </form>
           </section>
         </>
-      )}
-
-      {!loading && view === "rates" && (
-        <section className="panel billingRatesPanel">
-          <div className="panelHead">
-            <div>
-              <span className="relaySectionLabel">
-                <Settings2 size={14} />
-                PRICE BOOK
-              </span>
-              <h3>{month} 模型价目表</h3>
-              <p>
-                空值表示待计价，明确填写 0 才表示免费。金额统一为税前人民币。
-              </p>
-            </div>
-            <label className="ratePassword">
-              当前管理员密码
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={ratePassword}
-                onChange={(event) => setRatePassword(event.target.value)}
-                placeholder="保存任一模型前填写"
-              />
-            </label>
-          </div>
-          <div className="billingRateList">
-            {rates.map((rate) => {
-              const draft = rateDrafts[rate.model] ?? {};
-              return (
-                <article key={rate.model} className="billingRateRow">
-                  <div className="billingModel">
-                    <span>
-                      <ModelIcon rate={rate} />
-                    </span>
-                    <div>
-                      <b>{rate.displayName}</b>
-                      <code>{rate.model}</code>
-                      <small>
-                        {providerNames[rate.provider] ?? rate.provider}
-                      </small>
-                    </div>
-                  </div>
-                  <div className={`relayTypePill ${rate.modality}`}>
-                    {rate.modality === "text" ? (
-                      <MessageSquareText size={14} />
-                    ) : rate.modality === "image" ? (
-                      <ImageIcon size={14} />
-                    ) : rate.modality === "embedding" ? (
-                      <Network size={14} />
-                    ) : rate.modality === "audio" ? (
-                      <AudioLines size={14} />
-                    ) : (
-                      <Video size={14} />
-                    )}
-                    {rate.modality === "text"
-                      ? "文本"
-                      : rate.modality === "image"
-                        ? "图片"
-                        : rate.modality === "embedding"
-                          ? "向量"
-                          : rate.modality === "audio"
-                            ? "音频"
-                            : "视频"}
-                  </div>
-                  <div className="billingRateFields">
-                    {rate.modality === "text" && (
-                      <>
-                        <label>
-                          输入 / 百万 Token
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.000001"
-                            value={draft.inputPerMillionYuan ?? ""}
-                            onChange={(event) =>
-                              updateRate(rate.model, (value) => ({
-                                ...value,
-                                inputPerMillionYuan: event.target.value,
-                              }))
-                            }
-                            placeholder="待计价"
-                          />
-                        </label>
-                        <label>
-                          输出 / 百万 Token
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.000001"
-                            value={draft.outputPerMillionYuan ?? ""}
-                            onChange={(event) =>
-                              updateRate(rate.model, (value) => ({
-                                ...value,
-                                outputPerMillionYuan: event.target.value,
-                              }))
-                            }
-                            placeholder="待计价"
-                          />
-                        </label>
-                      </>
-                    )}
-                    {rate.modality === "image" && (
-                      <label>
-                        每张图片
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.000001"
-                          value={draft.perImageYuan ?? ""}
-                          onChange={(event) =>
-                            updateRate(rate.model, (value) => ({
-                              ...value,
-                              perImageYuan: event.target.value,
-                            }))
-                          }
-                          placeholder="待计价"
-                        />
-                      </label>
-                    )}
-                    {rate.modality === "embedding" && (
-                      <label>
-                        输入 / 百万 Token
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.000001"
-                          value={draft.inputPerMillionYuan ?? ""}
-                          onChange={(event) =>
-                            updateRate(rate.model, (value) => ({
-                              ...value,
-                              inputPerMillionYuan: event.target.value,
-                            }))
-                          }
-                          placeholder="待计价"
-                        />
-                      </label>
-                    )}
-                    {rate.modality === "audio" && rate.billingMetric === "characters" && (
-                      <label>
-                        每万字符
-                        <input type="number" min="0" step="0.000001" value={draft.perTenThousandCharactersYuan ?? ""} onChange={(event) => updateRate(rate.model, (value) => ({ ...value, perTenThousandCharactersYuan: event.target.value }))} placeholder="待计价" />
-                      </label>
-                    )}
-                    {rate.modality === "audio" && rate.billingMetric === "audio_second" && (
-                      <label>
-                        {rate.billingUnit === 3600 ? "每小时" : "每分钟"}
-                        <input type="number" min="0" step="0.000001" value={rate.billingUnit === 3600 ? draft.perHourYuan ?? "" : draft.perMinuteYuan ?? ""} onChange={(event) => updateRate(rate.model, (value) => rate.billingUnit === 3600 ? ({ ...value, perHourYuan: event.target.value }) : ({ ...value, perMinuteYuan: event.target.value }))} placeholder="待计价" />
-                      </label>
-                    )}
-                    {rate.modality === "video" &&
-                      resolutions.map((resolution) => (
-                        <label key={resolution}>
-                          {resolution} / 秒
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.000001"
-                            value={
-                              draft.perSecondByResolution?.[resolution] ?? ""
-                            }
-                            onChange={(event) =>
-                              updateRate(rate.model, (value) => ({
-                                ...value,
-                                perSecondByResolution: {
-                                  ...value.perSecondByResolution,
-                                  [resolution]: event.target.value,
-                                },
-                              }))
-                            }
-                            placeholder="待计价"
-                          />
-                        </label>
-                      ))}
-                  </div>
-                  <button
-                    className="secondary"
-                    onClick={() => void saveRate(rate)}
-                    disabled={busy === `rate:${rate.model}`}
-                  >
-                    {busy === `rate:${rate.model}` ? (
-                      <LoaderCircle size={15} className="spin" />
-                    ) : (
-                      <Save size={15} />
-                    )}
-                    保存
-                  </button>
-                </article>
-              );
-            })}
-          </div>
-        </section>
       )}
 
       {!loading && view === "statements" && (

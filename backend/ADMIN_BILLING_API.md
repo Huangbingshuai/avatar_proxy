@@ -1,7 +1,7 @@
 # 瑞池管理端计费账单 API 文档
 
-版本：1.0
-更新日期：2026-09-03
+版本：1.1
+更新日期：2026-09-11
 默认本地地址：`http://127.0.0.1:8000`
 
 本文档面向内部管理控制台及受信任的运维工具，描述项目计费、模型价目和月度账单接口。这里的接口不是客户接口，不能使用 `vap_live_*` 业务 API Key 调用，也不会在客户工具前端展示金额。
@@ -16,11 +16,13 @@
 
 访问规则：
 
-- 仅普通管理员可以访问；超级管理员只负责账号和安全管理，访问计费接口会返回 `403 super_admin_security_only`。
+- `GET /rates` 可由普通管理员和超级管理员查看。
+- `PUT /rates/{modelAlias}` 仅允许超级管理员，用于维护全局统一价目；普通管理员调用返回 `403 super_admin_required`。
+- 项目启停、项目折扣、账单、调整项和支付登记仅允许普通管理员；超级管理员访问这些日常财务接口返回 `403 super_admin_security_only`。
 - 管理员先通过 `POST /api/internal/auth/login` 登录，服务端设置 `avatar_admin_session` 和 `avatar_admin_csrf` Cookie。
 - `GET`、`HEAD`、`OPTIONS` 不要求 CSRF 请求头。
 - `POST`、`PUT`、`DELETE` 必须同时携带 Session Cookie、CSRF Cookie 和 `X-CSRF-Token` 请求头。
-- 修改价目、修改项目计费、增删调整项、确认账单和标记支付还必须在 JSON 中传入 `currentPassword`，用于当前管理员密码再认证。
+- 修改全局价目必须重新验证超级管理员密码；修改项目计费、增删调整项、确认账单和标记支付必须重新验证当前普通管理员密码。
 - 密码仅用于当次验证，不能记录到日志、审计或客户端存储。
 
 登录示例：
@@ -54,11 +56,14 @@ curl -c admin-cookies.txt "$BASE_URL/api/internal/auth/login" \
 | `metric` | 含义 | 单位 |
 |---|---|---|
 | `input_tokens` | 输入 Token | 每 100 万 Token |
+| `cached_input_tokens` | 缓存命中的输入 Token | 每 100 万 Token |
 | `output_tokens` | 输出 Token | 每 100 万 Token |
 | `image` | 成功生成图片 | 每张 |
 | `video_second` | 成功生成视频时长 | 每秒，按分辨率 |
+| `characters` | 文本字符 | 按规则中的 `unitSize` |
+| `audio_second` | 音频时长 | 按分钟或小时 |
 
-视频分辨率只允许 `480p`、`720p`、`768p`、`1080p`。
+火山 Seedance 2.x 按上游返回的 `completion_tokens` 计费，价格维度区分分辨率和是否包含视频输入；其他按时长报价的视频供应商仍可使用 `video_second`。
 
 ### 2.3 错误响应
 
@@ -83,7 +88,9 @@ curl -c admin-cookies.txt "$BASE_URL/api/internal/auth/login" \
 | `409` | 账期已关闭、账单已锁定或确认条件不满足 |
 | `422` | 月份、金额、分辨率或请求字段格式错误 |
 
-## 3. 模型价目
+## 3. 全局模型价目（超级管理员配置）
+
+模型价目不属于项目。系统只有一份按月份版本化的全局价目，所有已启用计费的项目共用同一价格，再分别应用项目折扣。修改某个模型的全局价目后，所有未确认的项目草稿账单会在下一次归集或重新计算时使用新价格；已确认账单保持冻结。
 
 ### 3.1 查询指定月份的全部价目
 
@@ -108,11 +115,19 @@ curl -b admin-cookies.txt \
       "provider": "volcengine_ark",
       "modality": "text",
       "month": "2026-09",
+      "scope": "global",
+      "configured": true,
       "sourceMonths": ["2026-09"],
       "prices": {
-        "inputPerMillionYuan": "1.200000",
-        "outputPerMillionYuan": "4.000000"
-      }
+        "inputPerMillionYuan": "8.000000",
+        "outputPerMillionYuan": "28.000000"
+      },
+      "rules": [
+        {"metric": "input_tokens", "dimension": "", "unitSize": 1000000, "unitPriceYuan": "8.000000", "sourceMonth": "2026-09"},
+        {"metric": "cached_input_tokens", "dimension": "", "unitSize": 1000000, "unitPriceYuan": "2.000000", "sourceMonth": "2026-09"},
+        {"metric": "output_tokens", "dimension": "", "unitSize": 1000000, "unitPriceYuan": "28.000000", "sourceMonth": "2026-09"}
+      ],
+      "officialSource": {"version": "2026-09-04", "url": "https://www.volcengine.com/docs/82379/1544106"}
     }
   ]
 }
@@ -120,7 +135,9 @@ curl -b admin-cookies.txt \
 
 `sourceMonths` 表示本月实际沿用的价格版本月份；未在本月改价时，可能来自更早月份。
 
-### 3.2 设置文本模型价目
+`rules` 是实际结算采用的规则，`editableRules` 是控制台可编辑模板。`dimension` 可表示文本上下文档位、图片像素档位、Embedding 输入类型，或视频的 `720p:no_video` / `720p:video` 等组合维度。
+
+### 3.2 设置任意模型的全局价目
 
 ```http
 PUT /api/internal/billing/rates/{modelAlias}
@@ -134,30 +151,17 @@ curl -b admin-cookies.txt -X PUT \
   -d '{
     "effectiveMonth": "2026-09",
     "prices": {
-      "inputPerMillionYuan": "1.20",
-      "outputPerMillionYuan": "4.00"
+      "rules": [
+        {"metric": "input_tokens", "dimension": "", "unitSize": 1000000, "unitPriceYuan": "8.00"},
+        {"metric": "cached_input_tokens", "dimension": "", "unitSize": 1000000, "unitPriceYuan": "2.00"},
+        {"metric": "output_tokens", "dimension": "", "unitSize": 1000000, "unitPriceYuan": "28.00"}
+      ]
     },
     "currentPassword": "<当前管理员密码>"
   }'
 ```
 
-### 3.3 设置图片模型价目
-
-```bash
-curl -b admin-cookies.txt -X PUT \
-  "$BASE_URL/api/internal/billing/rates/doubao-seedream-5.0-pro" \
-  -H "Content-Type: application/json" \
-  -H "X-CSRF-Token: <CSRF_TOKEN>" \
-  -d '{
-    "effectiveMonth": "2026-09",
-    "prices": {
-      "perImageYuan": "0.75"
-    },
-    "currentPassword": "<当前管理员密码>"
-  }'
-```
-
-### 3.4 设置视频模型价目
+火山 Seedance 2.5 示例（价格单位为人民币 / 百万输出 Token）：
 
 ```bash
 curl -b admin-cookies.txt -X PUT \
@@ -167,12 +171,10 @@ curl -b admin-cookies.txt -X PUT \
   -d '{
     "effectiveMonth": "2026-09",
     "prices": {
-      "perSecondByResolution": {
-        "480p": "0.10",
-        "720p": "0.20",
-        "768p": "0.25",
-        "1080p": "0.40"
-      }
+      "rules": [
+        {"metric": "output_tokens", "dimension": "720p:no_video", "unitSize": 1000000, "unitPriceYuan": "70.00"},
+        {"metric": "output_tokens", "dimension": "720p:video", "unitSize": 1000000, "unitPriceYuan": "42.00"}
+      ]
     },
     "currentPassword": "<当前管理员密码>"
   }'
@@ -184,19 +186,18 @@ curl -b admin-cookies.txt -X PUT \
 {
   "rate": {
     "model": "doubao-seedance-2.5",
-    "modality": "video",
+    "scope": "global",
+    "configured": true,
     "month": "2026-09",
-    "prices": {
-      "perSecondByResolution": {
-        "480p": "0.100000",
-        "720p": "0.200000",
-        "768p": "0.250000",
-        "1080p": "0.400000"
-      }
-    }
+    "rules": [
+      {"metric": "output_tokens", "dimension": "720p:no_video", "unitSize": 1000000, "unitPriceYuan": "70.000000"},
+      {"metric": "output_tokens", "dimension": "720p:video", "unitSize": 1000000, "unitPriceYuan": "42.000000"}
+    ]
   }
 }
 ```
+
+`null` 或空字符串会删除该条计价规则；只有明确填写 `"0"` 才表示免费。当前控制台由超级管理员逐模型保存，不能按项目覆盖单价。
 
 ## 4. 项目计费规则
 

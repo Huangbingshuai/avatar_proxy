@@ -580,7 +580,7 @@ curl "$BASE_URL/v1/models" \
 | `doubao-seedream-5.0` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `doubao-seedream-4.5` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `doubao-seedream-4.0` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
-| `image2.0` | 生图；单次 1 张结果 | OpenAI | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `gpt-image-2` | 生图；单次 1 张结果 | MaxModel | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `doubao-embedding-vision` | 文本、图片和视频多模态向量化 | 火山方舟 | `POST /v1/embeddings`<br>`POST /v1/embeddings/multimodal` | 同步 JSON |
 | `doubao-seed-tts-2.0` | 语音合成 | 火山语音 | `POST /v1/audio/speech` | 音频二进制响应 |
 | `doubao-seedasr-2.0` | 异步录音识别 | 火山语音 | `POST /v1/audio/transcriptions` | `GET /v1/audio/transcriptions/{taskId}` |

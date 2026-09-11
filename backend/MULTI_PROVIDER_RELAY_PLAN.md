@@ -15,7 +15,7 @@
 - `doubao-seedance-1.0-pro`、`doubao-seedance-1.0-pro-fast`：火山方舟 Seedance 1.0 Pro 视频模型。
 - `wan3.0-video`：阿里百炼异步视频模型。
 - `minimax-h3`：MiniMax 异步视频模型。
-- `image2.0`：OpenAI 图片模型别名，固定映射到 `gpt-image-2`。
+- `gpt-image-2`：通过 MaxModel 渠道调用的图片模型别名，与真实上游模型 ID 保持一致。
 
 新功能默认关闭，不改变当前素材接口、`/api/video/*`、全局 Seedance Key 或已有业务 Key 的行为。
 
@@ -30,7 +30,7 @@
 | Channel | 项目级 `provider_channels` 和版本化凭证 |
 | Ability | 模型目录和项目模型绑定 |
 | Distributor | 项目、模型和渠道的确定性路由器 |
-| Adaptor | OpenAI、方舟、百炼、MiniMax Python 适配器 |
+| Adaptor | OpenAI、MaxModel、方舟、百炼、MiniMax Python 适配器 |
 | TaskAdaptor | 统一异步视频任务和状态映射 |
 | 预扣与结算 | 现有原子额度能力加统一用量账本 |
 
@@ -100,7 +100,7 @@ HEAD /v1/videos/{taskId}/content
 - 旧 SQLite 连续升级、重复初始化、备份恢复不丢失现有数据。
 - 凭证原文不进入数据库、日志、审计、接口、SSR 或测试快照。
 - 项目、角色、CSRF、项目模型权限和跨项目边界全部有拒绝用例，并验证同项目多枚 Key 自动共享模型权限。
-- MockTransport 覆盖 OpenAI、方舟、百炼和 MiniMax 的请求转换、同步响应、SSE、异步查询及错误映射。
+- MockTransport 覆盖 OpenAI、MaxModel、方舟、百炼和 MiniMax 的请求转换、同步响应、SSE、异步查询及错误映射。
 - 幂等请求、任务固定渠道、凭证轮换、重复轮询和失败不结算均有回归测试。
 - 现有素材、Seedance、额度、管理员认证、备份和磁盘监控测试保持通过。
 - 后端分支覆盖率不低于 90%；控制台单元测试、SSR、lint 和生产构建通过。

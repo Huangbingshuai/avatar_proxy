@@ -5,6 +5,7 @@ from fastapi.responses import Response
 
 from ..admin_auth import AdminPrincipal
 from ..billing import current_month
+from ..errors import ApiError
 from ..schemas import (
     BillingAdjustmentCreate,
     BillingPaymentCreate,
@@ -12,7 +13,7 @@ from ..schemas import (
     BillingSensitiveAction,
     ProjectBillingUpdate,
 )
-from ..security import BusinessAdminDependency
+from ..security import AdminDependency, BusinessAdminDependency
 
 
 router = APIRouter(prefix="/api/internal/billing", tags=["项目计费账单"])
@@ -58,7 +59,7 @@ def _audit(
 @router.get("/rates")
 def list_rates(
     request: Request,
-    _: BusinessAdminDependency,
+    _: AdminDependency,
     month: str = Query(default_factory=current_month, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
 ) -> dict:
     return {"month": month, "rates": request.app.state.billing.rates(month)}
@@ -69,8 +70,10 @@ def update_rate(
     model_alias: str,
     payload: BillingRateUpdate,
     request: Request,
-    principal: BusinessAdminDependency,
+    principal: AdminDependency,
 ) -> dict:
+    if principal.role != "super_admin":
+        raise ApiError("只有超级管理员可以维护全局模型价目", 403, "super_admin_required")
     _reauth(request, principal, payload.current_password, "billing.rate.update")
     before = request.app.state.billing.get_rate(model_alias, payload.effective_month)
     rate = request.app.state.billing.set_rate(
@@ -82,8 +85,8 @@ def update_rate(
         "billing.rate.update",
         "billing_model_rate",
         f"{model_alias}:{payload.effective_month}",
-        before={"prices": before["prices"]},
-        after={"prices": rate["prices"]},
+        before={"rules": before["rules"]},
+        after={"rules": rate["rules"]},
     )
     return {"rate": rate}
 

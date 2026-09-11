@@ -53,7 +53,6 @@ export const MODEL_ICON_ASSETS = {
 export type ModelIconKey = keyof typeof MODEL_ICON_ASSETS;
 
 const MODEL_ICON_OVERRIDES: Record<string, ModelIconKey> = {
-  "image2.0": "openai",
   "gpt-image-2": "openai",
   "doubao-seedream-5.0-pro": "doubao",
   "doubao-seedream-5-0-260128": "doubao",

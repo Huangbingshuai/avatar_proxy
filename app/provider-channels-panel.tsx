@@ -18,6 +18,7 @@ import type { AdminApi } from "./admin-api";
 
 type Provider =
   | "openai"
+  | "maxmodel"
   | "volcengine_ark"
   | "volcengine_speech"
   | "aliyun_bailian"
@@ -38,6 +39,7 @@ type Channel = {
 
 const providerLabels: Record<Provider, string> = {
   openai: "OpenAI",
+  maxmodel: "MaxModel",
   volcengine_ark: "火山方舟",
   volcengine_speech: "豆包语音",
   aliyun_bailian: "阿里百炼",
@@ -516,6 +518,11 @@ export default function ProviderChannelsPanel({
                 <div className="note">
                   请填写语音技术控制台中新创建的 API Key。它与火山方舟 API Key
                   不通用；模型开通后创建的新 Key 才会包含对应资源权限。
+                </div>
+              )}
+              {form.provider === "maxmodel" && (
+                <div className="note">
+                  固定请求 https://aiapi.maxmaas.com；无需填写 Base URL。渠道测试不会产生图片费用，绑定 gpt-image-2 后请从用户端进行一次真实调用验证。
                 </div>
               )}
               <label>

@@ -1,8 +1,15 @@
 import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
+
+from .official_rates import (
+    OFFICIAL_VOLCENGINE_RATES,
+    VOLCENGINE_RATE_EFFECTIVE_MONTH,
+    VOLCENGINE_RATE_VERSION,
+)
 
 
 SEEDREAM_MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024
@@ -34,7 +41,7 @@ BUILTIN_MODEL_CATALOG = (
     ("doubao-seedance-1.0-pro-fast", "Doubao Seedance 1.0 Pro Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-fast-251015", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
     ("wan3.0-video", "Wan 3.0 Video", "aliyun_bailian", "video", "async_video", "wan3.0-video", {"image": True, "maxN": 1}),
     ("minimax-h3", "MiniMax H3", "minimax", "video", "async_video", "MiniMax-H3", {"image": True, "maxN": 1}),
-    ("image2.0", "Image 2.0", "openai", "image", "openai_image", "gpt-image-2", {"generations": True}),
+    ("gpt-image-2", "GPT Image 2", "maxmodel", "image", "openai_image", "gpt-image-2", {"generations": True}),
     ("doubao-embedding-vision", "Doubao Embedding Vision", "volcengine_ark", "embedding", "ark_embedding", "doubao-embedding-vision-251215", {"embeddings": True, "multimodal": True, "inputTypes": ["text", "image", "video"], "dimensions": [1024, 2048], "billingMetric": "input_tokens", "billingUnit": 1000000}),
     ("doubao-seed-tts-2.0", "Doubao Seed TTS 2.0", "volcengine_speech", "audio", "speech_tts", "seed-tts-2.0", {"speech": True, "formats": ["mp3", "pcm", "ogg_opus"], "billingMetric": "characters", "billingUnit": 10000}),
     ("doubao-seedasr-2.0", "Doubao Seed ASR 2.0", "volcengine_speech", "audio", "speech_asr", "volc.seedasr.auc", {"transcriptions": True, "async": True, "billingMetric": "audio_second", "billingUnit": 3600}),
@@ -57,6 +64,7 @@ BUILTIN_MODEL_ALIAS_MIGRATIONS = (
     ("glm-5.3", "glm-5.2"),
     ("wan3.0", "wan3.0-video"),
     ("seed-audio-1.0", "doubao-seed-audio-1.0"),
+    ("image2.0", "gpt-image-2"),
 )
 
 
@@ -372,7 +380,7 @@ CREATE TABLE IF NOT EXISTS provider_channels (
     id TEXT PRIMARY KEY,
     project_name TEXT NOT NULL,
     name TEXT NOT NULL,
-    provider TEXT NOT NULL CHECK(provider IN ('openai','volcengine_ark','volcengine_speech','aliyun_bailian','minimax')),
+    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','volcengine_ark','volcengine_speech','aliyun_bailian','minimax')),
     config_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
     last_test_status TEXT CHECK(last_test_status IN ('success','failed','manual')),
@@ -474,8 +482,10 @@ CREATE TABLE IF NOT EXISTS inference_usage (
     provider_request_id TEXT,
     status TEXT NOT NULL,
     input_tokens INTEGER,
+    cached_input_tokens INTEGER,
     output_tokens INTEGER,
     total_tokens INTEGER,
+    usage_dimension TEXT,
     generated_images INTEGER,
     video_seconds REAL,
     video_width INTEGER,
@@ -493,7 +503,7 @@ CREATE TABLE IF NOT EXISTS inference_usage (
 CREATE TABLE IF NOT EXISTS billing_model_rates (
     id TEXT PRIMARY KEY,
     model_alias TEXT NOT NULL,
-    metric TEXT NOT NULL CHECK(metric IN ('input_tokens','output_tokens','image','video_second','characters','audio_second')),
+    metric TEXT NOT NULL CHECK(metric IN ('input_tokens','cached_input_tokens','output_tokens','image','video_second','characters','audio_second')),
     resolution TEXT NOT NULL DEFAULT '',
     effective_month TEXT NOT NULL,
     unit_size INTEGER NOT NULL CHECK(unit_size > 0),
@@ -502,6 +512,10 @@ CREATE TABLE IF NOT EXISTS billing_model_rates (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(model_alias) REFERENCES model_catalog(alias) ON DELETE RESTRICT,
     UNIQUE(model_alias,metric,resolution,effective_month)
+);
+CREATE TABLE IF NOT EXISTS app_migrations (
+    id TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS project_billing_terms (
     id TEXT PRIMARY KEY,
@@ -668,9 +682,15 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
                 "('provider_channels','model_catalog','billing_model_rates')"
             ).fetchall()
         }
-        rebuild_provider = definitions.get("provider_channels") and "volcengine_speech" not in definitions["provider_channels"]
+        rebuild_provider = definitions.get("provider_channels") and any(
+            value not in definitions["provider_channels"]
+            for value in ("volcengine_speech", "maxmodel", "manual")
+        )
         rebuild_catalog = definitions.get("model_catalog") and "'embedding'" not in definitions["model_catalog"]
-        rebuild_rates = definitions.get("billing_model_rates") and "'characters'" not in definitions["billing_model_rates"]
+        rebuild_rates = definitions.get("billing_model_rates") and any(
+            value not in definitions["billing_model_rates"]
+            for value in ("'characters'", "'cached_input_tokens'")
+        )
         if not any((rebuild_provider, rebuild_catalog, rebuild_rates)):
             return
         connection.execute("BEGIN IMMEDIATE")
@@ -679,7 +699,7 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
                 """
                 CREATE TABLE provider_channels_new (
                     id TEXT PRIMARY KEY, project_name TEXT NOT NULL, name TEXT NOT NULL,
-                    provider TEXT NOT NULL CHECK(provider IN ('openai','volcengine_ark','volcengine_speech','aliyun_bailian','minimax')),
+                    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','volcengine_ark','volcengine_speech','aliyun_bailian','minimax')),
                     config_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
                     last_test_status TEXT CHECK(last_test_status IN ('success','failed','manual')),
                     last_test_at TEXT, last_test_latency_ms INTEGER, last_test_error TEXT,
@@ -717,7 +737,7 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
                 """
                 CREATE TABLE billing_model_rates_new (
                     id TEXT PRIMARY KEY, model_alias TEXT NOT NULL,
-                    metric TEXT NOT NULL CHECK(metric IN ('input_tokens','output_tokens','image','video_second','characters','audio_second')),
+                    metric TEXT NOT NULL CHECK(metric IN ('input_tokens','cached_input_tokens','output_tokens','image','video_second','characters','audio_second')),
                     resolution TEXT NOT NULL DEFAULT '', effective_month TEXT NOT NULL,
                     unit_size INTEGER NOT NULL CHECK(unit_size > 0),
                     unit_price_micros INTEGER NOT NULL CHECK(unit_price_micros >= 0),
@@ -825,6 +845,10 @@ class Database:
                 connection.execute("ALTER TABLE inference_usage ADD COLUMN input_characters INTEGER")
             if inference_usage_columns and "audio_seconds" not in inference_usage_columns:
                 connection.execute("ALTER TABLE inference_usage ADD COLUMN audio_seconds REAL")
+            if inference_usage_columns and "cached_input_tokens" not in inference_usage_columns:
+                connection.execute("ALTER TABLE inference_usage ADD COLUMN cached_input_tokens INTEGER")
+            if inference_usage_columns and "usage_dimension" not in inference_usage_columns:
+                connection.execute("ALTER TABLE inference_usage ADD COLUMN usage_dimension TEXT")
             billing_item_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(billing_usage_items)").fetchall()
             }
@@ -849,6 +873,17 @@ class Database:
             connection.execute(
                 "INSERT OR IGNORE INTO system_monitor_state(id) VALUES (1)"
             )
+            # The legacy image2.0 alias originally used direct OpenAI access.
+            # Clear those bindings before the alias migration so an existing
+            # OpenAI key can never be sent to MaxModel by mistake. Bindings that
+            # already use MaxModel are migrated to gpt-image-2 below.
+            legacy_image_row = connection.execute(
+                "SELECT provider FROM model_catalog WHERE alias='image2.0'"
+            ).fetchone()
+            if legacy_image_row is not None and legacy_image_row["provider"] != "maxmodel":
+                connection.execute(
+                    "DELETE FROM project_model_bindings WHERE model_alias='image2.0'"
+                )
             for alias, display_name, provider, modality, protocol, upstream_model, capabilities in BUILTIN_MODEL_CATALOG:
                 connection.execute(
                     "INSERT INTO model_catalog "
@@ -945,6 +980,42 @@ class Database:
                         (canonical_alias, legacy_alias),
                     )
                 connection.execute("DELETE FROM model_catalog WHERE alias=?", (legacy_alias,))
+            official_rate_migration = f"official-volcengine-rates-{VOLCENGINE_RATE_VERSION}"
+            if not connection.execute(
+                "SELECT 1 FROM app_migrations WHERE id=?", (official_rate_migration,)
+            ).fetchone():
+                actor = f"system:volcengine:{VOLCENGINE_RATE_VERSION}"
+                for alias, rules in OFFICIAL_VOLCENGINE_RATES.items():
+                    if not connection.execute(
+                        "SELECT 1 FROM model_catalog WHERE alias=?", (alias,)
+                    ).fetchone():
+                        continue
+                    for metric, dimension, unit_size, price in rules:
+                        amount_micros = int(price * 1_000_000)
+                        existing = connection.execute(
+                            "SELECT id FROM billing_model_rates WHERE model_alias=? AND metric=? "
+                            "AND resolution=? AND effective_month=?",
+                            (alias, metric, dimension, VOLCENGINE_RATE_EFFECTIVE_MONTH),
+                        ).fetchone()
+                        if existing:
+                            connection.execute(
+                                "UPDATE billing_model_rates SET unit_size=?,unit_price_micros=?,created_by=? "
+                                "WHERE id=?",
+                                (unit_size, amount_micros, actor, existing["id"]),
+                            )
+                        else:
+                            connection.execute(
+                                "INSERT INTO billing_model_rates"
+                                "(id,model_alias,metric,resolution,effective_month,unit_size,"
+                                "unit_price_micros,created_by) VALUES (?,?,?,?,?,?,?,?)",
+                                (
+                                    f"brate_{uuid.uuid4().hex}", alias, metric, dimension,
+                                    VOLCENGINE_RATE_EFFECTIVE_MONTH, unit_size, amount_micros, actor,
+                                ),
+                            )
+                connection.execute(
+                    "INSERT INTO app_migrations(id) VALUES (?)", (official_rate_migration,)
+                )
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations

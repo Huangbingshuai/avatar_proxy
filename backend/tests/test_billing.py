@@ -21,6 +21,7 @@ from app.billing import (
     validate_month,
     yuan_to_micros,
 )
+from app.admin_auth import AdminPrincipal
 from app.errors import ApiError
 from app.database import Database
 from app.main import create_app
@@ -30,18 +31,21 @@ from conftest import ADMIN_HEADERS, build_settings, create_key, create_project
 PASSWORD = "Test-admin-password!2026"
 
 
+SUPER_ACTOR = AdminPrincipal(
+    id="super-test", username="super-test", display_name="Super Test", role="super_admin",
+    session_id="super-session", csrf_token="csrf", must_change_password=False,
+    mfa_verified=True, totp_enabled=True,
+)
+
+
+def _set_rate(client: TestClient, month: str, alias: str, prices: dict):
+    return client.app.state.billing.set_rate(alias, month, prices, SUPER_ACTOR)
+
+
 def _put_text_rate(client: TestClient, month: str, input_price: str | None, output_price: str | None):
-    return client.put(
-        "/api/internal/billing/rates/glm-5.2",
-        headers=ADMIN_HEADERS,
-        json={
-            "effectiveMonth": month,
-            "prices": {
-                "inputPerMillionYuan": input_price,
-                "outputPerMillionYuan": output_price,
-            },
-            "currentPassword": PASSWORD,
-        },
+    return _set_rate(
+        client, month, "glm-5.2",
+        {"inputPerMillionYuan": input_price, "outputPerMillionYuan": output_price},
     )
 
 
@@ -97,8 +101,8 @@ def test_billing_defaults_disabled_and_rates_require_reauthentication(tmp_path: 
 
     assert terms.status_code == 200
     assert terms.json()["billing"]["enabled"] is False
-    assert wrong.status_code == 401
-    assert wrong.json()["error"]["code"] == "admin_reauthentication_failed"
+    assert wrong.status_code == 403
+    assert wrong.json()["error"]["code"] == "super_admin_required"
 
 
 def test_text_usage_is_rated_with_project_discount_and_is_idempotent(tmp_path: Path) -> None:
@@ -107,7 +111,7 @@ def test_text_usage_is_rated_with_project_discount_and_is_idempotent(tmp_path: P
         create_project(client)
         key_id, _ = create_key(client)
         month = current_month()
-        assert _put_text_rate(client, month, "1.20", "4.00").status_code == 200
+        _put_text_rate(client, month, "1.20", "4.00")
         assert _enable_project(client, month, 8000).status_code == 200
         _insert_relay_usage(app, key_id)
         _insert_relay_usage(app, key_id, usage_id="older-usage")
@@ -142,7 +146,7 @@ def test_missing_rate_is_pending_but_explicit_zero_is_billable(tmp_path: Path) -
         create_project(client)
         key_id, _ = create_key(client)
         month = current_month()
-        assert _put_text_rate(client, month, "0", None).status_code == 200
+        _put_text_rate(client, month, "0", None)
         assert _enable_project(client, month).status_code == 200
         _insert_relay_usage(app, key_id, input_tokens=10, output_tokens=0)
         first = client.get(
@@ -150,7 +154,7 @@ def test_missing_rate_is_pending_but_explicit_zero_is_billable(tmp_path: Path) -
         ).json()["statement"]
         assert first["pendingCount"] == 1
 
-        assert _put_text_rate(client, month, "0", "0").status_code == 200
+        _put_text_rate(client, month, "0", "0")
         second = client.get(
             f"/api/internal/billing/preview?projectName=drama_prod&month={month}", headers=ADMIN_HEADERS
         ).json()["statement"]
@@ -244,38 +248,21 @@ def test_image_and_video_rate_books_and_validation(tmp_path: Path) -> None:
     with TestClient(app) as client:
         create_project(client)
         month = current_month()
-        image = client.put(
-            "/api/internal/billing/rates/doubao-seedream-5.0-pro",
-            headers=ADMIN_HEADERS,
-            json={"effectiveMonth": month, "prices": {"perImageYuan": "0.75"}, "currentPassword": PASSWORD},
-        )
-        video = client.put(
-            "/api/internal/billing/rates/doubao-seedance-2.5",
-            headers=ADMIN_HEADERS,
-            json={
-                "effectiveMonth": month,
-                "prices": {"perSecondByResolution": {"480p": "0.10", "720p": "0.20", "768p": None}},
-                "currentPassword": PASSWORD,
-            },
-        )
+        image = _set_rate(client, month, "doubao-seedream-5.0-pro", {"perImageYuan": "0.75"})
+        video = _set_rate(client, month, "doubao-seedance-2.5", {
+            "perSecondByResolution": {"480p": "0.10", "720p": "0.20", "768p": None}
+        })
         listed = client.get(f"/api/internal/billing/rates?month={month}", headers=ADMIN_HEADERS)
-        invalid_resolution = client.put(
-            "/api/internal/billing/rates/doubao-seedance-2.5",
-            headers=ADMIN_HEADERS,
-            json={"effectiveMonth": month, "prices": {"perSecondByResolution": {"4k": "1"}}, "currentPassword": PASSWORD},
-        )
-        missing_model = client.put(
-            "/api/internal/billing/rates/not-a-model",
-            headers=ADMIN_HEADERS,
-            json={"effectiveMonth": month, "prices": {}, "currentPassword": PASSWORD},
-        )
+        with pytest.raises(ApiError) as invalid_resolution:
+            _set_rate(client, month, "doubao-seedance-2.5", {"perSecondByResolution": {"4k": "1"}})
+        with pytest.raises(ApiError) as missing_model:
+            _set_rate(client, month, "not-a-model", {})
 
-    assert image.json()["rate"]["prices"]["perImageYuan"] == "0.750000"
-    assert video.json()["rate"]["prices"]["perSecondByResolution"]["720p"] == "0.200000"
+    assert image["prices"]["perImageYuan"] == "0.750000"
+    assert video["prices"]["perSecondByResolution"]["720p"] == "0.200000"
     assert any(item["model"] == "doubao-seedream-5.0-pro" for item in listed.json()["rates"])
-    assert invalid_resolution.status_code == 422
-    assert invalid_resolution.json()["error"]["code"] == "billing_resolution_invalid"
-    assert missing_model.status_code == 404
+    assert invalid_resolution.value.code == "billing_resolution_invalid"
+    assert missing_model.value.code == "billing_model_not_found"
 
 
 def test_image_video_and_legacy_video_usage_are_rated_but_failed_tasks_are_excluded(tmp_path: Path) -> None:
@@ -286,14 +273,13 @@ def test_image_video_and_legacy_video_usage_are_rated_but_failed_tasks_are_exclu
         month = current_month()
         _enable_project(client, month, 9000)
         for alias, prices in (
-            ("doubao-seedream-5.0-pro", {"perImageYuan": "1.00"}),
-            ("doubao-seedance-2.5", {"perSecondByResolution": {"720p": "0.50"}}),
+            ("doubao-seedream-4.5", {"perImageYuan": "1.00"}),
+            ("doubao-seedance-2.5", {"rules": [{
+                "metric": "output_tokens", "dimension": "720p:no_video",
+                "unitSize": 1_000_000, "unitPriceYuan": "0.50",
+            }]}),
         ):
-            assert client.put(
-                f"/api/internal/billing/rates/{alias}",
-                headers=ADMIN_HEADERS,
-                json={"effectiveMonth": month, "prices": prices, "currentPassword": PASSWORD},
-            ).status_code == 200
+            _set_rate(client, month, alias, prices)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         with app.state.database.connect() as connection:
@@ -302,12 +288,12 @@ def test_image_video_and_legacy_video_usage_are_rated_but_failed_tasks_are_exclu
                 ("media-channel", "drama_prod", "media", "volcengine_ark"),
             )
             for values in (
-                ("img-use", "img-request", "doubao-seedream-5.0-pro", 2, None, None, None),
-                ("vid-use", "vid-request", "doubao-seedance-2.5", None, 4.0, 1280, 720),
+                ("img-use", "img-request", "doubao-seedream-4.5", 2, None, None, None, None),
+                ("vid-use", "vid-request", "doubao-seedance-2.5", None, 4.0, 1280, 720, 4_000_000),
             ):
                 connection.execute(
                     "INSERT INTO inference_usage(id,request_id,api_key_id,project_name,model_alias,channel_id,status,"
-                    "generated_images,video_seconds,video_width,video_height,created_at,settled_at) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?)",
+                    "generated_images,video_seconds,video_width,video_height,output_tokens,created_at,settled_at) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?)",
                     (values[0], values[1], key_id, "drama_prod", values[2], "media-channel", "succeeded", *values[3:], now, now),
                 )
             for task_id, status, duration, resolution in (
@@ -321,9 +307,10 @@ def test_image_video_and_legacy_video_usage_are_rated_but_failed_tasks_are_exclu
                     "INSERT INTO video_tasks(api_key_id,project_name,task_id,record_json,status,created_at) VALUES (?,?,?,?,?,?)",
                     (key_id, "drama_prod", task_id, record, status, now_ms),
                 )
+                output_tokens = 0 if task_id == "legacy-bad-duration" else 3_000_000
                 connection.execute(
-                    "INSERT INTO video_usage(api_key_id,project_name,task_id,model,created_at) VALUES (?,?,?,?,?)",
-                    (key_id, "drama_prod", task_id, "doubao-seedance-2-5-260628", now),
+                    "INSERT INTO video_usage(api_key_id,project_name,task_id,model,output_tokens,created_at) VALUES (?,?,?,?,?,?)",
+                    (key_id, "drama_prod", task_id, "doubao-seedance-2-5-260628", output_tokens, now),
                 )
         statement = client.get(
             f"/api/internal/billing/preview?projectName=drama_prod&month={month}", headers=ADMIN_HEADERS
@@ -332,11 +319,11 @@ def test_image_video_and_legacy_video_usage_are_rated_but_failed_tasks_are_exclu
             f"/api/internal/billing/statements/{statement['id']}", headers=ADMIN_HEADERS
         ).json()["statement"]
 
-    # (2 images * 1 + (4 + 3) video seconds * .5) * 90%
+    # (2 images * 1 + (4M + 3M) video output tokens * .5/M) * 90%
     assert statement["subtotalYuan"] == "5.500000"
     assert statement["totalYuan"] == "4.950000"
     assert statement["pendingCount"] == 2
-    assert {line["metric"] for line in detail["lines"]} == {"image", "video_second"}
+    assert {line["metric"] for line in detail["lines"]} == {"image", "output_tokens"}
     with sqlite3.connect(tmp_path / "billing.db") as connection:
         assert connection.execute("SELECT COUNT(*) FROM billing_usage_items").fetchone()[0] == 5
 
@@ -508,16 +495,10 @@ def test_rate_term_and_statement_error_boundaries(tmp_path: Path) -> None:
         missing_project = client.get(
             f"/api/internal/billing/projects/absent?month={month}", headers=ADMIN_HEADERS
         )
-        bad_video_shape = client.put(
-            "/api/internal/billing/rates/doubao-seedance-2.5",
-            headers=ADMIN_HEADERS,
-            json={"effectiveMonth": month, "prices": {"perSecondByResolution": ["0.1"]}, "currentPassword": PASSWORD},
-        )
-        past_rate = client.put(
-            "/api/internal/billing/rates/glm-5.2",
-            headers=ADMIN_HEADERS,
-            json={"effectiveMonth": old_month, "prices": {"inputPerMillionYuan": "1"}, "currentPassword": PASSWORD},
-        )
+        with pytest.raises(ApiError) as bad_video_shape:
+            _set_rate(client, month, "doubao-seedance-2.5", {"perSecondByResolution": ["0.1"]})
+        with pytest.raises(ApiError) as past_rate:
+            _set_rate(client, old_month, "glm-5.2", {"inputPerMillionYuan": "1"})
         past_terms = client.put(
             "/api/internal/billing/projects/drama_prod",
             headers=ADMIN_HEADERS,
@@ -531,17 +512,19 @@ def test_rate_term_and_statement_error_boundaries(tmp_path: Path) -> None:
             connection.execute(
                 "UPDATE billing_statements SET status='confirmed' WHERE id=?", (draft["id"],)
             )
-        closed_rate = _put_text_rate(client, month, "1", "1")
+        with pytest.raises(ApiError) as closed_rate:
+            _put_text_rate(client, month, "1", "1")
         closed_terms = _enable_project(client, month)
         missing_statement = client.get(
             "/api/internal/billing/statements/not-found", headers=ADMIN_HEADERS
         )
 
     assert missing_project.status_code == 404
-    assert bad_video_shape.status_code == 422
-    assert bad_video_shape.json()["error"]["code"] == "billing_rate_invalid"
-    assert past_rate.status_code == past_terms.status_code == 409
-    assert closed_rate.status_code == closed_terms.status_code == 409
+    assert bad_video_shape.value.code == "billing_rate_invalid"
+    assert past_rate.value.status_code == 409
+    assert past_terms.status_code == 409
+    assert closed_rate.value.status_code == 409
+    assert closed_terms.status_code == 409
     assert missing_statement.status_code == 404
 
 

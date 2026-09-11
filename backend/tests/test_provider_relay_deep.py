@@ -118,6 +118,8 @@ def test_vault_and_provider_config_validation_branches(tmp_path: Path) -> None:
         assert error_code(lambda: validate("aliyun_bailian", {"workspaceId": "bad workspace"})) == "aliyun_workspace_invalid"
         assert error_code(lambda: validate("aliyun_bailian", {"workspaceId": "ok", "region": "moon"})) == "aliyun_region_invalid"
         assert error_code(lambda: validate("openai", {"project": "x" * 257})) == "provider_config_invalid"
+        assert validate("maxmodel", {}) == {}
+        assert error_code(lambda: validate("maxmodel", {"base_url": "https://example.com"})) == "provider_config_field_forbidden"
         assert validate("aliyun_bailian", {"workspaceId": "work_1"}) == {
             "workspaceId": "work_1",
             "region": "cn-beijing",
@@ -135,6 +137,9 @@ def test_base_url_and_header_guards(tmp_path: Path) -> None:
         openai = ModelRoute(provider="openai", channel_config={"organization": "org", "project": "proj"}, **base)
         headers = relay._headers(openai)
         assert headers["openai-organization"] == "org" and headers["openai-project"] == "proj"
+        maxmodel = ModelRoute(provider="maxmodel", channel_config={}, **base)
+        assert relay._base_url(maxmodel) == "https://aiapi.maxmaas.com/v1"
+        assert relay._headers(maxmodel)["authorization"] == "Bearer secret-value"
         assert error_code(lambda: relay._base_url(ModelRoute(provider="unknown", channel_config={}, **base))) == "provider_adapter_missing"
         bad_ali = ModelRoute(provider="aliyun_bailian", channel_config={}, **base)
         assert error_code(lambda: relay._base_url(bad_ali)) == "aliyun_channel_invalid"
@@ -298,6 +303,18 @@ async def test_channel_test_success_and_failure_persist_result(tmp_path: Path) -
         failed = await relay.test_channel(channel["id"])
         assert failed["status"] == "failed" and failed["message"] == "invalid key"
         assert relay.get_channel(channel["id"])["lastTestStatus"] == "failed"
+
+        maxmodel = relay.create_channel(
+            project_name="test-channel", name="maxmodel", provider="maxmodel", config={},
+            secret="maxmodel-secret-abcdefgh", actor_id="owner"
+        )
+        paths.clear()
+        manual = await relay.test_channel(maxmodel["id"])
+        assert manual["status"] == "manual"
+        assert "真实测试" in manual["message"]
+        assert paths == []
+        assert relay.get_channel(maxmodel["id"])["lastTestStatus"] == "manual"
+
         with pytest.raises(ApiError) as missing:
             await relay.test_channel("missing")
         assert missing.value.code == "provider_channel_not_found"
@@ -327,15 +344,15 @@ def test_public_parameter_validation_and_openai_error_contract(tmp_path: Path) -
 
     with relay_client(tmp_path / "images") as client:
         _, secret, _ = provision(
-            client, provider="openai", alias="image2.0", upstream_model="gpt-image-real"
+            client, provider="maxmodel", alias="gpt-image-2", upstream_model="gpt-image-real"
         )
         headers = {"Authorization": f"Bearer {secret}"}
         images = [
-            ({"model": "image2.0", "prompt": "x", "unknown": 1}, "image_parameter_unsupported"),
-            ({"model": "image2.0", "prompt": ""}, "image_prompt_invalid"),
-            ({"model": "image2.0", "prompt": "x", "n": 0}, "image_count_invalid"),
-            ({"model": "image2.0", "prompt": "x", "n": 16}, "image_count_invalid"),
-            ({"model": "image2.0", "prompt": "x", "response_format": "raw"}, "image_response_format_invalid"),
+            ({"model": "gpt-image-2", "prompt": "x", "unknown": 1}, "image_parameter_unsupported"),
+            ({"model": "gpt-image-2", "prompt": ""}, "image_prompt_invalid"),
+            ({"model": "gpt-image-2", "prompt": "x", "n": 0}, "image_count_invalid"),
+            ({"model": "gpt-image-2", "prompt": "x", "n": 16}, "image_count_invalid"),
+            ({"model": "gpt-image-2", "prompt": "x", "response_format": "raw"}, "image_response_format_invalid"),
         ]
         for payload, code in images:
             response = client.post("/v1/images/generations", headers=headers, json=payload)
@@ -344,7 +361,7 @@ def test_public_parameter_validation_and_openai_error_contract(tmp_path: Path) -
         too_long = client.post(
             "/v1/images/generations",
             headers={**headers, "Idempotency-Key": "x" * 129},
-            json={"model": "image2.0", "prompt": "x"},
+            json={"model": "gpt-image-2", "prompt": "x"},
         )
         assert too_long.json()["error"]["code"] == "idempotency_key_invalid"
 
@@ -352,38 +369,38 @@ def test_public_parameter_validation_and_openai_error_contract(tmp_path: Path) -
 def test_image_failure_in_progress_failed_replay_and_modality(tmp_path: Path) -> None:
     with relay_client(tmp_path) as client:
         key_id, secret, _ = provision(
-            client, provider="openai", alias="image2.0", upstream_model="gpt-image-real"
+            client, provider="maxmodel", alias="gpt-image-2", upstream_model="gpt-image-real"
         )
         relay = client.app.state.provider_relay
         headers = {"Authorization": f"Bearer {secret}", "Idempotency-Key": "failed-image"}
         relay.transport = httpx.MockTransport(lambda _: httpx.Response(500, json={"message": "image failed"}))
         failed = client.post(
             "/v1/images/generations", headers=headers,
-            json={"model": "image2.0", "prompt": "x"},
+            json={"model": "gpt-image-2", "prompt": "x"},
         )
         replay = client.post(
             "/v1/images/generations", headers=headers,
-            json={"model": "image2.0", "prompt": "x"},
+            json={"model": "gpt-image-2", "prompt": "x"},
         )
         assert failed.status_code == 500
         assert replay.status_code == 409 and replay.json()["error"]["code"] == "idempotency_request_failed"
 
-        route = relay.resolve(ApiPrincipal(key_id, "relay_project"), "image2.0")
+        route = relay.resolve(ApiPrincipal(key_id, "relay_project"), "gpt-image-2")
         relay._create_task(
             ApiPrincipal(key_id, "relay_project"), route, "image",
-            {"model": "image2.0", "prompt": "pending"}, "pending-image"
+            {"model": "gpt-image-2", "prompt": "pending"}, "pending-image"
         )
         pending = client.post(
             "/v1/images/generations",
             headers={"Authorization": f"Bearer {secret}", "Idempotency-Key": "pending-image"},
-            json={"model": "image2.0", "prompt": "pending"},
+            json={"model": "gpt-image-2", "prompt": "pending"},
         )
         assert pending.json()["error"]["code"] == "idempotency_request_in_progress"
 
         mismatch = client.post(
             "/v1/chat/completions",
             headers={"Authorization": f"Bearer {secret}"},
-            json={"model": "image2.0", "messages": []},
+            json={"model": "gpt-image-2", "messages": []},
         )
         assert mismatch.json()["error"]["code"] == "model_modality_mismatch"
 

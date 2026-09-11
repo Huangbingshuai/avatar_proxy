@@ -11,7 +11,7 @@ describe("model icon library", () => {
   });
 
   it("resolves fixed relay models and common family aliases", () => {
-    expect(getModelIconPath("image2.0")).toBe("/model-icons/openai.svg");
+    expect(getModelIconPath("gpt-image-2")).toBe("/model-icons/openai.svg");
     expect(getModelIconPath("doubao-seedream-5.0-pro")).toBe("/model-icons/doubao.svg");
     expect(getModelIconPath("doubao-seed-audio-1.0")).toBe("/model-icons/doubao.svg");
     expect(getModelIconPath("wan3.0-video")).toBe("/model-icons/bailian.svg");
