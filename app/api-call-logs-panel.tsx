@@ -104,9 +104,12 @@ export default function ApiCallLogsPanel({
         offset: String(offset),
       });
       const data = await adminApi(`/api/internal/call-logs?${query.toString()}`);
-      setItems((data.items ?? []) as CallLog[]);
+      const nextItems = (data.items ?? []) as CallLog[];
+      setItems(nextItems);
       setTotal(Number(data.total ?? 0));
-      setExpanded(null);
+      setExpanded((current) => (
+        current !== null && nextItems.some((item) => item.id === current) ? current : null
+      ));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "调用日志加载失败");
     } finally {
@@ -148,6 +151,7 @@ export default function ApiCallLogsPanel({
               setProjectName(event.target.value);
               setApiKeyId("");
               setOffset(0);
+              setExpanded(null);
             }}
           >
             <option value="">请选择客户项目</option>
@@ -164,6 +168,7 @@ export default function ApiCallLogsPanel({
             onChange={(event) => {
               setApiKeyId(event.target.value);
               setOffset(0);
+              setExpanded(null);
             }}
           >
             <option value="">{projectName ? "请选择业务 Key" : "请先选择客户项目"}</option>
@@ -237,11 +242,11 @@ export default function ApiCallLogsPanel({
         </div>
         {apiKeyId && total > PAGE_SIZE && (
           <div className="callLogPagination">
-            <button className="secondary" type="button" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+            <button className="secondary" type="button" disabled={offset === 0 || loading} onClick={() => { setExpanded(null); setOffset(Math.max(0, offset - PAGE_SIZE)); }}>
               <ChevronLeft size={15} />上一页
             </button>
             <span>第 {Math.floor(offset / PAGE_SIZE) + 1} 页</span>
-            <button className="secondary" type="button" disabled={offset + PAGE_SIZE >= total || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
+            <button className="secondary" type="button" disabled={offset + PAGE_SIZE >= total || loading} onClick={() => { setExpanded(null); setOffset(offset + PAGE_SIZE); }}>
               下一页<ChevronRight size={15} />
             </button>
           </div>
