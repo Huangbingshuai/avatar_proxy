@@ -7,6 +7,7 @@ import {
   Ban,
   BookOpen,
   CheckCircle2,
+  CircleDollarSign,
   Clipboard,
   CloudUpload,
   FolderKanban,
@@ -33,6 +34,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import AdminPanel from "./admin-panel";
 import { AdminApiError, isPasswordChangeRequired, isSessionError, requestAdminApi, type AdminApi, type AdminUser } from "./admin-api";
 import BillingPanel from "./billing-panel";
+import ModelPriceTable from "./model-price-table";
 import ModelRelayPanel from "./model-relay-panel";
 
 type Project = {
@@ -110,7 +112,7 @@ type QuotaUsage = {
   cleanupObjects: CleanupObject[];
 };
 
-type Tab = "overview" | "projects" | "keys" | "models" | "billing" | "quotas" | "integration" | "admins";
+type Tab = "overview" | "projects" | "keys" | "models" | "prices" | "billing" | "quotas" | "integration" | "admins";
 type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -121,6 +123,7 @@ const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "projects", label: "项目", icon: FolderKanban },
   { id: "keys", label: "API Keys", icon: KeyRound },
   { id: "models", label: "项目模型", icon: Sparkles },
+  { id: "prices", label: "模型价格", icon: CircleDollarSign },
   { id: "billing", label: "计费账单", icon: ReceiptText },
   { id: "quotas", label: "额度与用量", icon: SlidersHorizontal },
   { id: "integration", label: "接入说明", icon: BookOpen },
@@ -488,6 +491,7 @@ export default function ConsolePage() {
         {currentUser?.role !== "super_admin" && tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
         {currentUser?.role !== "super_admin" && tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
         {currentUser?.role !== "super_admin" && tab === "models" && <ModelRelayPanel projects={projects} apiKeys={apiKeys} adminApi={adminApi} />}
+        {currentUser?.role !== "super_admin" && tab === "prices" && <ModelPriceTable adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "billing" && <BillingPanel projects={projects} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
         {currentUser?.role !== "super_admin" && tab === "integration" && <IntegrationPanel />}

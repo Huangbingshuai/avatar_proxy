@@ -537,11 +537,11 @@ describe("内部控制台", () => {
     expect(screen.getByText("项目级")).toBeInTheDocument();
     expect(screen.queryByLabelText(/真实模型ID/)).not.toBeInTheDocument();
     expect(screen.getAllByText("glm-5.2").length).toBeGreaterThan(0);
-    expect(screen.getByText("¥8–¥28 / 百万Token")).toBeInTheDocument();
     expect(await screen.findByText("10 / 20 tokens")).toBeInTheDocument();
 
     const catalogSection = screen.getByRole("heading", { name: "项目模型绑定" }).closest("section");
     expect(catalogSection).not.toBeNull();
+    expect(within(catalogSection!).queryByText("全局价格")).not.toBeInTheDocument();
     await user.click(within(catalogSection!).getByRole("button", { name: "MaxModel" }));
     expect(within(catalogSection!).getAllByText("gpt-image-2").length).toBeGreaterThan(0);
     await user.clear(within(catalogSection!).getByRole("textbox", { name: "搜索项目模型" }));
@@ -559,6 +559,25 @@ describe("内部控制台", () => {
     const modelCall = calls.filter((call) => call.path === "/api/internal/project/customer_a/models" && call.init?.method === "PUT").at(-1);
     expect(new Headers(modelCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
     expect(JSON.parse(String(modelCall?.init?.body)).bindings).toEqual([{ model: "glm-5.2", channelId: "channel-ark", upstreamModel: "glm-5-2-260617", enabled: true }]);
+  });
+
+  it("普通管理员通过独立只读页面查看完整模型价格", async () => {
+    installFetch({ role: "admin" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "模型价格" }));
+
+    const heading = await screen.findByRole("heading", { name: "模型价格表" });
+    const page = heading.closest("div.modelPricePage");
+    expect(page).not.toBeNull();
+    expect(within(page!).getByText("glm-5.2")).toBeInTheDocument();
+    expect(within(page!).getByText("输入 Token")).toBeInTheDocument();
+    expect(within(page!).getByText("输出 Token")).toBeInTheDocument();
+    expect(within(page!).getByText("¥8.00")).toBeInTheDocument();
+    expect(within(page!).getByText("¥28.00")).toBeInTheDocument();
+    expect(within(page!).getAllByText("每百万 Token", { selector: "small" })).toHaveLength(2);
+    expect(within(page!).getByText("只读")).toBeInTheDocument();
+    expect(within(page!).queryByRole("button", { name: /保存/ })).not.toBeInTheDocument();
+    expect(within(page!).queryByLabelText("超级管理员密码")).not.toBeInTheDocument();
   });
 
   it("超级管理员录入供应商凭证时必须再次输入密码和TOTP", async () => {

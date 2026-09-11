@@ -8,6 +8,7 @@ from app.routers.openai_compat import IMAGE_FIELDS, router as openai_router
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 CLIENT_DOC = BACKEND_ROOT / "CLIENT_API.md"
+ADMIN_BILLING_DOC = BACKEND_ROOT / "ADMIN_BILLING_API.md"
 MODEL_RELAY_DOC = BACKEND_ROOT / "MODEL_RELAY_API.md"
 RICHIDRAMA_DOC = BACKEND_ROOT / "RICHIDRAMA_RELAY_ALIGNMENT.md"
 
@@ -56,10 +57,14 @@ def test_client_api_lists_current_public_model_routes() -> None:
 
 def test_specialized_docs_defer_to_client_contract() -> None:
     client = _text(CLIENT_DOC)
+    billing = _text(ADMIN_BILLING_DOC)
     relay = _text(MODEL_RELAY_DOC)
     richidrama = _text(RICHIDRAMA_DOC)
 
     assert "版本：5.6" in client
+    assert "版本：1.2" in billing
+    assert "独立的“模型价格”页面" in billing
+    assert "`/v1/pricing`" in billing
     assert "旧的 `seedance-*`、`seedream-*` 短别名已经停用" in client
     assert "CLIENT_API.md" in relay
     assert "CLIENT_API.md" in richidrama

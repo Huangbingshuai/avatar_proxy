@@ -51,7 +51,7 @@ Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素
 - 统一 `429` 限流协议、额度事件、审计与失败清理。
 - 可选的模型中转：使用同一枚 `vap_live_*` 调用文本、图片、多模态向量、音频和统一异步视频接口；按项目路由到火山方舟、豆包语音、阿里百炼、MiniMax、MaxModel 或 OpenAI 渠道。
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
-- 普通管理员在项目模型启用列表中直接查看全局税前价格；客户可通过 `/v1/pricing` 查询当前项目可用模型的全局价和项目折扣后参考价。
+- 普通管理员通过独立的只读“模型价格”页面查看超级管理员配置的完整税前价目；客户可通过 `/v1/pricing` 查询当前项目可用模型的全局价和项目折扣后参考价。
 - 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；图片覆盖 Doubao Seedream 4.0、4.5、5.0、5.0 Lite、5.0 Pro，以及经 MaxModel 转发的 `gpt-image-2`；视频覆盖 6 个 Doubao Seedance 模型、阿里百炼 `wan3.0-video` 和 MiniMax `minimax-h3`；另提供 Doubao 多模态向量、TTS、ASR 和 Seed Audio。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
 
 模型中转调用方可直接使用 [模型中转接口文档](backend/MODEL_RELAY_API.md)；素材库及完整客户接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。模型目录的固定映射、接入门槛和验收记录见 [火山方舟模型目录维护文档](backend/VOLCENGINE_MODEL_CATALOG.md)。
