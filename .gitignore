@@ -44,6 +44,7 @@ yarn-error.log*
 /outputs/
 /work/
 /.playwright-mcp/
+/.codex-run/
 
 # Python backend
 /backend/.venv/

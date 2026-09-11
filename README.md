@@ -330,10 +330,10 @@ npm test
 
 ### 生产发布基线（2026-09-11）
 
-- 当前生产应用 Release 为 `20260911-call-logs-08cc8b1`，对应代码提交 `08cc8b1`；后续仅修改文档并推送 Git 不代表生产应用已经再次部署。
+- 当前生产应用 Release 为 `20260911-call-log-export-5512285`，对应代码提交 `5512285`；后续仅修改文档并推送 Git 不代表生产应用已经再次部署。
 - 本次发布只重建 `api` 和 `console`，客户工具 `edge` 与 HTTPS `api-gateway` 容器均未重启，也没有修改其他宿主机业务容器。
-- 发布前使用 SQLite 在线备份生成一致性快照，并同时保留 `admin_totp.key`、`provider_credentials.key`、生产环境配置和旧 API/控制台镜像标签。回滚备份位于 `/opt/avatar-proxy/backups/20260911-call-logs-before-08cc8b1`。
-- 发布前已使用生产数据库副本验证幂等迁移与隔离启动；发布后已确认 API 健康、控制台首页可访问、SQLite `integrity_check` 通过、调用日志与累计计数表存在、受保护接口继续要求鉴权，微信回调路由仍只接受 `POST`，容器日志无新增异常。
+- 发布前使用 SQLite 在线备份生成一致性快照，并同时保留 `admin_totp.key`、`provider_credentials.key`、生产环境配置和旧 API/控制台镜像标签。回滚备份位于 `/opt/avatar-proxy/backups/20260911-call-log-export-before-5512285`。
+- 发布前已使用隔离空库启动新 API 镜像；发布后已确认 API 健康、控制台首页可访问、SQLite `integrity_check` 通过、调用明细严格处于近 30 天窗口、日志导出路由存在、受保护接口继续要求鉴权，微信回调路由仍只接受 `POST`，容器日志无新增异常。
 - 后续同类发布应继续采用“先备份与校验 → 在新 Release 预构建和隔离预检 → 单独替换 API → 健康后替换控制台 → reload 网关 → 回归素材、模型、价格和支付回调”的顺序。仅当前端或后端发生变化时，不应重建无关的 `edge`、`api-gateway` 或其他宿主机业务容器。
 
 支付回调上游只通过服务端部署变量配置：
