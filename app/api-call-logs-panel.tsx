@@ -11,7 +11,7 @@ import {
   Download,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AdminApi } from "./admin-api";
 
@@ -79,6 +79,7 @@ export default function ApiCallLogsPanel({
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const expandedRef = useRef<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -89,10 +90,12 @@ export default function ApiCallLogsPanel({
   const selectedKey = useMemo(() => apiKeys.find((key) => key.id === apiKeyId), [apiKeys, apiKeyId]);
 
   const load = useCallback(async () => {
+    // Keep the visible row and its potentially large payload stable while the
+    // operator is inspecting it. Polling resumes as soon as the row is closed.
+    if (expandedRef.current !== null) return;
     if (!apiKeyId) {
       setItems([]);
       setTotal(0);
-      setExpanded(null);
       setError("");
       return;
     }
@@ -105,12 +108,12 @@ export default function ApiCallLogsPanel({
         offset: String(offset),
       });
       const data = await adminApi(`/api/internal/call-logs?${query.toString()}`);
+      // A refresh may already be in flight when the operator opens a row.
+      // Ignore that stale response instead of replacing the row under them.
+      if (expandedRef.current !== null) return;
       const nextItems = (data.items ?? []) as CallLog[];
       setItems(nextItems);
       setTotal(Number(data.total ?? 0));
-      setExpanded((current) => (
-        current !== null && nextItems.some((item) => item.id === current) ? current : null
-      ));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "调用日志加载失败");
     } finally {
@@ -130,6 +133,11 @@ export default function ApiCallLogsPanel({
   const first = total ? offset + 1 : 0;
   const last = Math.min(offset + PAGE_SIZE, total);
 
+  const closeExpanded = () => {
+    expandedRef.current = null;
+    setExpanded(null);
+  };
+
   return (
     <div className="content callLogsConsole">
       <div className="pageIntro">
@@ -139,7 +147,7 @@ export default function ApiCallLogsPanel({
           <p>完整记录该 Key 的业务请求参数与返回结果，敏感字段自动脱敏，仅滚动保留近 30 天。</p>
         </div>
         <span className={`callLogLive${apiKeyId ? " active" : ""}`}>
-          <i />{apiKeyId ? "实时更新" : "等待选择 Key"}
+          <i />{expanded !== null ? "详情查看中" : apiKeyId ? "实时更新" : "等待选择 Key"}
         </span>
       </div>
 
@@ -152,7 +160,7 @@ export default function ApiCallLogsPanel({
               setProjectName(event.target.value);
               setApiKeyId("");
               setOffset(0);
-              setExpanded(null);
+              closeExpanded();
             }}
           >
             <option value="">请选择客户项目</option>
@@ -169,7 +177,7 @@ export default function ApiCallLogsPanel({
             onChange={(event) => {
               setApiKeyId(event.target.value);
               setOffset(0);
-              setExpanded(null);
+              closeExpanded();
             }}
           >
             <option value="">{projectName ? "请选择业务 Key" : "请先选择客户项目"}</option>
@@ -222,7 +230,12 @@ export default function ApiCallLogsPanel({
                   <button
                     className="callLogExpand"
                     type="button"
-                    onClick={() => setExpanded(expanded === item.id ? null : item.id)}
+                    onClick={() => {
+                      const next = expanded === item.id ? null : item.id;
+                      expandedRef.current = next;
+                      setExpanded(next);
+                      if (next === null) void load();
+                    }}
                     aria-label={expanded === item.id ? "收起详情" : "展开详情"}
                   >
                     {expanded === item.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -250,15 +263,15 @@ export default function ApiCallLogsPanel({
           ))}
           {!apiKeyId && !loading && <div className="emptyRow">请先选择客户项目，再选择要查看的业务 Key</div>}
           {apiKeyId && !items.length && !loading && <div className="emptyRow">该业务 Key 暂无调用日志</div>}
-          {loading && <div className="emptyRow">正在加载调用日志…</div>}
+          {loading && !items.length && <div className="emptyRow">正在加载调用日志…</div>}
         </div>
         {apiKeyId && total > PAGE_SIZE && (
           <div className="callLogPagination">
-            <button className="secondary" type="button" disabled={offset === 0 || loading} onClick={() => { setExpanded(null); setOffset(Math.max(0, offset - PAGE_SIZE)); }}>
+            <button className="secondary" type="button" disabled={offset === 0 || loading} onClick={() => { closeExpanded(); setOffset(Math.max(0, offset - PAGE_SIZE)); }}>
               <ChevronLeft size={15} />上一页
             </button>
             <span>第 {Math.floor(offset / PAGE_SIZE) + 1} 页</span>
-            <button className="secondary" type="button" disabled={offset + PAGE_SIZE >= total || loading} onClick={() => { setExpanded(null); setOffset(offset + PAGE_SIZE); }}>
+            <button className="secondary" type="button" disabled={offset + PAGE_SIZE >= total || loading} onClick={() => { closeExpanded(); setOffset(offset + PAGE_SIZE); }}>
               下一页<ChevronRight size={15} />
             </button>
           </div>

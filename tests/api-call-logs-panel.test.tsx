@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import ApiCallLogsPanel from "../app/api-call-logs-panel";
 
 
-it("调用日志自动刷新时保持仍然存在的展开详情", async () => {
+it("查看调用详情时暂停刷新并在收起后立即更新", async () => {
   const projects = [{ name: "customer_a", displayName: "客户 A" }];
   const apiKeys = [{ id: "key-a", name: "生产 Key", keyPrefix: "vap_live_a…", projectName: "customer_a" }];
   const response = {
@@ -50,7 +50,12 @@ it("调用日志自动刷新时保持仍然存在的展开详情", async () => {
   expect(screen.getByText("list_assets")).toBeInTheDocument();
 
   rerender(<ApiCallLogsPanel projects={projects} apiKeys={apiKeys} adminApi={refreshedApi} />);
-  await waitFor(() => expect(refreshedApi).toHaveBeenCalled());
+  await new Promise((resolve) => window.setTimeout(resolve, 20));
+  expect(refreshedApi).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "收起详情" })).toBeInTheDocument();
   expect(screen.getByText("list_assets")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "收起详情" }));
+  await waitFor(() => expect(refreshedApi).toHaveBeenCalled());
+  expect(screen.getByText("实时更新")).toBeInTheDocument();
 });
