@@ -1,6 +1,6 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.6
+版本：5.7
 
 更新日期：2026-09-11
 正式地址：`https://api.richbest.cn`
@@ -9,9 +9,9 @@
 
 本文档是客户公开 HTTP 契约的完整事实来源。[MODEL_RELAY_API.md](MODEL_RELAY_API.md) 是模型中转快速接入说明，[RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md) 只描述 RichiDrama 调用方需要进行的改造；两者不得覆盖或重新定义本文档中的路径、字段、响应和错误规则。模型的实时可用性及能力始终以当前业务 Key 调用 `/v1/models` 的结果为准。
 
-客户可以通过 `/v1/pricing` 查询当前项目可用模型的全局税前价目和折扣后参考价；月度账单、调整项、支付状态及内部计费管理仍不通过客户业务 API 返回。项目计费由管理员按项目统一配置，不需要也不支持客户为每个 API Key 单独设置；内部管理接口另见 [管理端计费账单 API 文档](ADMIN_BILLING_API.md)。
+客户可以通过 `/v1/pricing` 查询当前项目可用模型的公开税前价目和当前项目价格。该接口只提供调用前所需的模型价格信息，不返回月度账单、调整项或支付状态。
 
-### 5.6 文档基线
+### 5.7 文档基线
 
 - 统一使用瑞池业务 Key 调用素材、文本、图片、视频、向量和音频接口；调用方不接触供应商凭证。
 - 视频任务统一采用火山兼容的 `/api/v3/contents/generations/tasks` 创建、查询和取消路径，不再提供 `/v1/videos`。
@@ -50,10 +50,11 @@ JSON 请求还需携带 `Content-Type: application/json`。
 
 1. 调用 `/api/auth/me` 验证业务 API Key；
 2. 调用 `/v1/models` 获取当前项目实际可用的模型，后续只使用返回的模型别名；
-3. 调用 `POST /api/v3/contents/generations/tasks` 创建视频任务，并为每次业务操作提供唯一的 `Idempotency-Key`；
-4. 保存创建响应中的中转站任务 ID，使用同一枚业务 Key 每 5～10 秒查询一次；
-5. 状态变为 `succeeded` 后读取 `content.video_url` 并及时下载；`failed` 或 `cancelled` 为终态；
-6. 仅在任务仍为 `queued` 或 `running` 时按需调用删除接口取消任务。
+3. 如需在调用前展示或核对价格，调用 `/v1/pricing`，也可通过 `model` 参数过滤目标模型；
+4. 调用 `POST /api/v3/contents/generations/tasks` 创建视频任务，并为每次业务操作提供唯一的 `Idempotency-Key`；
+5. 保存创建响应中的中转站任务 ID，使用同一枚业务 Key 每 5～10 秒查询一次；
+6. 状态变为 `succeeded` 后读取 `content.video_url` 并及时下载；`failed` 或 `cancelled` 为终态；
+7. 仅在任务仍为 `queued` 或 `running` 时按需调用删除接口取消任务。
 
 ### 3.2 素材库
 
@@ -607,14 +608,16 @@ curl "$BASE_URL/v1/pricing" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-该接口只返回当前业务 Key 所属项目已启用且渠道可用的模型，不会泄露其他项目或尚未开通的模型。可使用可选查询参数 `model` 按模型别名或展示名称进行不区分大小写的包含匹配：
+该接口使用与其他客户接口相同的业务 Key 鉴权，只返回当前业务 Key 所属项目已启用且渠道可用的模型，不会返回其他项目或尚未开通的模型。可使用可选查询参数 `model` 按模型别名或展示名称进行不区分大小写的包含匹配：
 
 ```bash
 curl "$BASE_URL/v1/pricing?model=glm-5.2" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-未匹配到模型时返回空的 `data` 数组。响应示例：
+`model` 长度为 1～128 个字符，包含空格或其他特殊字符时应进行 URL 编码。不传该参数时返回当前项目的完整可用模型价格表；未匹配到模型时仍返回 `200`，但 `data` 为空数组。
+
+完整响应示例：
 
 ```json
 {
@@ -636,11 +639,25 @@ curl "$BASE_URL/v1/pricing?model=glm-5.2" \
       "configured": true,
       "prices": [
         {
+          "metric": "cached_input_tokens",
+          "dimension": null,
+          "unit_size": 1000000,
+          "list_price_yuan": "2.000000",
+          "effective_price_yuan": "1.600000"
+        },
+        {
           "metric": "input_tokens",
           "dimension": null,
           "unit_size": 1000000,
           "list_price_yuan": "8.000000",
           "effective_price_yuan": "6.400000"
+        },
+        {
+          "metric": "output_tokens",
+          "dimension": null,
+          "unit_size": 1000000,
+          "list_price_yuan": "28.000000",
+          "effective_price_yuan": "22.400000"
         }
       ]
     }
@@ -648,11 +665,42 @@ curl "$BASE_URL/v1/pricing?model=glm-5.2" \
 }
 ```
 
-- `list_price_yuan` 是超级管理员维护、所有项目共用的全局单价。
-- `effective_price_yuan` 是应用当前项目折扣后的参考单价；`discount_bps=8000` 表示八折。
-- `billing_enabled=false` 表示当前项目尚未启用账单归集，但仍可查询已开通模型的参考价。
-- `configured=false` 表示该模型当前没有可用价目，`prices` 为空；调用方不应把它解释为免费。只有返回的单价明确为 `0.000000` 才表示免费。
-- 金额均为人民币税前价格。`metric`、`dimension` 和 `unit_size` 共同定义计价单位，例如每百万 Token、每张图片、指定分辨率或输入类型。
+顶层字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `month` | string | 当前价格账期，格式为 `YYYY-MM` |
+| `currency` | string | 固定为人民币 `CNY` |
+| `tax_inclusive` | boolean | 当前固定为 `false`，表示税前价格 |
+| `billing_enabled` | boolean | 当前项目是否已启用账单归集；为 `false` 时仍可查询参考价 |
+| `discount_bps` | integer | 当前项目价格系数，`10000` 为原价、`8000` 为八折 |
+| `data` | array | 当前项目可用模型的价格列表 |
+
+模型及价格字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | string | 请求模型接口时使用的公开模型名称 |
+| `display_name` | string | 用于界面展示的模型名称 |
+| `provider` | string | 模型供应商标识 |
+| `modality` | string | `text`、`image`、`video`、`embedding` 或 `audio` |
+| `configured` | boolean | 是否已有可用价格；为 `false` 时 `prices` 为空且不代表免费 |
+| `prices[].metric` | string | 计价指标，例如输入、缓存输入、输出、图片、视频时长、字符或音频时长 |
+| `prices[].dimension` | string/null | 上下文档位、图片规格、分辨率和是否包含视频输入等计价维度 |
+| `prices[].unit_size` | integer | 对应单价所覆盖的计量单位数量，例如 `1000000` 表示每百万 Token |
+| `prices[].list_price_yuan` | string | 平台公开税前单价，使用十进制字符串返回 |
+| `prices[].effective_price_yuan` | string | 应用当前项目价格系数后的税前单价 |
+
+只有单价明确返回 `"0.000000"` 才表示免费。金额字段必须作为十进制字符串处理，不要转换成二进制浮点数后用于最终金额计算。价格接口用于调用前查询，实际结算仍以服务端记录的成功用量和对应账期价格为准。
+
+常见响应：
+
+| HTTP 状态 | 说明 |
+|---|---|
+| `200` | 查询成功；未匹配模型时 `data` 为空 |
+| `401` | 业务 Key 缺失、无效或已停用 |
+| `422` | `model` 参数为空或长度超过限制 |
+| `503` | 模型中转功能当前未启用 |
 
 ### 13.3 Chat Completions 与 Responses
 
