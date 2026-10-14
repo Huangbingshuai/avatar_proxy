@@ -4,11 +4,17 @@ The values below are deliberately kept separate from provider routing.  They are
 used only to initialise the global billing rate card and can subsequently be
 changed by the super administrator.  Amounts are CNY list prices, before a
 project discount is applied.
+
+Volcengine Ark publishes CNY list prices, so they are copied verbatim.  BytePlus
+ModelArk publishes USD list prices while the ledger is CNY-only, so every USD
+amount is converted once through a frozen ``USD_CNY_FX`` snapshot instead of
+being re-priced per request.  The published USD amounts stay visible as
+``BYTEPLUS_USD_PRICES`` for auditability.
 """
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
 
 
@@ -161,3 +167,92 @@ OFFICIAL_VOLCENGINE_RATES["doubao-seedance-2.0-mini"] = _video_rules({
     "480p": ("9.20", "5.60"),
     "720p": ("9.20", "5.60"),
 })
+
+# ---------------------------------------------------------------------------
+# BytePlus ModelArk (overseas).  Published in USD, stored in CNY.
+# ---------------------------------------------------------------------------
+
+BYTEPLUS_RATE_SOURCE_URL: Final = "https://docs.byteplus.com/en/docs/ModelArk/model-pricing"
+BYTEPLUS_RATE_VERSION: Final = "2026-10-14"
+BYTEPLUS_RATE_EFFECTIVE_MONTH: Final = "2026-10"
+
+# Frozen FX snapshot: the platform must not re-price historical usage whenever
+# the market moves, and a CNY ledger cannot carry two currencies at once.
+USD_CNY_FX: Final = Decimal("6.705025")
+USD_CNY_FX_SOURCE: Final = "open.er-api.com/v6/latest/USD (2026-10-14)"
+
+# Published USD list prices, kept verbatim so the CNY card can always be
+# re-derived and audited against the source page.  Video prices are USD per
+# million tokens, written as ``(input without video, input with video)``.
+BYTEPLUS_USD_VIDEO_PRICES: Final[dict[str, dict[str, tuple[str, str]]]] = {
+    "dreamina-seedance-2.5": {
+        "480p": ("10.70", "6.40"),
+        "720p": ("10.70", "6.40"),
+        "1080p": ("11.70", "7.00"),
+    },
+    "dreamina-seedance-2.0": {
+        "480p": ("7.00", "4.30"),
+        "720p": ("7.00", "4.30"),
+        "1080p": ("7.70", "4.70"),
+    },
+    "dreamina-seedance-2.0-fast": {
+        "480p": ("5.60", "3.30"),
+        "720p": ("5.60", "3.30"),
+    },
+    "dreamina-seedance-2.0-mini": {
+        "480p": ("3.50", "2.10"),
+        "720p": ("3.50", "2.10"),
+    },
+}
+
+# Image prices are USD per image.  Only the single-image-generation tier is
+# modelled: the published layer-decomposition tier (0.0225 / 0.045 USD) cannot
+# be told apart here because the relay never receives a mode flag for it.
+BYTEPLUS_USD_IMAGE_PRICES: Final[dict[str, dict[str, str]]] = {
+    "dola-seedream-5.0-pro": {
+        "input:after_first": "0.003",
+        "output:le2610000": "0.045",
+        "output:gt2610000": "0.09",
+    },
+    # Keyed by pricing dimension; an empty dimension is the flat per-image rate.
+    "dola-seedream-5.0-flash": {"": "0.018"},
+    "dola-seedream-5.0-lite": {"": "0.035"},
+}
+
+
+def _usd_to_cny(usd_price: str) -> str:
+    """Convert a published USD amount into a six-decimal CNY amount."""
+    converted = (Decimal(usd_price) * USD_CNY_FX).quantize(
+        Decimal("0.000001"), rounding=ROUND_HALF_UP
+    )
+    return str(converted)
+
+
+def _usd_rule(metric: str, dimension: str, unit_size: int, usd_price: str):
+    return _rule(metric, dimension, unit_size, _usd_to_cny(usd_price))
+
+
+def _usd_video_rules(
+    usd_prices: dict[str, tuple[str, str]]
+) -> tuple[tuple[str, str, int, Decimal], ...]:
+    """Build token rules from ``{resolution: (without_video, with_video)}``."""
+    rows: list[tuple[str, str, int, Decimal]] = []
+    for resolution, (without_video, with_video) in usd_prices.items():
+        rows.append(_usd_rule("output_tokens", f"{resolution}:no_video", 1_000_000, without_video))
+        rows.append(_usd_rule("output_tokens", f"{resolution}:video", 1_000_000, with_video))
+    return tuple(rows)
+
+
+OFFICIAL_BYTEPLUS_RATES: Final[dict[str, tuple[tuple[str, str, int, Decimal], ...]]] = {
+    alias: _usd_video_rules(prices) for alias, prices in BYTEPLUS_USD_VIDEO_PRICES.items()
+}
+OFFICIAL_BYTEPLUS_RATES.update({
+    alias: tuple(_usd_rule("image", dimension, 1, usd) for dimension, usd in prices.items())
+    for alias, prices in BYTEPLUS_USD_IMAGE_PRICES.items()
+})
+
+# Every model whose rate card is seeded from an official price list.
+OFFICIAL_RATES: Final[dict[str, tuple[tuple[str, str, int, Decimal], ...]]] = {
+    **OFFICIAL_VOLCENGINE_RATES,
+    **OFFICIAL_BYTEPLUS_RATES,
+}

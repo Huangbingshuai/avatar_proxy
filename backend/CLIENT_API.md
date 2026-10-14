@@ -1,8 +1,8 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.8
+版本：5.9
 
-更新日期：2026-09-11
+更新日期：2026-10-14
 正式地址：`https://api.richbest.cn`
 
 本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、文本、图片、视频、多模态向量与音频模型接口。
@@ -27,6 +27,13 @@
 - 补充素材组、素材列表、向量和音频接口的参数边界及响应约定。
 - 明确 `/api/*`、`/api/v3/*` 与 `/v1/*` 的额度错误格式及 `Retry-After` 行为。
 - 客户主文档只保留通用公开契约，特定调用方的开发状态继续由各自的对接文档维护。
+
+### 5.9 文档基线
+
+- 增加 4 个 `dreamina-seedance-*` 海外视频模型和 3 个 `dola-seedream-*` 海外图片模型，调用路径及业务 Key 鉴权保持一致。
+- 海外模型使用独立别名；需要哪个模型，请联系管理员开通，以 `/v1/models` 的实际返回为准。
+- 补充海外视频的 `output_format`、图片参考图与尺寸限制，以及海外素材和结果链接说明。
+- 海外模型价目按供应商官方美元公示价一次性折算为人民币税前单价（`1 USD = 6.705025 CNY`，2026-10-14 冻结），不叠加加价；`/v1/pricing` 返回的就是人民币原价，不需要客户自行换算。计价维度见 13.2.1。
 
 ## 1. 鉴权
 
@@ -365,7 +372,7 @@ curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
 
 `content` 支持文本以及模型能力允许的图片、视频和音频引用。火山方舟模型可使用 HTTP(S) URL、当前项目可访问的 `asset://` ID，以及合法的图片或音频 Data URL；阿里百炼和 MiniMax 当前只接受 HTTP(S) 图片 URL。图片角色为 `first_frame`、`last_frame` 或 `reference_image`，视频角色为 `reference_video`，音频角色为 `reference_audio`。阿里 `wan3.0-video` 当前最多接受一张 `first_frame` 图片。各模型可用素材类型、条目数量、分辨率和时长以 `/v1/models` 返回的能力为准。
 
-可选字段包括 `duration`、`frames`、`resolution`、`ratio`、`generate_audio`、`draft`、`seed`、`camera_fixed`、`watermark`、`return_last_frame`、`service_tier`、`execution_expires_after` 和 `task_type`。不支持或不属于兼容契约的字段返回 `422`，不会盲目转发。
+可选字段包括 `duration`、`frames`、`resolution`、`ratio`、`generate_audio`、`draft`、`seed`、`camera_fixed`、`watermark`、`return_last_frame`、`service_tier`、`execution_expires_after`、`task_type` 和 `output_format`。不支持或不属于兼容契约的字段返回 `422`，不会盲目转发。
 
 成功响应只返回中转站任务 ID：
 
@@ -382,10 +389,32 @@ curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
 | 模型 | `content` | 支持的创建参数 | 当前默认值 |
 |---|---|---|---|
 | `doubao-seedance-*` | 文本；能力允许的图片、视频、音频 | `duration`、`frames`、`resolution`、`ratio`、`generate_audio`、`draft`、`seed`、`camera_fixed`、`watermark`、`return_last_frame`、`service_tier`、`execution_expires_after`、`task_type`；具体以模型能力为准 | 由对应 Seedance 模型决定 |
+| `dreamina-seedance-2.5` | 文本、图片、视频、音频 | `duration`（4～30 或 -1）、`resolution`（480p/720p/1080p）、`ratio`、`generate_audio`、`watermark`、`return_last_frame`、`service_tier=default`、`execution_expires_after`、`output_format`（mp4/mov） | 默认由上游决定；可省略时长 |
+| `dreamina-seedance-2.0` | 文本、图片、视频；参考音频需搭配参考图或视频 | `duration`（4～15 或 -1）、`resolution`（480p/720p/1080p）、`ratio`、`generate_audio`、`watermark`、`service_tier=default`、`execution_expires_after` | 默认由上游决定 |
+| `dreamina-seedance-2.0-fast`、`dreamina-seedance-2.0-mini` | 同海外 2.0 | 同海外 2.0，但分辨率仅 480p/720p | 默认由上游决定 |
 | `wan3.0-video` | 文本；最多一张 HTTP(S) 首帧图片，角色必须为 `first_frame` | `duration`、`resolution`、`ratio`、`generate_audio`、`watermark` | `resolution=1080P`、`ratio=adaptive`、`generate_audio=true`；服务端固定启用提示词扩写 |
 | `minimax-h3` | 文本和 HTTP(S) 图片；总计不超过 20 项 | `duration`、`resolution`、`ratio`、`seed`、`watermark` | `resolution=768P`、`ratio=adaptive` |
 
 公共字段不代表所有模型都支持。比如给 `wan3.0-video` 传 `seed`，或给 `minimax-h3` 传 `generate_audio`，会返回 `422 video_parameter_unsupported`，不会把未知参数直接传给供应商。
+
+海外视频不接受 `seed`、`camera_fixed`、`frames`、`draft` 或 `service_tier=flex`。2.5 全能参考最多 30 张图片、10 个视频、10 段音频；2.0 系列最多 9 张图片、3 个视频、3 段音频；首末帧不能与全能参考混用。仅填写末帧而缺少首帧会返回 `422`。本系统素材库中的国内方舟 `asset://` ID 不能直接用于海外模型，请传海外服务可访问的 HTTP(S) 素材地址、合法的图片/音频 Data URL，或海外同一账号可用的素材 ID。
+
+海外视频示例（更换 `model` 即可使用另外三款，参数需在对应能力范围内）：
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: dreamina-order-001" \
+  -d '{
+    "model": "dreamina-seedance-2.5",
+    "content": [{"type": "text", "text": "晨光下的海面，镜头缓慢推进"}],
+    "duration": 5,
+    "resolution": "720p",
+    "ratio": "16:9",
+    "generate_audio": true
+  }'
+```
 
 阿里百炼示例：
 
@@ -464,7 +493,9 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 
 状态为 `queued`、`running`、`succeeded`、`failed` 或 `cancelled`。只有创建任务的同一枚业务 Key 可以查询；同项目的另一枚 Key 也不能读取该任务。供应商结果 URL 可能过期，中转站不会自动转存 TOS，请及时下载。
 
-无论上游是火山方舟、阿里百炼还是 MiniMax，查询都使用中转站任务 ID 和上述统一响应结构。不要拿创建响应里的中转站任务 ID 直接请求供应商接口。
+无论上游是火山方舟、BytePlus ModelArk（海外）、阿里百炼还是 MiniMax，查询都使用中转站任务 ID 和上述统一响应结构。不要拿创建响应里的中转站任务 ID 直接请求供应商接口。
+
+`succeeded` 任务返回的 `usage.completion_tokens` 是上游真实输出 Token，也是视频计费的唯一依据；同一响应中的 `resolution` 用于确定计价维度。供应商可能额外返回本系统未承诺的字段，调用方应只解析本文档列出的字段并忽略其余内容。
 
 ### 10.3 取消任务
 
@@ -473,7 +504,7 @@ curl -X DELETE "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-火山方舟任务取消成功返回 `204 No Content`。中转站会向原任务固定渠道发送取消请求，不会因渠道凭证后续轮换而改用其他渠道。阿里百炼和 MiniMax 当前未开放经过本系统验证的取消适配，调用取消接口会返回 `422 video_cancel_unsupported`，且不会把仍可能在上游执行的任务伪装为已取消。
+火山方舟和海外 BytePlus ModelArk 任务取消成功返回 `204 No Content`。中转站会向原任务固定渠道发送取消请求，不会因渠道凭证后续轮换而改用其他渠道。阿里百炼和 MiniMax 当前未开放经过本系统验证的取消适配，调用取消接口会返回 `422 video_cancel_unsupported`，且不会把仍可能在上游执行的任务伪装为已取消。海外上游仅允许取消排队中的任务，运行中任务可能被上游拒绝取消。
 
 ## 11. 错误处理
 
@@ -650,6 +681,13 @@ curl "$BASE_URL/v1/models" \
 | `doubao-seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `doubao-seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `doubao-seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.5` | 异步视频 | BytePlus ModelArk（海外） | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0` | 异步视频 | BytePlus ModelArk（海外） | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0-fast` | 异步视频 | BytePlus ModelArk（海外） | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0-mini` | 异步视频 | BytePlus ModelArk（海外） | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dola-seedream-5.0-pro` | 生图、参考图改图；单次 1 张结果 | BytePlus ModelArk（海外） | `POST /v1/images/generations` | 同步 JSON，结果为 URL 或 Base64 |
+| `dola-seedream-5.0-lite` | 生图、参考图改图、组图；最多 15 张结果 | BytePlus ModelArk（海外） | `POST /v1/images/generations` | 同步 JSON，结果为 URL 或 Base64 |
+| `dola-seedream-5.0-flash` | 生图、参考图改图；单次 1 张结果 | BytePlus ModelArk（海外） | `POST /v1/images/generations` | 同步 JSON，结果为 URL 或 Base64 |
 | `wan3.0-video` | 异步视频 | 阿里百炼 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `minimax-h3` | 异步视频 | MiniMax | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 
@@ -757,6 +795,28 @@ curl "$BASE_URL/v1/pricing?model=glm-5.2" \
 | `401` | 业务 Key 缺失、无效或已停用 |
 | `422` | `model` 参数为空或长度超过限制 |
 | `503` | 模型中转功能当前未启用 |
+
+#### 13.2.1 海外模型的计价维度
+
+海外模型的价格直接使用官方公示价折算成人民币，不叠加加价；`list_price_yuan` 就是可核对的原价，`effective_price_yuan` 再按项目价格系数打折。海外价目只影响金额，不改变任何请求字段。
+
+| 模型 | `metric` | `unit_size` | `dimension` | 含义 |
+|---|---|---|---|---|
+| `dreamina-seedance-*` | `output_tokens` | `1000000` | `480p:no_video`、`480p:video`、`720p:*`、`1080p:*` | 每百万输出 Token；`no_video` 表示请求中不含视频参考输入，`video` 表示含视频参考输入 |
+| `dola-seedream-5.0-pro` | `image` | `1` | `output:le2610000` | 单张生成结果，输出图不超过 261 万像素 |
+| `dola-seedream-5.0-pro` | `image` | `1` | `output:gt2610000` | 单张生成结果，输出图超过 261 万像素 |
+| `dola-seedream-5.0-pro` | `image` | `1` | `input:after_first` | 输入参考图的第一张之后的每张图片 |
+| `dola-seedream-5.0-flash`、`dola-seedream-5.0-lite` | `image` | `1` | 空值 | 每张成功输出图片 |
+
+海外视频按上游返回的真实输出 Token 计费，而不是按时长。任务查询响应里的 `usage.completion_tokens` 就是结算依据，可以用它核对预估金额：
+
+```json
+{"model": "dreamina-seedance-2.0-mini", "usage": {"completion_tokens": 40594, "total_tokens": 40594}}
+```
+
+上例为 4 秒 480p 文生视频。若 `/v1/pricing` 返回该分辨率维度的 `list_price_yuan` 为 `23.467588`，则原价金额约 `40594 × 23.467588 ÷ 1000000 = 0.952643` 元。同一段视频换成 720p、1080p 或加入视频参考输入时，上游 Token 数和适用维度都会变化，请以实际返回的 `usage` 和对应维度单价为准，不要用时长做最终金额。
+
+Pro 图片落在哪一档由输出图的实际像素决定，`1K`、`1.5K` 档通常不超过 261 万像素，`2K` 及以上可能超过；两条价位都会出现在 `/v1/pricing` 中，最终以实际结算金额为准。平台不对海外模型单独提供优惠券或包月口径，项目价格系数（`discount_bps`）对全部模型统一生效，`/v1/pricing` 与月度账单使用同一份价目。
 
 ### 13.3 Chat Completions 与 Responses
 
@@ -920,9 +980,41 @@ curl "$BASE_URL/v1/images/generations" \
 
 以实际响应为准：供应商没有返回的 `usage` 字段不会被补零。使用 `url` 时应及时下载结果；使用 `b64_json` 时，响应体可能明显增大。
 
+#### 13.4.1 海外 Seedream 5.0
+
+这三个模型统一调用 `POST /v1/images/generations`，仍填写瑞池业务 Key；需要哪个模型，请联系管理员为项目开通。
+
+| 模型别名 | 单次结果数量 | 参考图片 | `size` 等级 | `output_format` |
+|---|---|---|---|---|
+| `dola-seedream-5.0-pro` | 1 张 | 最多 10 张 | 1K、1.5K、2K | png、jpeg |
+| `dola-seedream-5.0-flash` | 1 张 | 最多 10 张 | 1K、1.5K、2K | png、jpeg |
+| `dola-seedream-5.0-lite` | 最多 15 张，参考图与结果图合计 ≤15 | 最多 14 张 | 2K、3K、4K | png、jpeg |
+
+单张海外参考图的 Data URL 按解码后不超过 30 MiB 校验；URL 由海外供应商读取并执行最终媒体校验。三个模型默认 `size=2K`，也接受 `宽x高`：Pro/Flash 总像素须为 921,600～4,624,220，Lite 须为 3,686,400～16,777,216，宽高比均在 1/16～16 之间。
+
+```bash
+curl "$BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: dola-image-order-001" \
+  -d '{
+    "model": "dola-seedream-5.0-flash",
+    "prompt": "白色背景上的东方瓷器产品摄影",
+    "n": 1,
+    "size": "2K",
+    "output_format": "png",
+    "response_format": "url",
+    "watermark": false
+  }'
+```
+
+更换 `model` 为表中另一模型即可；增加 `image` 可使用参考图改图。Pro/Flash 不接受组图参数；Lite 的 `n>1` 自动转换为上游组图参数。只有 Pro 的 `optimize_prompt_options.mode` 接受 `fast`，三款均接受 `standard`。当前接入范围为非流式生图和参考图改图，暂未开放分层分解、透明背景、联网搜索或图片流式输出；这些模型不接受 OpenAI 的 `quality`、`style`、`background` 等专有参数。结果图片 URL 有效期通常为 24 小时，请及时下载。
+
+Pro 的单图价按输出图实际像素分两档，Flash 和 Lite 按成功输出张数计价；维度含义见 13.2.1，单价可用 `/v1/pricing` 核对。
+
 ### 13.5 异步视频
 
-视频模型不使用 OpenAI `/v1/videos` 路径；创建、查询和取消统一使用第 10 节的火山兼容 `/api/v3/contents/generations/tasks` 接口。请求中的 `model` 使用中转站稳定别名，服务端负责转换为当前固定的供应商模型 ID。阿里百炼和 MiniMax 的请求、响应差异由中转站内部适配。
+视频模型不使用 OpenAI `/v1/videos` 路径；创建、查询和取消统一使用第 10 节的火山兼容 `/api/v3/contents/generations/tasks` 接口。请求中的 `model` 使用中转站稳定别名，服务端负责转换为当前固定的供应商模型 ID。BytePlus、阿里百炼和 MiniMax 的请求、响应差异由中转站内部适配。海外视频 URL 有效期通常为 24 小时，上游任务记录一般只能查询最近 7 天；请及时查询和保存结果。
 
 ### 13.6 幂等与错误
 

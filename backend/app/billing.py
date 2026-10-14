@@ -14,7 +14,11 @@ from .admin_auth import AdminPrincipal
 from .database import Database
 from .errors import ApiError
 from .official_rates import (
+    BYTEPLUS_RATE_SOURCE_URL,
+    BYTEPLUS_RATE_VERSION,
+    OFFICIAL_RATES,
     OFFICIAL_VOLCENGINE_RATES,
+    USD_CNY_FX,
     VOLCENGINE_RATE_SOURCE_URL,
     VOLCENGINE_RATE_VERSION,
     VOLCENGINE_SPEECH_RATE_SOURCE_URL,
@@ -274,12 +278,23 @@ class BillingManager:
         if modality == "text":
             raw = (("input_tokens", "", TOKEN_UNIT), ("output_tokens", "", TOKEN_UNIT))
         elif modality == "image":
-            raw = (("image", "", 1),)
+            threshold = model.get("capabilities", {}).get("billingPixelThreshold")
+            raw = (
+                (("image", f"output:le{threshold}", 1), ("image", f"output:gt{threshold}", 1), ("image", "input:after_first", 1))
+                if threshold else (("image", "", 1),)
+            )
         elif modality == "embedding":
             raw = (("input_tokens", "", TOKEN_UNIT),)
         elif modality == "audio":
             capabilities = model.get("capabilities") or {}
             raw = ((str(capabilities.get("billingMetric") or "audio_second"), "", int(capabilities.get("billingUnit") or 60)),)
+        elif model["provider"] == "byteplus_modelark":
+            capabilities = model.get("capabilities") or {}
+            raw = tuple(
+                ("output_tokens", f"{resolution}:{variant}", TOKEN_UNIT)
+                for resolution in capabilities["resolutions"]
+                for variant in ("no_video", "video")
+            )
         else:
             raw = tuple(("video_second", resolution, 1) for resolution in VIDEO_RESOLUTIONS)
         return [
@@ -330,7 +345,16 @@ class BillingManager:
             }
             for row in sorted(rows, key=lambda item: (item["metric"], item["resolution"]))
         ]
-        official = model["provider"] in {"volcengine_ark", "volcengine_speech"}
+        provider = model["provider"]
+        if provider == "byteplus_modelark":
+            official = {"version": BYTEPLUS_RATE_VERSION, "url": BYTEPLUS_RATE_SOURCE_URL,
+                        "currency": "USD", "fxRateToCny": str(USD_CNY_FX)}
+        elif provider == "volcengine_speech":
+            official = {"version": VOLCENGINE_RATE_VERSION, "url": VOLCENGINE_SPEECH_RATE_SOURCE_URL}
+        elif provider == "volcengine_ark":
+            official = {"version": VOLCENGINE_RATE_VERSION, "url": VOLCENGINE_RATE_SOURCE_URL}
+        else:
+            official = None
         return {
             "model": model["alias"],
             "displayName": model["display_name"],
@@ -345,11 +369,7 @@ class BillingManager:
             "editableRules": rules or self._editable_rule_templates(model),
             "configured": bool(rules),
             "scope": "global",
-            "officialSource": ({
-                "version": VOLCENGINE_RATE_VERSION,
-                "url": VOLCENGINE_SPEECH_RATE_SOURCE_URL
-                if model["provider"] == "volcengine_speech" else VOLCENGINE_RATE_SOURCE_URL,
-            } if official and alias in OFFICIAL_VOLCENGINE_RATES else None),
+            "officialSource": official if alias in OFFICIAL_RATES else None,
         }
 
     def rates(self, month: str) -> list[dict[str, Any]]:
@@ -617,7 +637,7 @@ class BillingManager:
 
     @staticmethod
     def _text_rate_dimension(model_alias: str, input_tokens: int) -> str:
-        dimensions = {dimension for _, dimension, _, _ in OFFICIAL_VOLCENGINE_RATES.get(model_alias, ())}
+        dimensions = {dimension for _, dimension, _, _ in OFFICIAL_RATES.get(model_alias, ())}
         if "tokens:0-32000" not in dimensions:
             return ""
         if input_tokens <= 32_000:
@@ -661,6 +681,26 @@ class BillingManager:
         if row["modality"] == "image":
             if row["generated_images"] is None:
                 return None, "usage_unknown"
+            if row.get("model_alias") == "dola-seedream-5.0-pro":
+                billing_meta = _loaded(row.get("billing_metadata_json"), {})
+                provider_meta = _loaded(row.get("metadata_json"), {})
+                response = provider_meta.get("response", {})
+                outputs = response.get("data", []) if isinstance(response, dict) else []
+                outputs = [item for item in outputs if isinstance(item, dict) and (item.get("url") or item.get("b64_json")) and not item.get("error")]
+                if len(outputs) != row["generated_images"]:
+                    return None, "image_size_unknown"
+                buckets: dict[str, Decimal] = {}
+                for image in outputs:
+                    size = image.get("size") or billing_meta.get("requestedSize")
+                    match = re.fullmatch(r"(\d+)x(\d+)", str(size or ""))
+                    if not match or min(int(match[1]), int(match[2])) <= 0:
+                        return None, "image_size_unknown"
+                    bucket = "output:le2610000" if int(match[1]) * int(match[2]) <= 2610000 else "output:gt2610000"
+                    buckets[bucket] = buckets.get(bucket, Decimal(0)) + 1
+                input_count = max(0, int(billing_meta.get("inputImageCount") or 0) - 1)
+                if input_count:
+                    buckets["input:after_first"] = Decimal(input_count)
+                return [("image", dimension, count) for dimension, count in buckets.items()], None
             if row.get("model_alias") == "doubao-seedream-5.0-pro":
                 billing_meta = _loaded(row.get("billing_metadata_json"), {})
                 bucket = cls._image_pixel_bucket(billing_meta.get("requestedSize"))
@@ -691,10 +731,10 @@ class BillingManager:
             return [("audio_second", "", Decimal(str(row["audio_seconds"])))], None
         billing_meta = _loaded(row.get("billing_metadata_json"), {})
         provider_meta = _loaded(row.get("metadata_json"), {})
-        if row.get("provider") == "volcengine_ark":
+        if row.get("provider") in {"volcengine_ark", "byteplus_modelark"}:
             if row.get("output_tokens") is None or int(row["output_tokens"]) <= 0:
                 return None, "usage_unknown"
-            dimensions = {dimension for _, dimension, _, _ in OFFICIAL_VOLCENGINE_RATES.get(row["model_alias"], ())}
+            dimensions = {dimension for _, dimension, _, _ in OFFICIAL_RATES.get(row["model_alias"], ())}
             if dimensions == {""}:
                 return [("output_tokens", "", Decimal(row["output_tokens"]))], None
             resolution = normalize_resolution(
@@ -749,7 +789,7 @@ class BillingManager:
                 continue
             measurements = None
             reason = None
-            official_rules = OFFICIAL_VOLCENGINE_RATES.get(alias or "", ())
+            official_rules = OFFICIAL_RATES.get(alias or "", ())
             token_dimensions = {dimension for metric, dimension, _, _ in official_rules if metric == "output_tokens"}
             if token_dimensions:
                 output_tokens = row.get("output_tokens")

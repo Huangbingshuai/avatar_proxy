@@ -20,6 +20,7 @@ type Provider =
   | "openai"
   | "maxmodel"
   | "volcengine_ark"
+  | "byteplus_modelark"
   | "volcengine_speech"
   | "aliyun_bailian"
   | "minimax";
@@ -41,6 +42,7 @@ const providerLabels: Record<Provider, string> = {
   openai: "OpenAI",
   maxmodel: "MaxModel",
   volcengine_ark: "火山方舟",
+  byteplus_modelark: "BytePlus ModelArk（海外）",
   volcengine_speech: "豆包语音",
   aliyun_bailian: "阿里百炼",
   minimax: "MiniMax",
@@ -523,6 +525,14 @@ export default function ProviderChannelsPanel({
               {form.provider === "maxmodel" && (
                 <div className="note">
                   固定请求 https://aiapi.maxmaas.com；无需填写 Base URL。渠道测试不会产生图片费用，绑定 gpt-image-2 后请从用户端进行一次真实调用验证。
+                </div>
+              )}
+              {form.provider === "byteplus_modelark" && (
+                <div className="note">
+                  使用 BytePlus ModelArk 亚太区域（ap-southeast-1）的 API Key。
+                  <a href="https://ai.byteplus.com/ark/region:ap-southeast-1/apikey" target="_blank" rel="noreferrer">获取 API Key</a>。
+                  无需重复填写海外项目名；Key 自身的权限决定可访问的海外项目。
+                  渠道测试不生成视频，模型权限需通过用户端真实调用验证。
                 </div>
               )}
               <label>

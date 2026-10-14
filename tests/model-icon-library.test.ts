@@ -14,6 +14,8 @@ describe("model icon library", () => {
     expect(getModelIconPath("gpt-image-2")).toBe("/model-icons/openai.svg");
     expect(getModelIconPath("doubao-seedream-5.0-pro")).toBe("/model-icons/doubao.svg");
     expect(getModelIconPath("doubao-seed-audio-1.0")).toBe("/model-icons/doubao.svg");
+    expect(getModelIconPath("dreamina-seedance-2.5")).toBe("/model-icons/doubao.svg");
+    expect(getModelIconPath("dola-seedream-5.0-flash")).toBe("/model-icons/doubao.svg");
     expect(getModelIconPath("wan3.0-video")).toBe("/model-icons/bailian.svg");
     expect(getModelIconPath("veo-4")).toBe("/model-icons/gemini.svg");
     expect(getModelIconPath("llama-5")).toBe("/model-icons/meta.svg");
@@ -22,6 +24,7 @@ describe("model icon library", () => {
   it("falls back to a known provider without guessing unknown brands", () => {
     expect(getModelIconPath("custom-image-model", "openai")).toBe("/model-icons/openai.svg");
     expect(getProviderIconPath("volcengine_ark")).toBe("/model-icons/volcengine.svg");
+    expect(getProviderIconPath("byteplus_modelark")).toBe("/model-icons/doubao.svg");
     expect(getModelIconPath("unknown-model", "unknown-provider")).toBeUndefined();
   });
 });

@@ -33,11 +33,12 @@ type GlobalRate = {
   configured: boolean;
   rules: RateRule[];
   editableRules: RateRule[];
-  officialSource?: { version: string; url: string } | null;
+  officialSource?: { version: string; url: string; currency?: string; fxRateToCny?: string } | null;
 };
 
 const providers: Record<string, string> = {
   volcengine_ark: "火山方舟",
+  byteplus_modelark: "BytePlus ModelArk（海外）",
   volcengine_speech: "豆包语音",
   openai: "OpenAI",
   maxmodel: "MaxModel",
@@ -88,13 +89,16 @@ function unitLabel(rule: RateRule) {
 
 function dimensionLabel(value: string) {
   if (!value) return "标准";
+  const pixelBucket = /^output:(le|gt)(\d+)$/.exec(value);
+  if (pixelBucket) {
+    const pixels = Number(pixelBucket[2]) / 10_000;
+    return `输出图 ${pixelBucket[1] === "le" ? "≤" : ">"}${pixels}万像素`;
+  }
   return value
     .replace("tokens:0-32000", "上下文 ≤32K")
     .replace("tokens:32001-128000", "上下文 32K–128K")
     .replace("tokens:128001-256000", "上下文 128K–256K")
     .replace("input:after_first", "输入图（首张后）")
-    .replace("output:le2610000", "输出图 ≤261万像素")
-    .replace("output:gt2610000", "输出图 >261万像素")
     .replace(":no_video", " · 无视频输入")
     .replace(":video", " · 有视频输入")
     .replace("text", "文本输入")
@@ -252,7 +256,7 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
               {(drafts[rate.model] ?? []).length === 0 && <div className="globalRateEmpty">尚未配置计价规则</div>}
             </div>
             <div className="globalRateAction">
-              {rate.officialSource ? <a href={rate.officialSource.url} target="_blank" rel="noreferrer">火山官方价 · {rate.officialSource.version}</a> : <span>人工定价</span>}
+              {rate.officialSource ? <a href={rate.officialSource.url} target="_blank" rel="noreferrer">{rate.officialSource.currency === "USD" ? `BytePlus 官方价（USD 按 ${rate.officialSource.fxRateToCny} 折算）` : "火山官方价"} · {rate.officialSource.version}</a> : <span>人工定价</span>}
               <button className="primary" type="button" onClick={() => void save(rate)} disabled={busy === rate.model || (drafts[rate.model] ?? []).length === 0}>{busy === rate.model ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}保存</button>
             </div>
           </article>

@@ -137,6 +137,14 @@ curl -b admin-cookies.txt \
 
 `rules` 是实际结算采用的规则，`editableRules` 是控制台可编辑模板。`dimension` 可表示文本上下文档位、图片像素档位、Embedding 输入类型，或视频的 `720p:no_video` / `720p:video` 等组合维度。
 
+`officialSource` 在模型来自内置官方价目时返回来源文档与价目版本；海外模型额外返回折算信息，例如：
+
+```json
+"officialSource": {"version": "2026-10-14", "url": "https://docs.byteplus.com/en/docs/ModelArk/model-pricing", "currency": "USD", "fxRateToCny": "6.705025"}
+```
+
+`currency` 为 `USD` 表示官方按美元公示、价目已按 `fxRateToCny` 折算成人民币写入全局价目；折算金额不叠加加价，也不随市场汇率自动变化。`officialSource` 为空表示该模型没有内置官方价目，价格完全由超级管理员维护。
+
 普通管理员控制台不会在“项目模型”启停列表中混排价格，而是通过独立的“模型价格”页面读取本接口。该页面：
 
 - 完整展示 `rules` 中的每条价格，不合并为最低价到最高价区间；

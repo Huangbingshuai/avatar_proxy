@@ -44,7 +44,11 @@ function installFetch(data: MockData = {}) {
   const backupItem = { id: "20260819-080000-000001", databaseFile: "avatar_proxy-20260819-080000-000001.db", auditFile: "admin_audit-20260819-080000-000001.jsonl", databaseBytes: 2048, auditBytes: 1024, createdAt: data.backupCreatedAt ?? "2026-08-19T08:00:00Z", valid: true, counts: { projects: 2, apiKeys: 2, adminUsers: 2, adminAudits: 19 } };
   const monitorSettings = { enabled: true, configuredEnabled: true, runtimeEnabled: true, path: "C:\\data", warningPercent: 80, criticalPercent: 90, emergencyPercent: 95, recoveryPercent: 75, sampleIntervalSeconds: 60, persistIntervalSeconds: 300, retentionDays: 30, emailConfigured: true, emailRecipientCount: 2 };
   const monitorSample = { path: "C:\\data", totalBytes: 160 * 1024 ** 3, usedBytes: 109.4 * 1024 ** 3, availableBytes: 50.6 * 1024 ** 3, reservedBytes: 0, usedPercent: data.monitorPercent ?? 68.4, level: "normal", sampledAt: 1_787_107_800 };
-  let providerChannels = [{ id: "channel-ark", projectName: "customer_a", name: "客户A方舟", provider: "volcengine_ark", config: { projectName: "customer_a" }, status: "active", secretHint: "ark****1234", lastTestStatus: "success", lastTestLatencyMs: 88 }];
+  let providerChannels: Array<{
+    id: string; projectName: string; name: string; provider: string;
+    config: Record<string, string>; status: string; secretHint: string;
+    lastTestStatus?: string; lastTestLatencyMs?: number;
+  }> = [{ id: "channel-ark", projectName: "customer_a", name: "客户A方舟", provider: "volcengine_ark", config: { projectName: "customer_a" }, status: "active", secretHint: "ark****1234", lastTestStatus: "success", lastTestLatencyMs: 88 }];
   const modelCatalog = [
     { id: "glm-5.2", displayName: "GLM 5.2", provider: "volcengine_ark", modality: "text", upstreamModel: "glm-5-2-260617", enabled: true },
     { id: "gpt-image-2", displayName: "GPT Image 2", provider: "maxmodel", modality: "image", upstreamModel: "gpt-image-2", enabled: true },
@@ -514,12 +518,12 @@ describe("内部控制台", () => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
     await user.click(screen.getByRole("button", { name: "安全管理" }));
-    const operatorRow = (await screen.findByText("运营管理员")).closest(".tableRow")!;
+    const operatorRow = (await screen.findByText("运营管理员")).closest<HTMLElement>(".tableRow")!;
     await user.click(within(operatorRow).getByRole("button", { name: "禁用" }));
     let confirmation = screen.getByRole("dialog", { name: "再次确认超级管理员身份" });
     await user.type(within(confirmation).getByLabelText("超级管理员当前密码"), "correct-password");
     await user.click(within(confirmation).getByRole("button", { name: "验证并继续" }));
-    const disabledRow = (await screen.findByText("已禁用")).closest(".tableRow")!;
+    const disabledRow = (await screen.findByText("已禁用")).closest<HTMLElement>(".tableRow")!;
     await user.click(within(disabledRow).getByRole("button", { name: "删除" }));
     confirmation = screen.getByRole("dialog", { name: "再次确认超级管理员身份" });
     await user.type(within(confirmation).getByLabelText("超级管理员当前密码"), "correct-password");
@@ -606,7 +610,7 @@ describe("内部控制台", () => {
     await user.click(screen.getByRole("button", { name: "模型价格" }));
 
     const heading = await screen.findByRole("heading", { name: "模型价格表" });
-    const page = heading.closest("div.modelPricePage");
+    const page = heading.closest<HTMLElement>("div.modelPricePage");
     expect(page).not.toBeNull();
     expect(within(page!).getByText("glm-5.2")).toBeInTheDocument();
     expect(within(page!).getByText("输入 Token")).toBeInTheDocument();
@@ -617,6 +621,29 @@ describe("内部控制台", () => {
     expect(within(page!).getByText("只读")).toBeInTheDocument();
     expect(within(page!).queryByRole("button", { name: /保存/ })).not.toBeInTheDocument();
     expect(within(page!).queryByLabelText("超级管理员密码")).not.toBeInTheDocument();
+  });
+
+  it("超级管理员创建海外ModelArk渠道时使用独立Key且无需重复填写项目", async () => {
+    const { calls } = installFetch({ role: "super_admin" });
+    const user = await login();
+    await screen.findByRole("heading", { name: "供应商渠道" });
+    await user.click(screen.getByRole("button", { name: "创建渠道" }));
+    const dialog = screen.getByRole("dialog", { name: "创建供应商渠道" });
+    await user.selectOptions(within(dialog).getByLabelText("供应商"), "byteplus_modelark");
+    expect(within(dialog).getByText(/使用 BytePlus ModelArk 亚太区域/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "获取 API Key" })).toHaveAttribute("href", "https://ai.byteplus.com/ark/region:ap-southeast-1/apikey");
+    expect(within(dialog).queryByLabelText(/ProjectName|Base URL|海外项目名/)).not.toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText("渠道名称"), "海外 Seedance");
+    await user.type(within(dialog).getByLabelText(/^供应商 API Key/), "byteplus-test-secret");
+    await user.type(within(dialog).getByLabelText("超级管理员当前密码"), "correct-password");
+    await user.type(within(dialog).getByLabelText("TOTP 动态验证码"), "123456");
+    await user.click(within(dialog).getByRole("button", { name: "加密保存渠道" }));
+    await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST")).toBe(true));
+    const createCall = calls.find((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST");
+    expect(new Headers(createCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+    expect(JSON.parse(String(createCall?.init?.body))).toMatchObject({ provider: "byteplus_modelark", config: {}, secret: "byteplus-test-secret" });
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
   });
 
   it("超级管理员录入供应商凭证时必须再次输入密码和TOTP", async () => {

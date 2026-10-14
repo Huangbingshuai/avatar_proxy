@@ -75,6 +75,7 @@ const PROVIDER_ICON_KEYS: Record<string, ModelIconKey> = {
   alibaba_cloud: "alibabaCloud",
   zhipu: "zhipu",
   volcengine_ark: "volcengine",
+  byteplus_modelark: "doubao",
   volcengine_speech: "volcengine",
   bytedance: "doubao",
   minimax: "minimax",
@@ -92,6 +93,8 @@ const PROVIDER_ICON_KEYS: Record<string, ModelIconKey> = {
 };
 
 const MODEL_PREFIX_ICONS: Array<[string, ModelIconKey]> = [
+  ["dreamina-seedance", "doubao"],
+  ["dola-seedream", "doubao"],
   ["seedream", "doubao"], ["seededit", "doubao"], ["seedance", "doubao"], ["doubao", "doubao"],
   ["deepseek", "deepseek"], ["glm", "chatglm"], ["chatglm", "chatglm"],
   ["minimax", "minimax"], ["wan", "bailian"], ["qwen", "qwen"],

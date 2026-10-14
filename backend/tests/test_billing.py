@@ -25,6 +25,12 @@ from app.admin_auth import AdminPrincipal
 from app.errors import ApiError
 from app.database import Database
 from app.main import create_app
+from app.official_rates import (
+    BYTEPLUS_RATE_EFFECTIVE_MONTH,
+    BYTEPLUS_RATE_SOURCE_URL,
+    BYTEPLUS_RATE_VERSION,
+    USD_CNY_FX,
+)
 from conftest import ADMIN_HEADERS, build_settings, create_key, create_project
 
 
@@ -146,6 +152,10 @@ def test_missing_rate_is_pending_but_explicit_zero_is_billable(tmp_path: Path) -
         create_project(client)
         key_id, _ = create_key(client)
         month = current_month()
+        # This scenario needs a genuinely missing price, not an inherited
+        # bundled price from an earlier month.
+        with app.state.database.connect() as connection:
+            connection.execute("DELETE FROM billing_model_rates WHERE model_alias='glm-5.2'")
         _put_text_rate(client, month, "0", None)
         assert _enable_project(client, month).status_code == 200
         _insert_relay_usage(app, key_id, input_tokens=10, output_tokens=0)
@@ -335,6 +345,7 @@ def test_statement_lifecycle_freezes_history_and_moves_late_usage_forward(tmp_pa
         key_id, _ = create_key(client)
         old_month = previous_month(current_month())
         with app.state.database.connect() as connection:
+            connection.execute("DELETE FROM billing_model_rates WHERE model_alias='glm-5.2'")
             connection.execute(
                 "INSERT INTO project_billing_terms(id,project_name,effective_month,enabled,discount_bps,updated_by) VALUES (?,?,?,?,?,?)",
                 ("old-terms", "drama_prod", old_month, 1, 10000, "admin"),
@@ -535,6 +546,7 @@ def test_previous_month_pending_usage_blocks_confirmation(tmp_path: Path) -> Non
         key_id, _ = create_key(client)
         month = previous_month(current_month())
         with app.state.database.connect() as connection:
+            connection.execute("DELETE FROM billing_model_rates WHERE model_alias='glm-5.2'")
             connection.execute(
                 "INSERT INTO project_billing_terms(id,project_name,effective_month,enabled,discount_bps,updated_by) VALUES (?,?,?,?,?,?)",
                 ("pending-terms", "drama_prod", month, 1, 10000, "admin"),
@@ -664,3 +676,92 @@ def test_billing_internal_normalization_and_maintenance_failure_isolation(tmp_pa
     monkeypatch.setattr("app.billing.asyncio.sleep", stop_after_retry)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(manager.maintenance_loop())
+
+
+def test_byteplus_official_usd_list_prices_are_seeded_as_cny_rates(tmp_path: Path) -> None:
+    """Overseas list prices are published in USD, so one frozen FX snapshot seeds the CNY ledger."""
+    app = create_app(build_settings(tmp_path / "byteplus-rates.db"))
+    with TestClient(app) as client:
+        billing = client.app.state.billing
+        month = BYTEPLUS_RATE_EFFECTIVE_MONTH
+        source = {
+            "version": BYTEPLUS_RATE_VERSION,
+            "url": BYTEPLUS_RATE_SOURCE_URL,
+            "currency": "USD",
+            "fxRateToCny": str(USD_CNY_FX),
+        }
+
+        video = billing.get_rate("dreamina-seedance-2.5", month)
+        assert video["configured"] and video["officialSource"] == source
+        # USD/M tokens * 6.705025, e.g. 10.70 -> 71.743768 CNY/M tokens.
+        assert {(rule["dimension"], rule["unitPriceYuan"]) for rule in video["rules"]} == {
+            ("480p:no_video", "71.743768"),
+            ("480p:video", "42.912160"),
+            ("720p:no_video", "71.743768"),
+            ("720p:video", "42.912160"),
+            ("1080p:no_video", "78.448793"),
+            ("1080p:video", "46.935175"),
+        }
+
+        # The video-input variant is always cheaper than the text-only variant.
+        prices = {rule["dimension"]: rule["unitPriceYuan"] for rule in video["rules"]}
+        assert prices["720p:video"] < prices["720p:no_video"]
+
+        # Image tiers follow the published 2.61 million pixel boundary.
+        image = billing.get_rate("dola-seedream-5.0-pro", month)
+        assert {(rule["dimension"], rule["unitPriceYuan"]) for rule in image["rules"]} == {
+            ("input:after_first", "0.020115"),
+            ("output:le2610000", "0.301726"),
+            ("output:gt2610000", "0.603452"),
+        }
+        assert [rule["dimension"] for rule in image["editableRules"]] == [
+            rule["dimension"] for rule in image["rules"]
+        ]
+        flat = billing.get_rate("dola-seedream-5.0-lite", month)
+        assert [(rule["dimension"], rule["unitPriceYuan"]) for rule in flat["rules"]] == [("", "0.234676")]
+
+        # Re-running startup keeps the same rows instead of duplicating them.
+        with app.state.database.connect() as connection:
+            before = {row["id"] for row in connection.execute(
+                "SELECT id FROM billing_model_rates WHERE model_alias='dola-seedream-5.0-lite'")}
+        app.state.database.initialize()
+        with app.state.database.connect() as connection:
+            after = {row["id"] for row in connection.execute(
+                "SELECT id FROM billing_model_rates WHERE model_alias='dola-seedream-5.0-lite'")}
+
+    assert before and before == after
+
+
+def test_byteplus_project_discount_uses_the_seeded_official_prices(tmp_path: Path) -> None:
+    """A project discount applies to the seeded CNY card, not to the USD list price."""
+    app = create_app(build_settings(tmp_path / "byteplus-discount.db"))
+    with TestClient(app) as client:
+        create_project(client)
+        key_id, _ = create_key(client)
+        billing = client.app.state.billing
+        month = current_month()
+        billing.set_project_terms("drama_prod", month, True, 5000, SUPER_ACTOR)
+        with app.state.database.connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO provider_channels(id,project_name,name,provider) VALUES (?,?,?,?)",
+                ("byteplus-channel", "drama_prod", "byteplus", "byteplus_modelark"),
+            )
+            # 854x480 is the 480p class, which is the cheapest published tier.
+            connection.execute(
+                "INSERT INTO inference_usage(id,request_id,api_key_id,project_name,model_alias,channel_id,status,"
+                "output_tokens,video_width,video_height,created_at,settled_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "usage-byteplus-1", "request-byteplus-1", key_id, "drama_prod",
+                    "dreamina-seedance-2.0-mini", "byteplus-channel", "succeeded", 1_000_000,
+                    854, 480, "2026-10-14 10:41:05", "2026-10-14 10:41:05",
+                ),
+            )
+        asyncio.run(billing.reconcile())
+        statement = client.get(
+            f"/api/internal/billing/preview?projectName=drama_prod&month={month}", headers=ADMIN_HEADERS
+        ).json()["statement"]
+
+    assert statement["pendingCount"] == 0
+    # 3.50 USD/M tokens -> 23.467588 CNY, halved by the 5,000 bps project discount.
+    assert statement["totalYuan"] == "11.733794"

@@ -29,6 +29,8 @@ GET /v1/models
 
 客户端必须以该接口的响应作为当前业务 Key 的可用模型清单，不应自行展示未返回的模型。
 
+海外 BytePlus ModelArk 接入范围为 `dreamina-seedance-2.5`、`dreamina-seedance-2.0`、`dreamina-seedance-2.0-fast`、`dreamina-seedance-2.0-mini`，以及 `dola-seedream-5.0-pro`、`dola-seedream-5.0-lite`、`dola-seedream-5.0-flash`。视频仍使用 `/api/v3/contents/generations/tasks`，图片使用 `/v1/images/generations`；需要哪个模型，请联系管理员为项目开通。客户无需持有海外供应商 Key。
+
 ```bash
 curl "https://api.richbest.cn/v1/models" \
   -H "Authorization: Bearer $API_KEY"
@@ -210,7 +212,7 @@ curl -X POST "https://api.richbest.cn/api/v3/contents/generations/tasks" \
 ```text
 model, content, duration, frames, resolution, ratio, generate_audio,
 draft, seed, camera_fixed, watermark, return_last_frame,
-service_tier, execution_expires_after, task_type
+service_tier, execution_expires_after, task_type, output_format
 ```
 
 只使用 `ratio`，不要同时发送 `aspect_ratio`。不同模型的素材类型、分辨率、时长和参数能力不同，调用方必须根据 `/v1/models` 的 `capabilities` 控制表单和请求。
@@ -232,7 +234,7 @@ curl "https://api.richbest.cn/api/v3/contents/generations/tasks/vid_0123456789ab
 
 任务状态为 `queued`、`running`、`succeeded`、`failed` 或 `cancelled`。任务只能由创建它的同一枚业务 Key 查询和取消。同项目的另一枚 Key 也不能读取任务。
 
-火山任务支持取消；未完成取消适配验证的其他供应商会返回 `422 video_cancel_unsupported`，不会伪装成取消成功。
+火山及海外 BytePlus 任务支持取消；BytePlus 上游仅允许取消排队中的任务。阿里百炼和 MiniMax 当前返回 `422 video_cancel_unsupported`。海外模型不能复用国内方舟的素材 ID，应使用海外服务可访问的素材 URL 或海外同账号素材。海外 Seedance 2.5 支持 `output_format=mp4/mov`，具体时长与参数限制见 [客户接口文档](CLIENT_API.md)。
 
 ## 6. 向量与音频
 

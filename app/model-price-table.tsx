@@ -38,6 +38,7 @@ type ModelRate = {
 
 const providerLabels: Record<string, string> = {
   volcengine_ark: "火山方舟",
+  byteplus_modelark: "BytePlus ModelArk（海外）",
   volcengine_speech: "豆包语音",
   openai: "OpenAI",
   maxmodel: "MaxModel",
@@ -75,13 +76,16 @@ function metricLabel(rate: ModelRate, rule: PriceRule) {
 
 function dimensionLabel(value: string) {
   if (!value) return "标准";
+  const pixelBucket = /^output:(le|gt)(\d+)$/.exec(value);
+  if (pixelBucket) {
+    const pixels = Number(pixelBucket[2]) / 10_000;
+    return `输出图 ${pixelBucket[1] === "le" ? "≤" : ">"}${pixels}万像素`;
+  }
   return value
     .replace("tokens:0-32000", "上下文 ≤32K")
     .replace("tokens:32001-128000", "上下文 32K–128K")
     .replace("tokens:128001-256000", "上下文 128K–256K")
     .replace("input:after_first", "输入图（首张后）")
-    .replace("output:le2610000", "输出图 ≤261万像素")
-    .replace("output:gt2610000", "输出图 >261万像素")
     .replace(":no_video", " · 无视频输入")
     .replace(":video", " · 有视频输入")
     .replace("text", "文本输入")

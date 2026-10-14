@@ -5,6 +5,7 @@ import binascii
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -24,10 +25,12 @@ PROVIDERS = {
     "openai",
     "maxmodel",
     "volcengine_ark",
+    "byteplus_modelark",
     "volcengine_speech",
     "aliyun_bailian",
     "minimax",
 }
+ARK_PROVIDERS = frozenset({"volcengine_ark", "byteplus_modelark"})
 TERMINAL_TASK_STATUSES = {"succeeded", "failed", "canceled"}
 ACTIVE_TASK_STATUSES = {"queued", "running"}
 ALIYUN_REGIONS = {
@@ -274,6 +277,7 @@ class ProviderRelay:
             "openai": {"organization", "project"},
             "maxmodel": set(),
             "volcengine_ark": {"projectName"},
+            "byteplus_modelark": set(),
             "volcengine_speech": set(),
             "aliyun_bailian": {"workspaceId", "region"},
             "minimax": set(),
@@ -671,6 +675,8 @@ class ProviderRelay:
             return "https://aiapi.maxmaas.com/v1"
         if route.provider == "volcengine_ark":
             return "https://ark.cn-beijing.volces.com/api/v3"
+        if route.provider == "byteplus_modelark":
+            return "https://ark.ap-southeast.bytepluses.com/api/v3"
         if route.provider == "volcengine_speech":
             return "https://openspeech.bytedance.com"
         if route.provider == "minimax":
@@ -769,8 +775,11 @@ class ProviderRelay:
             credential_id=row["credential_id"],
             secret=self.vault.decrypt(row["secret_ciphertext"]),
         )
-        if route.provider in {"volcengine_speech", "maxmodel"}:
-            provider_name = "豆包语音" if route.provider == "volcengine_speech" else "MaxModel"
+        if route.provider in {"volcengine_speech", "maxmodel", "byteplus_modelark"}:
+            provider_name = {
+                "volcengine_speech": "豆包语音", "maxmodel": "MaxModel",
+                "byteplus_modelark": "BytePlus ModelArk",
+            }[route.provider]
             message = f"{provider_name}没有可靠的免费凭证探测接口，请绑定模型后从用户端发起一次真实测试"
             with self.database.connect() as connection:
                 connection.execute(
@@ -1486,7 +1495,7 @@ class ProviderRelay:
                 "image_count_unsupported",
                 details={"maxImages": maximum},
             )
-        if route.provider != "volcengine_ark":
+        if route.provider not in ARK_PROVIDERS:
             upstream = dict(payload)
             upstream["model"] = route.upstream_model
             return upstream
@@ -1515,7 +1524,56 @@ class ProviderRelay:
             upstream["sequential_image_generation_options"] = options
         upstream["stream"] = False
         upstream["model"] = route.upstream_model
+        if route.provider == "byteplus_modelark":
+            self._validate_byteplus_image_payload(route, payload, upstream, image, count)
         return upstream
+
+    @staticmethod
+    def _validate_byteplus_image_payload(
+        route: ModelRoute, payload: dict[str, Any], upstream: dict[str, Any],
+        image: str | list[str] | None, count: int,
+    ) -> None:
+        unsupported = sorted(set(payload) - ARK_IMAGE_FIELDS - {"n", "model"})
+        if unsupported:
+            raise ApiError("当前图片模型不支持部分参数", 422, "image_parameter_unsupported", details={"fields": unsupported})
+        size = payload.get("size", route.capabilities["defaultSize"])
+        if size not in route.capabilities["sizes"]:
+            match = re.fullmatch(r"(\d{1,5})x(\d{1,5})", size) if isinstance(size, str) else None
+            width, height = (int(match[1]), int(match[2])) if match else (0, 0)
+            if (
+                not width or not height or width > height * 16 or height > width * 16
+                or not route.capabilities["minPixels"] <= width * height <= route.capabilities["maxPixels"]
+            ):
+                raise ApiError("当前模型不支持该图片尺寸", 422, "image_size_invalid")
+        upstream["size"] = size
+        if "output_format" in payload and payload["output_format"] not in ("png", "jpeg"):
+            raise ApiError("图片输出格式仅支持png或jpeg", 422, "image_output_format_unsupported")
+        if "watermark" in payload and not isinstance(payload["watermark"], bool):
+            raise ApiError("watermark必须是布尔值", 422, "image_parameter_unsupported")
+        options = payload.get("optimize_prompt_options")
+        if options is not None and (
+            not isinstance(options, dict) or set(options) - {"mode"}
+            or options.get("mode", "standard") not in route.capabilities["optimizePromptModes"]
+        ):
+            raise ApiError("当前模型不支持该提示词优化模式", 422, "image_parameter_unsupported")
+        if route.capabilities.get("sequentialImages"):
+            mode = upstream.get("sequential_image_generation", "disabled")
+            if mode not in ("auto", "disabled"):
+                raise ApiError("组图模式无效", 422, "image_sequence_unsupported")
+            original_options = payload.get("sequential_image_generation_options", {})
+            if not isinstance(original_options, dict) or set(original_options) - {"max_images"}:
+                raise ApiError("组图参数无效", 422, "image_sequence_unsupported")
+            options = upstream.get("sequential_image_generation_options", {})
+            if not isinstance(options, dict) or set(options) - {"max_images"}:
+                raise ApiError("组图参数无效", 422, "image_sequence_unsupported")
+            input_count = len(image) if isinstance(image, list) else int(image is not None)
+            maximum = options.get("max_images", 15 - input_count if mode == "auto" else count)
+            if isinstance(maximum, bool) or not isinstance(maximum, int) or not 1 <= maximum <= 15:
+                raise ApiError("组图数量无效", 422, "image_count_unsupported")
+            if input_count + maximum > 15:
+                raise ApiError("参考图片和生成图片合计不能超过15张", 422, "image_input_count_invalid")
+            if mode == "auto":
+                upstream["sequential_image_generation_options"] = {"max_images": maximum}
 
     @staticmethod
     def _maxmodel_image_response(
@@ -1576,6 +1634,17 @@ class ProviderRelay:
         data["model"] = route.alias
         provider_id = provider_id or _provider_request_id(response.headers, data)
         images = data.get("data") if isinstance(data.get("data"), list) else []
+        if route.provider == "byteplus_modelark":
+            # A partial batch can contain error entries. Only actual outputs
+            # count as successful images; an empty/malformed response is not free usage.
+            images = [item for item in images if isinstance(item, dict) and (item.get("url") or item.get("b64_json")) and not item.get("error")]
+            if not images:
+                with self.database.connect() as connection:
+                    connection.execute(
+                        "UPDATE inference_tasks SET status='failed',error_code='provider_response_invalid',"
+                        "completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?", (task["id"],),
+                    )
+                raise ApiError("模型供应商未返回成功生成的图片", 502, "provider_response_invalid")
         usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
         with self.database.connect() as connection:
             connection.execute(
@@ -1622,7 +1691,7 @@ class ProviderRelay:
         return result
 
     def _video_submit_payload(self, route: ModelRoute, payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        if route.provider == "volcengine_ark":
+        if route.provider in ARK_PROVIDERS:
             return self._volcengine_video_submit_payload(route, payload)
         if route.provider == "aliyun_bailian":
             return self._aliyun_video_submit_payload(route, payload)
@@ -1638,6 +1707,7 @@ class ProviderRelay:
             "resolution", "ratio", "generate_audio", "watermark", "camera_fixed",
             "return_last_frame", "service_tier", "content", "draft", "frames",
             "execution_expires_after", "task_type",
+            "output_format",
         }
         forbidden = sorted(set(metadata) - allowed_metadata)
         if forbidden:
@@ -1725,10 +1795,17 @@ class ProviderRelay:
             if name in metadata:
                 if not isinstance(metadata[name], bool):
                     raise ApiError(f"{name}必须是布尔值", 422, "video_parameter_invalid")
+                if name == "return_last_frame" and metadata[name] and route.capabilities.get("returnLastFrame") is False:
+                    raise ApiError("当前模型不支持返回末帧", 422, "video_last_frame_unsupported")
                 body[name] = metadata[name]
+        output_format = metadata.get("output_format")
+        if output_format is not None:
+            if output_format not in route.capabilities.get("outputFormats", []):
+                raise ApiError("当前模型不支持该输出格式", 422, "video_output_format_invalid")
+            body["output_format"] = output_format
         camera_fixed = metadata.get("camera_fixed")
         if camera_fixed is not None:
-            if not isinstance(camera_fixed, bool) or route.alias.startswith("doubao-seedance-2.0"):
+            if not isinstance(camera_fixed, bool) or route.alias.startswith("doubao-seedance-2.0") or route.capabilities.get("cameraFixed") is False:
                 raise ApiError("当前模型不支持固定摄像头", 422, "video_camera_unsupported")
             if any(item["type"] != "text" for item in safe_content):
                 raise ApiError("参考素材场景不支持固定摄像头", 422, "video_camera_unsupported")
@@ -1739,6 +1816,8 @@ class ProviderRelay:
                 raise ApiError("service_tier无效", 422, "video_service_tier_invalid")
             if service_tier == "flex" and route.alias.startswith("doubao-seedance-2.0"):
                 raise ApiError("Seedance 2.0不支持离线推理", 422, "video_service_tier_invalid")
+            if "serviceTiers" in route.capabilities and service_tier not in route.capabilities["serviceTiers"]:
+                raise ApiError("当前模型不支持该服务层级", 422, "video_service_tier_invalid")
             body["service_tier"] = service_tier
         expires_after = metadata.get("execution_expires_after")
         if expires_after is not None:
@@ -1751,6 +1830,8 @@ class ProviderRelay:
                 raise ApiError("task_type无效", 422, "video_task_type_invalid")
             body["task_type"] = task_type
         if payload.get("seed") is not None:
+            if route.capabilities.get("seed") is False:
+                raise ApiError("当前模型不支持seed", 422, "video_seed_unsupported")
             body["seed"] = payload["seed"]
         return "/contents/generations/tasks", body
 
@@ -1933,6 +2014,22 @@ class ProviderRelay:
             safe_content.append({"type": content_type, value_field: {"url": url}, "role": role})
         if route.capabilities.get("imageRequired") and not any(item["type"] == "image_url" for item in safe_content):
             raise ApiError("当前模型必须提供参考图片", 422, "video_image_required")
+        if route.provider == "byteplus_modelark":
+            counts = {kind: sum(item["type"] == kind for item in safe_content) for kind in media_fields}
+            for kind, limit_name in (("image_url", "maxImages"), ("video_url", "maxVideos"), ("audio_url", "maxAudios")):
+                if counts[kind] > route.capabilities[limit_name]:
+                    raise ApiError("参考素材数量超过当前模型上限", 422, "video_content_limit")
+            roles = [item.get("role") for item in safe_content]
+            if "last_frame" in roles and "first_frame" not in roles:
+                raise ApiError("指定末帧时必须同时提供首帧", 422, "video_content_invalid")
+            if roles.count("first_frame") > 1 or roles.count("last_frame") > 1:
+                raise ApiError("首帧和末帧各最多一张图片", 422, "video_content_invalid")
+            if any(role in {"first_frame", "last_frame"} for role in roles) and any(
+                role in {"reference_image", "reference_video", "reference_audio"} for role in roles
+            ):
+                raise ApiError("首末帧不能与全能参考素材混用", 422, "video_content_invalid")
+            if counts["audio_url"] and not counts["image_url"] and not counts["video_url"] and not route.capabilities["audioOnly"]:
+                raise ApiError("当前模型的参考音频必须搭配参考图片或视频", 422, "video_content_invalid")
         return safe_content
 
     async def create_video(
@@ -1954,7 +2051,7 @@ class ProviderRelay:
             if route.provider == "aliyun_bailian":
                 output = data.get("output") if isinstance(data.get("output"), dict) else {}
                 upstream_task_id = output.get("task_id")
-            elif route.provider == "volcengine_ark":
+            elif route.provider in ARK_PROVIDERS:
                 upstream_task_id = data.get("id")
             else:
                 upstream_task_id = data.get("task_id")
@@ -2011,7 +2108,7 @@ class ProviderRelay:
             "created_at": task.get("created_at"),
         }
         metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
-        for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio"):
+        for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio", "output_format"):
             if metadata.get(key) is not None:
                 result[key] = metadata[key]
         content: dict[str, Any] = {}
@@ -2036,7 +2133,7 @@ class ProviderRelay:
     async def cancel_ark_video(self, principal: ApiPrincipal, task_id: str) -> None:
         task = self.get_local_task(principal, task_id)
         route = self._task_route(task)
-        if route.provider != "volcengine_ark":
+        if route.provider not in ARK_PROVIDERS:
             raise ApiError(
                 "当前视频供应商不支持通过中转站取消任务",
                 422,
@@ -2123,7 +2220,7 @@ class ProviderRelay:
                 "duration": seconds_value,
                 **({"usage": usage} if usage else {}),
             }
-        elif route.provider == "volcengine_ark":
+        elif route.provider in ARK_PROVIDERS:
             response, data = await self._request(
                 route, "GET", f"/contents/generations/tasks/{upstream_id}"
             )
@@ -2145,7 +2242,7 @@ class ProviderRelay:
                 error = "火山视频任务已过期"
             metadata = {
                 key: data[key]
-                for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio")
+                for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio", "output_format")
                 if data.get(key) is not None
             }
             if content.get("last_frame_url"):
@@ -2195,7 +2292,7 @@ class ProviderRelay:
                 WHERE id=?
                 """,
                 (
-                    status, progress, result_url, "mp4" if result_url else None,
+                    status, progress, result_url, (metadata.get("output_format") or "mp4") if result_url else None,
                     error_code, str(error)[:500] if error else None, provider_id,
                     _json(metadata), status, task_id,
                 ),

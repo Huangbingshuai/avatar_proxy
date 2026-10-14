@@ -25,6 +25,7 @@ ARK_VIDEO_FIELDS = {
     "service_tier",
     "execution_expires_after",
     "task_type",
+    "output_format",
 }
 FORBIDDEN_ROUTE_FIELDS = {
     "provider",

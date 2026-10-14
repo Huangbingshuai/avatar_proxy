@@ -2,10 +2,14 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator
 
 from .official_rates import (
+    BYTEPLUS_RATE_EFFECTIVE_MONTH,
+    BYTEPLUS_RATE_VERSION,
+    OFFICIAL_BYTEPLUS_RATES,
     OFFICIAL_VOLCENGINE_RATES,
     VOLCENGINE_RATE_EFFECTIVE_MONTH,
     VOLCENGINE_RATE_VERSION,
@@ -13,6 +17,22 @@ from .official_rates import (
 
 
 SEEDREAM_MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024
+
+BYTEPLUS_SEEDANCE_CAPABILITIES = {
+    "text": True, "image": True, "video": True, "audio": True,
+    "generateAudio": True, "durationMin": 4, "durationMax": 15,
+    "smartDuration": True, "resolutions": ["480p", "720p"],
+    "maxContent": 20, "maxN": 1, "cameraFixed": False, "seed": False,
+    "serviceTiers": ["default"], "maxImages": 9, "maxVideos": 3,
+    "maxAudios": 3, "audioOnly": False, "returnLastFrame": False,
+    "billingMetric": "output_tokens", "billingUnit": 1000000,
+}
+BYTEPLUS_SEEDREAM_CAPABILITIES = {
+    "generations": True, "imageInput": True, "maxInputImages": 10,
+    "maxInputImageBytes": 30 * 1024 * 1024, "maxN": 1, "outputFormat": True,
+    "sizes": ["1K", "1.5K", "2K"], "defaultSize": "2K",
+    "minPixels": 921600, "maxPixels": 4624220,
+}
 
 
 BUILTIN_MODEL_CATALOG = (
@@ -39,6 +59,13 @@ BUILTIN_MODEL_CATALOG = (
     ("doubao-seedance-2.0-mini", "Doubao Seedance 2.0 Mini", "volcengine_ark", "video", "async_video", "doubao-seedance-2-0-mini-260615", {"text": True, "image": True, "video": True, "audio": True, "durationMin": 4, "durationMax": 15, "smartDuration": True, "resolutions": ["480p", "720p"], "maxContent": 20, "maxN": 1}),
     ("doubao-seedance-1.0-pro", "Doubao Seedance 1.0 Pro", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-250528", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
     ("doubao-seedance-1.0-pro-fast", "Doubao Seedance 1.0 Pro Fast", "volcengine_ark", "video", "async_video", "doubao-seedance-1-0-pro-fast-251015", {"text": True, "image": True, "durationMin": 2, "durationMax": 12, "frames": True, "resolutions": ["480p", "720p", "1080p"], "maxN": 1}),
+    ("dreamina-seedance-2.5", "Dreamina Seedance 2.5", "byteplus_modelark", "video", "async_video", "dreamina-seedance-2-5-260628", {**BYTEPLUS_SEEDANCE_CAPABILITIES, "durationMax": 30, "resolutions": ["480p", "720p", "1080p"], "maxContent": 50, "maxImages": 30, "maxVideos": 10, "maxAudios": 10, "audioOnly": True, "returnLastFrame": True, "outputFormats": ["mp4", "mov"]}),
+    ("dreamina-seedance-2.0", "Dreamina Seedance 2.0", "byteplus_modelark", "video", "async_video", "dreamina-seedance-2-0-260128", {**BYTEPLUS_SEEDANCE_CAPABILITIES, "resolutions": ["480p", "720p", "1080p"]}),
+    ("dreamina-seedance-2.0-fast", "Dreamina Seedance 2.0 Fast", "byteplus_modelark", "video", "async_video", "dreamina-seedance-2-0-fast-260128", {**BYTEPLUS_SEEDANCE_CAPABILITIES}),
+    ("dreamina-seedance-2.0-mini", "Dreamina Seedance 2.0 Mini", "byteplus_modelark", "video", "async_video", "dreamina-seedance-2-0-mini-260615", {**BYTEPLUS_SEEDANCE_CAPABILITIES}),
+    ("dola-seedream-5.0-pro", "Dola Seedream 5.0 Pro", "byteplus_modelark", "image", "openai_image", "dola-seedream-5-0-pro-260628", {**BYTEPLUS_SEEDREAM_CAPABILITIES, "optimizePromptModes": ["standard", "fast"], "billingPixelThreshold": 2610000}),
+    ("dola-seedream-5.0-flash", "Dola Seedream 5.0 Flash", "byteplus_modelark", "image", "openai_image", "dola-seedream-5-0-flash-260915", {**BYTEPLUS_SEEDREAM_CAPABILITIES, "optimizePromptModes": ["standard"]}),
+    ("dola-seedream-5.0-lite", "Dola Seedream 5.0 Lite", "byteplus_modelark", "image", "openai_image", "seedream-5-0-lite-260128", {**BYTEPLUS_SEEDREAM_CAPABILITIES, "maxInputImages": 14, "sequentialImages": True, "maxN": 15, "sizes": ["2K", "3K", "4K"], "defaultSize": "2K", "minPixels": 3686400, "maxPixels": 16777216, "optimizePromptModes": ["standard"]}),
     ("wan3.0-video", "Wan 3.0 Video", "aliyun_bailian", "video", "async_video", "wan3.0-video", {"image": True, "maxN": 1}),
     ("minimax-h3", "MiniMax H3", "minimax", "video", "async_video", "MiniMax-H3", {"image": True, "maxN": 1}),
     ("gpt-image-2", "GPT Image 2", "maxmodel", "image", "openai_image", "gpt-image-2", {"generations": True}),
@@ -400,7 +427,7 @@ CREATE TABLE IF NOT EXISTS provider_channels (
     id TEXT PRIMARY KEY,
     project_name TEXT NOT NULL,
     name TEXT NOT NULL,
-    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','volcengine_ark','volcengine_speech','aliyun_bailian','minimax')),
+    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','volcengine_ark','byteplus_modelark','volcengine_speech','aliyun_bailian','minimax')),
     config_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
     last_test_status TEXT CHECK(last_test_status IN ('success','failed','manual')),
@@ -688,6 +715,48 @@ CREATE INDEX IF NOT EXISTS idx_billing_statements_month
 """
 
 
+def _seed_official_rates(
+    connection: sqlite3.Connection,
+    *,
+    actor: str,
+    effective_month: str,
+    card: dict[str, tuple[tuple[str, str, int, Decimal], ...]],
+) -> None:
+    """Upsert one official price list into the global rate card.
+
+    Only the rows already migrated for that month are rewritten, so a rate the
+    super administrator edited at a later month keeps winning the lookup.
+    """
+    for alias, rules in card.items():
+        if not connection.execute(
+            "SELECT 1 FROM model_catalog WHERE alias=?", (alias,)
+        ).fetchone():
+            continue
+        for metric, dimension, unit_size, price in rules:
+            amount_micros = int(price * 1_000_000)
+            existing = connection.execute(
+                "SELECT id FROM billing_model_rates WHERE model_alias=? AND metric=? "
+                "AND resolution=? AND effective_month=?",
+                (alias, metric, dimension, effective_month),
+            ).fetchone()
+            if existing:
+                connection.execute(
+                    "UPDATE billing_model_rates SET unit_size=?,unit_price_micros=?,created_by=? "
+                    "WHERE id=?",
+                    (unit_size, amount_micros, actor, existing["id"]),
+                )
+            else:
+                connection.execute(
+                    "INSERT INTO billing_model_rates"
+                    "(id,model_alias,metric,resolution,effective_month,unit_size,"
+                    "unit_price_micros,created_by) VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        f"brate_{uuid.uuid4().hex}", alias, metric, dimension,
+                        effective_month, unit_size, amount_micros, actor,
+                    ),
+                )
+
+
 def _upgrade_relay_table_constraints(path: Path) -> None:
     """Rebuild the three relay tables whose legacy SQLite CHECKs cannot be altered."""
     if not path.exists():
@@ -704,7 +773,7 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
         }
         rebuild_provider = definitions.get("provider_channels") and any(
             value not in definitions["provider_channels"]
-            for value in ("volcengine_speech", "maxmodel", "manual")
+            for value in ("volcengine_speech", "maxmodel", "byteplus_modelark", "manual")
         )
         rebuild_catalog = definitions.get("model_catalog") and "'embedding'" not in definitions["model_catalog"]
         rebuild_rates = definitions.get("billing_model_rates") and any(
@@ -719,7 +788,7 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
                 """
                 CREATE TABLE provider_channels_new (
                     id TEXT PRIMARY KEY, project_name TEXT NOT NULL, name TEXT NOT NULL,
-                    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','volcengine_ark','volcengine_speech','aliyun_bailian','minimax')),
+                    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','volcengine_ark','byteplus_modelark','volcengine_speech','aliyun_bailian','minimax')),
                     config_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
                     last_test_status TEXT CHECK(last_test_status IN ('success','failed','manual')),
                     last_test_at TEXT, last_test_latency_ms INTEGER, last_test_error TEXT,
@@ -1062,37 +1131,27 @@ class Database:
             if not connection.execute(
                 "SELECT 1 FROM app_migrations WHERE id=?", (official_rate_migration,)
             ).fetchone():
-                actor = f"system:volcengine:{VOLCENGINE_RATE_VERSION}"
-                for alias, rules in OFFICIAL_VOLCENGINE_RATES.items():
-                    if not connection.execute(
-                        "SELECT 1 FROM model_catalog WHERE alias=?", (alias,)
-                    ).fetchone():
-                        continue
-                    for metric, dimension, unit_size, price in rules:
-                        amount_micros = int(price * 1_000_000)
-                        existing = connection.execute(
-                            "SELECT id FROM billing_model_rates WHERE model_alias=? AND metric=? "
-                            "AND resolution=? AND effective_month=?",
-                            (alias, metric, dimension, VOLCENGINE_RATE_EFFECTIVE_MONTH),
-                        ).fetchone()
-                        if existing:
-                            connection.execute(
-                                "UPDATE billing_model_rates SET unit_size=?,unit_price_micros=?,created_by=? "
-                                "WHERE id=?",
-                                (unit_size, amount_micros, actor, existing["id"]),
-                            )
-                        else:
-                            connection.execute(
-                                "INSERT INTO billing_model_rates"
-                                "(id,model_alias,metric,resolution,effective_month,unit_size,"
-                                "unit_price_micros,created_by) VALUES (?,?,?,?,?,?,?,?)",
-                                (
-                                    f"brate_{uuid.uuid4().hex}", alias, metric, dimension,
-                                    VOLCENGINE_RATE_EFFECTIVE_MONTH, unit_size, amount_micros, actor,
-                                ),
-                            )
+                _seed_official_rates(
+                    connection,
+                    actor=f"system:volcengine:{VOLCENGINE_RATE_VERSION}",
+                    effective_month=VOLCENGINE_RATE_EFFECTIVE_MONTH,
+                    card=OFFICIAL_VOLCENGINE_RATES,
+                )
                 connection.execute(
                     "INSERT INTO app_migrations(id) VALUES (?)", (official_rate_migration,)
+                )
+            byteplus_rate_migration = f"official-byteplus-rates-{BYTEPLUS_RATE_VERSION}"
+            if not connection.execute(
+                "SELECT 1 FROM app_migrations WHERE id=?", (byteplus_rate_migration,)
+            ).fetchone():
+                _seed_official_rates(
+                    connection,
+                    actor=f"system:byteplus:{BYTEPLUS_RATE_VERSION}",
+                    effective_month=BYTEPLUS_RATE_EFFECTIVE_MONTH,
+                    card=OFFICIAL_BYTEPLUS_RATES,
+                )
+                connection.execute(
+                    "INSERT INTO app_migrations(id) VALUES (?)", (byteplus_rate_migration,)
                 )
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
