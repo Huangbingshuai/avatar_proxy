@@ -1,6 +1,6 @@
 # BytePlus ModelArk 海外渠道接入说明
 
-更新日期：2026-10-14。本文供维护人员使用；客户 HTTP 契约见 [CLIENT_API.md](CLIENT_API.md)。本次是本地开发版本，已完成下述账号级基础调用验收，尚未部署生产环境。
+更新日期：2026-10-14。本文供维护人员使用；客户 HTTP 契约见 [CLIENT_API.md](CLIENT_API.md)。已完成账号级基础调用验收，并按官方折算价目部署到生产环境，部署明细见文末“生产部署记录”。
 
 ## 接入范围与固定映射
 
@@ -111,7 +111,20 @@ BytePlus 上游按美元结算；账本仍以人民币微元和字符串金额�
 
 上述金额按微元精度四舍五入，七项合计 7.825061 元（无项目折扣），实际账单以数据库微元和账单导出为准。
 
-脱敏机器验收记录位于本地忽略目录 `.codex-run/byteplus-paid-smoke-20261014.json`，包含请求 ID、公共/上游任务 ID、实际用量及结果链接连通性，不包含业务 Key、供应商 Key 或带签名的结果 URL。真实 Key 不放入源码、日志、文档或 Git。本轮仅验证基础文生图和文生视频，不涵盖全部参考图/视频/音频组合、组图、取消或生产服务器网络连通性。测试时仅将本地后端进程的上游超时设为 120 秒，没有修改 `.env`。未连接生产服务器，不部署、不提交、不推送。
+脱敏机器验收记录位于本地忽略目录 `.codex-run/byteplus-paid-smoke-20261014.json`，包含请求 ID、公共/上游任务 ID、实际用量及结果链接连通性，不包含业务 Key、供应商 Key 或带签名的结果 URL。真实 Key 不放入源码、日志、文档或 Git。本轮仅验证基础文生图和文生视频，不涵盖全部参考图/视频/音频组合、组图、取消或生产服务器网络连通性。该轮验收只在本地进行，使用本地后端进程并临时把上游超时设为 120 秒，没有修改 `.env`，也没有连接生产服务器；生产环境的部署与核对在下一节单独记录。
+
+## 生产部署记录（2026-10-14）
+
+- release：`/opt/avatar-proxy/releases/20261014-byteplus-relay-94443d3`，对应提交 `94443d3`，`current` 由 `20260911-call-log-detail-19e0215` 切换而来。
+- 变更组件：`api`（功能必需）与 `console`（仅价目来源文案）。`edge` 和 `api-gateway` 未重启，因此 443 TLS 终止、微信支付回调代理和客户门户不受影响。
+- 镜像：`api` 于 21:26:46 重建（`avatar-proxy-api:latest`），`console` 于 21:59:17 重建并在 22:04:52 重新创建容器（`avatar-proxy-console:latest`）；控制台构建必须先 `docker pull` 基础镜像并用 `--builder default` 构建，默认的 `mirror-builder`（docker-container driver）会卡在基础镜像拉取且不报错。
+- 备份：`/opt/avatar-proxy/backups/20261014-byteplus-relay-before-94443d3/avatar_proxy.db`，2.42 GB，`PRAGMA integrity_check` 返回 `ok`，为停写后的一致性快照。
+- 写窗口：2026-10-14 21:25:45 停止 `api`，21:26:58 健康检查通过，约 73 秒；期间客户 `/api/*` 短暂返回 502，`console` 持续在线。
+- 启动迁移：新增 `official-byteplus-rates-2026-10-14`，写入 7 条 `model_catalog` 行与 25 条 `billing_model_rates` 行；价目生效账期 `2026-10`，`created_by` 为 `system:byteplus:2026-10-14`。
+- 数据核对比对：项目 7→7，业务 Key 7→7，`provider_channels` 2→2，账单与用量项 0→0，`inference_usage`/`inference_tasks` 的 `MAX(rowid)` 不变；只有模型目录、价目和迁移记录按预期增加。
+- 容器内自检：`BYTEPLUS_RATE_VERSION=2026-10-14`、`USD_CNY_FX=6.705025`、25 条海外规则、目录含 7 个 `byteplus_modelark` 模型。
+- 回滚路径：`docker tag avatar-proxy-api:rollback-before-94443d3 avatar-proxy-api:latest`，把 `current` 指回 `20260911-call-log-detail-19e0215`，再执行 `docker compose -p avatar-proxy up -d --no-build --no-deps api`；数据库可用上述备份整库恢复。
+- 上线后仍未录入生产 BytePlus 渠道凭证，也没有任何项目绑定海外模型，因此海外模型不可调用、不会产生费用；模型目录与价目处于预置状态，管理员配置渠道并授权项目后才生效。
 
 ## 官方参考
 
