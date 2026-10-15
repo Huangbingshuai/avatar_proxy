@@ -73,7 +73,7 @@ Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素
 
 新增价目使用 **ModelTop 自身市场详情**，按2026-10-15汇率快照 `1 USD = 6.706494 CNY` 一次性折算；不是原厂价复制或每日浮动价。GPT按细分Token、视频按真实输出Token和分辨率/视频参考档位计费。缺价格或用量仍待计价。初始化幂等，不覆盖后续超管改价。
 
-配置、价格来源与边界见 [ModelTop 接入说明](backend/MODELTOP_RELAY.md)，客户请求见 [CLIENT_API.md](backend/CLIENT_API.md)。2026-10-15 经用户授权，已通过本地 `test_hb` 业务Key完成11/11最小参数真实付费验收：3张低质量图片、8段4秒/480p无音频视频，最终结果与真实用量均已核对，本地价目计费合计14.067275元。生产发布状态另见部署记录；本地Key、渠道绑定和测试数据不会随代码发布到线上。
+配置、价格来源与边界见 [ModelTop 接入说明](backend/MODELTOP_RELAY.md)，客户请求见 [CLIENT_API.md](backend/CLIENT_API.md)。2026-10-15 经用户授权，已通过本地 `test_hb` 业务Key完成11/11最小参数真实付费验收：3张低质量图片、8段4秒/480p无音频视频，最终结果与真实用量均已核对，本地价目计费合计14.067275元。同日已部署API与控制台；本地Key、渠道绑定和测试数据不会随代码发布到线上，生产仍需由管理员配置ModelTop渠道并为项目开通。
 
 ## 客户 API 快速接入
 
@@ -346,6 +346,17 @@ npm test
 - `/health` 用于健康检查；
 - `POST /minidrama/payments/callbacks/wechat` 透明转发微信支付通知到 LocalMiniDrama；
 - 生产环境应保持 `ENABLE_API_DOCS=false`。
+
+客户工具前端自 2026-10-15 起关闭，原 `http://101.96.224.33:8088/video/`、
+`/video` 及其静态资源统一返回 `404`。`edge` 保留为 `:8088` 的 API 兼容代理，
+通过只读挂载 `deploy/volcengine/nginx.conf` 持久化入口配置；控制台和 HTTPS API 正常提供服务。
+
+### 当前生产发布基线（2026-10-15）
+
+- 应用提交 `778127b`，Release 为 `/opt/avatar-proxy/releases/20261015-modeltop-relay-778127b`；后续仅补充发布记录的文档提交不改变运行镜像。
+- 本次仅替换API与控制台；客户工具和HTTPS网关只做必要的Nginx配置检查与平滑reload，没有由本次发布重建，微信支付回调配置不变。
+- 使用原有已验证镜像及未变化的依赖构建增量应用镜像，避免无关运行时升级。API停写窗口约50秒；已有项目、Key、管理员、渠道、凭证、模型绑定及历史记录保持不变，密钥文件和原有价格不变。
+- 一致性SQLite、独立密钥/环境配置及旧镜像已保留，备份目录 `/opt/avatar-proxy/backups/20261015-modeltop-relay-before`；迁移、验证与回滚详见 [ModelTop生产部署记录](backend/MODELTOP_RELAY.md)。
 
 ### 历史生产发布记录（2026-09-11）
 
