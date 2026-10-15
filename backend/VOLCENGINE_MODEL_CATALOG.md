@@ -1,10 +1,12 @@
 # 火山方舟模型目录维护与验收记录
 
-更新日期：2026-10-14
+更新日期：2026-10-15
 
 本文档供项目维护人员使用，记录方舟模型进入 Star Proxy 内置目录的判定标准、固定映射和验收方法。客户可见的实时模型清单始终以业务 Key 请求 `GET /v1/models` 的结果为准，完整调用契约以 [CLIENT_API.md](CLIENT_API.md) 为准。
 
 ## 海外 BytePlus 接入范围
+
+2026-10-15 新增的第三方 ModelTop 渠道保留标准公开模型名，不增加渠道前缀；项目选择渠道决定真实上游、能力和价目。它不能作为国内方舟或BytePlus已验证模型的替代记录；凭证、上游ID、价格与验收状态独立维护，见 [MODELTOP_RELAY.md](MODELTOP_RELAY.md)。已完成用户授权的本地11/11最小参数付费验收；生产发布状态见该文档，不把本地配置或结果视为生产授权。
 
 海外渠道使用独立供应商 `byteplus_modelark`、`dreamina-seedance-*` 与 `dola-seedream-*` 别名；本地实现仅加入用户指定的 4 款视频和 3 款图片模型，未扩展海外文本、语音或向量目录。固定映射和测试状态见 [BYTEPLUS_MODELARK.md](BYTEPLUS_MODELARK.md)。它们使用独立 BytePlus 区域 Key，不能与国内方舟渠道交叉绑定。
 

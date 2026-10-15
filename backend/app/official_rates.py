@@ -17,6 +17,8 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
 
+from .modeltop import MODELTOP_RATES
+
 
 VOLCENGINE_RATE_SOURCE_URL: Final = "https://www.volcengine.com/docs/82379/1544106"
 VOLCENGINE_SPEECH_RATE_SOURCE_URL: Final = "https://www.volcengine.com/docs/6561/1359370"
@@ -256,3 +258,5 @@ OFFICIAL_RATES: Final[dict[str, tuple[tuple[str, str, int, Decimal], ...]]] = {
     **OFFICIAL_VOLCENGINE_RATES,
     **OFFICIAL_BYTEPLUS_RATES,
 }
+for _alias, _rules in MODELTOP_RATES.items():
+    OFFICIAL_RATES[_alias] = OFFICIAL_RATES.get(_alias, ()) + _rules

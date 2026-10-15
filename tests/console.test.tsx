@@ -18,6 +18,7 @@ type MockData = {
   expireOnPath?: string;
   backupCreatedAt?: string | null;
   monitorPercent?: number;
+  modeltop?: boolean;
 };
 
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -106,7 +107,7 @@ function installFetch(data: MockData = {}) {
       providerChannels = [...providerChannels, { id: "channel-new", projectName: body.projectName, name: body.name, provider: body.provider, config: body.config, status: "active", secretHint: "new****cret", lastTestStatus: undefined, lastTestLatencyMs: undefined }];
       return jsonResponse({ channel: providerChannels.at(-1) }, 201);
     }
-    if (url.pathname === "/api/internal/provider/channels") return jsonResponse({ channels: url.searchParams.get("projectName") ? providerChannels.filter((item) => item.projectName === url.searchParams.get("projectName")) : providerChannels });
+    if (url.pathname === "/api/internal/provider/channels") return jsonResponse({ channels: [...(url.searchParams.get("projectName") ? providerChannels.filter((item) => item.projectName === url.searchParams.get("projectName")) : providerChannels), ...(data.modeltop ? [{ id: "channel-modeltop", projectName: "customer_a", name: "客户A ModelTop", provider: "modeltop", status: "active" }, { id: "channel-maxmodel", projectName: "customer_a", name: "客户A MaxModel", provider: "maxmodel", status: "active" }] : [])] });
     if (/\/api\/internal\/provider\/channels\/[^/]+\/test$/.test(url.pathname)) return jsonResponse({ test: { status: "success", latencyMs: 77 } });
     if (/\/api\/internal\/provider\/channels\/[^/]+\/name$/.test(url.pathname) && init?.method === "PUT") {
       const channelId = url.pathname.split("/").at(-2);
@@ -122,7 +123,7 @@ function installFetch(data: MockData = {}) {
       const enabled = body?.bindings?.some((item: { model: string }) => item.model === "glm-5.2") ?? true;
       return jsonResponse({ projectName: "customer_a", models: [
         { model: "glm-5.2", displayName: "GLM 5.2", provider: "volcengine_ark", modality: "text", channelId: enabled ? "channel-ark" : null, channelName: enabled ? "客户A方舟" : null, upstreamModel: "glm-5-2-260617", enabled },
-        { model: "gpt-image-2", displayName: "GPT Image 2", provider: "maxmodel", modality: "image", channelId: null, upstreamModel: "gpt-image-2", enabled: false },
+        { model: "gpt-image-2", displayName: "GPT Image 2", provider: "maxmodel", providers: data.modeltop ? ["maxmodel", "modeltop"] : ["maxmodel"], upstreamModels: { maxmodel: "gpt-image-2", modeltop: "gpt-image-2" }, modality: "image", channelId: null, upstreamModel: "gpt-image-2", enabled: false },
       ] });
     }
     if (url.pathname === "/api/internal/inference/usage") return jsonResponse({ usage: [{ id: "usage-1", projectName: "customer_a", apiKeyId: "key-a", model: "glm-5.2", provider: "volcengine_ark", status: "succeeded", inputTokens: 10, outputTokens: 20, generatedImages: null, videoSeconds: null, createdAt: "2026-09-02 08:00:00" }] });
@@ -623,15 +624,34 @@ describe("内部控制台", () => {
     expect(within(page!).queryByLabelText("超级管理员密码")).not.toBeInTheDocument();
   });
 
-  it("超级管理员创建海外ModelArk渠道时使用独立Key且无需重复填写项目", async () => {
+  it("同名GPT模型只展示一行并允许选择MaxModel或ModelTop渠道", async () => {
+    installFetch({ modeltop: true });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "项目模型" }));
+    await screen.findByRole("heading", { name: "项目模型绑定" });
+    const channel = await screen.findByLabelText("GPT Image 2渠道");
+    expect(within(channel).getByRole("option", { name: "客户A ModelTop" })).toBeInTheDocument();
+    expect(within(channel).getByRole("option", { name: "客户A MaxModel" })).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-model="gpt-image-2"]')).toHaveLength(1);
+    await user.selectOptions(channel, "channel-modeltop");
+    expect(channel).toHaveValue("channel-modeltop");
+    expect(within(channel.closest("article")!).getByText("ModelTop")).toBeInTheDocument();
+  });
+
+  it.each(["byteplus_modelark", "modeltop"])("超级管理员创建%s渠道时使用独立Key且无需重复填写项目", async (provider) => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
     await screen.findByRole("heading", { name: "供应商渠道" });
     await user.click(screen.getByRole("button", { name: "创建渠道" }));
     const dialog = screen.getByRole("dialog", { name: "创建供应商渠道" });
-    await user.selectOptions(within(dialog).getByLabelText("供应商"), "byteplus_modelark");
-    expect(within(dialog).getByText(/使用 BytePlus ModelArk 亚太区域/)).toBeInTheDocument();
-    expect(within(dialog).getByRole("link", { name: "获取 API Key" })).toHaveAttribute("href", "https://ai.byteplus.com/ark/region:ap-southeast-1/apikey");
+    await user.selectOptions(within(dialog).getByLabelText("供应商"), provider);
+    if (provider === "byteplus_modelark") {
+      expect(within(dialog).getByText(/使用 BytePlus ModelArk 亚太区域/)).toBeInTheDocument();
+      expect(within(dialog).getByRole("link", { name: "获取 API Key" })).toHaveAttribute("href", "https://ai.byteplus.com/ark/region:ap-southeast-1/apikey");
+    } else {
+      expect(within(dialog).getByText(/使用 ModelTop 平台创建/)).toBeInTheDocument();
+      expect(within(dialog).getByRole("link", { name: "接口文档" })).toHaveAttribute("href", "https://modeltop.ai/docs/");
+    }
     expect(within(dialog).queryByLabelText(/ProjectName|Base URL|海外项目名/)).not.toBeInTheDocument();
     await user.type(within(dialog).getByLabelText("渠道名称"), "海外 Seedance");
     await user.type(within(dialog).getByLabelText(/^供应商 API Key/), "byteplus-test-secret");
@@ -641,7 +661,7 @@ describe("内部控制台", () => {
     await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST")).toBe(true));
     const createCall = calls.find((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST");
     expect(new Headers(createCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
-    expect(JSON.parse(String(createCall?.init?.body))).toMatchObject({ provider: "byteplus_modelark", config: {}, secret: "byteplus-test-secret" });
+    expect(JSON.parse(String(createCall?.init?.body))).toMatchObject({ provider, config: {}, secret: "byteplus-test-secret" });
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });

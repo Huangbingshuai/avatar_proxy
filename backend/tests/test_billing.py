@@ -691,7 +691,7 @@ def test_byteplus_official_usd_list_prices_are_seeded_as_cny_rates(tmp_path: Pat
             "fxRateToCny": str(USD_CNY_FX),
         }
 
-        video = billing.get_rate("dreamina-seedance-2.5", month)
+        video = billing.get_rate("dreamina-seedance-2.5", month, "byteplus_modelark")
         assert video["configured"] and video["officialSource"] == source
         # USD/M tokens * 6.705025, e.g. 10.70 -> 71.743768 CNY/M tokens.
         assert {(rule["dimension"], rule["unitPriceYuan"]) for rule in video["rules"]} == {

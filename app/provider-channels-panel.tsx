@@ -19,6 +19,7 @@ import type { AdminApi } from "./admin-api";
 type Provider =
   | "openai"
   | "maxmodel"
+  | "modeltop"
   | "volcengine_ark"
   | "byteplus_modelark"
   | "volcengine_speech"
@@ -41,6 +42,7 @@ type Channel = {
 const providerLabels: Record<Provider, string> = {
   openai: "OpenAI",
   maxmodel: "MaxModel",
+  modeltop: "ModelTop",
   volcengine_ark: "火山方舟",
   byteplus_modelark: "BytePlus ModelArk（海外）",
   volcengine_speech: "豆包语音",
@@ -533,6 +535,13 @@ export default function ProviderChannelsPanel({
                   <a href="https://ai.byteplus.com/ark/region:ap-southeast-1/apikey" target="_blank" rel="noreferrer">获取 API Key</a>。
                   无需重复填写海外项目名；Key 自身的权限决定可访问的海外项目。
                   渠道测试不生成视频，模型权限需通过用户端真实调用验证。
+                </div>
+              )}
+              {form.provider === "modeltop" && (
+                <div className="note">
+                  使用 ModelTop 平台创建的 API Key，固定请求 https://modeltop.ai，无需填写 Base URL。
+                  <a href="https://modeltop.ai/docs/" target="_blank" rel="noreferrer">接口文档</a>。
+                  渠道测试不产生图片或视频费用；绑定模型后通过客户工具验证。
                 </div>
               )}
               <label>

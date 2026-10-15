@@ -49,6 +49,8 @@ type ProjectModel = {
   model: string;
   displayName: string;
   provider: string;
+  providers?: string[];
+  upstreamModels?: Record<string, string>;
   modality: string;
   channelId?: string | null;
   upstreamModel?: string | null;
@@ -81,6 +83,7 @@ type Task = {
 const providerLabel: Record<string, string> = {
   openai: "OpenAI",
   maxmodel: "MaxModel",
+  modeltop: "ModelTop",
   volcengine_ark: "火山方舟",
   byteplus_modelark: "BytePlus ModelArk（海外）",
   volcengine_speech: "豆包语音",
@@ -161,7 +164,7 @@ export default function ModelRelayPanel({
   const filteredModels = useMemo(() => {
     const needle = catalogSearch.trim().toLowerCase();
     return models.filter((model) => {
-      if (catalogProvider && model.provider !== catalogProvider) return false;
+      if (catalogProvider && !(model.providers ?? [model.provider]).includes(catalogProvider)) return false;
       if (catalogModality && model.modality !== catalogModality) return false;
       return (
         !needle ||
@@ -265,9 +268,10 @@ export default function ModelRelayPanel({
   }
 
   function changeModelChannel(model: ProjectModel, channelId: string) {
+    const provider = channels.find((channel) => channel.id === channelId)?.provider ?? model.provider;
     const previousModels = models;
     const nextModels = models.map((item) =>
-      item.model === model.model ? { ...item, channelId } : item,
+      item.model === model.model ? { ...item, channelId, provider, upstreamModel: item.upstreamModels?.[provider] ?? item.upstreamModel } : item,
     );
     setModels(nextModels);
     if (model.enabled)
@@ -416,7 +420,7 @@ export default function ModelRelayPanel({
           {filteredModels.map((model) => {
             const candidates = channels.filter(
               (channel) =>
-                channel.provider === model.provider &&
+                (model.providers ?? [model.provider]).includes(channel.provider) &&
                 channel.status === "active",
             );
             return (

@@ -6,6 +6,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator
 
+from .modeltop import MODELTOP_MODEL_CATALOG, MODELTOP_RATES, MODELTOP_RATE_VERSION, MODELTOP_RATE_EFFECTIVE_MONTH
+
 from .official_rates import (
     BYTEPLUS_RATE_EFFECTIVE_MONTH,
     BYTEPLUS_RATE_VERSION,
@@ -75,6 +77,8 @@ BUILTIN_MODEL_CATALOG = (
     ("doubao-seed-audio-1.0", "Doubao Seed Audio 1.0", "volcengine_speech", "audio", "speech_audio_generation", "seed-audio-1.0", {"audioGenerations": True, "maxDuration": 120, "billingMetric": "audio_second", "billingUnit": 60}),
 )
 
+
+BUILTIN_MODEL_CATALOG += tuple(row for row in MODELTOP_MODEL_CATALOG if row[0] not in {item[0] for item in BUILTIN_MODEL_CATALOG})
 
 BUILTIN_MODEL_ALIAS_MIGRATIONS = (
     ("seedream-5.0-pro", "doubao-seedream-5.0-pro"),
@@ -427,7 +431,7 @@ CREATE TABLE IF NOT EXISTS provider_channels (
     id TEXT PRIMARY KEY,
     project_name TEXT NOT NULL,
     name TEXT NOT NULL,
-    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','volcengine_ark','byteplus_modelark','volcengine_speech','aliyun_bailian','minimax')),
+    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','modeltop','volcengine_ark','byteplus_modelark','volcengine_speech','aliyun_bailian','minimax')),
     config_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
     last_test_status TEXT CHECK(last_test_status IN ('success','failed','manual')),
@@ -773,7 +777,7 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
         }
         rebuild_provider = definitions.get("provider_channels") and any(
             value not in definitions["provider_channels"]
-            for value in ("volcengine_speech", "maxmodel", "byteplus_modelark", "manual")
+            for value in ("volcengine_speech", "maxmodel", "byteplus_modelark", "modeltop", "manual")
         )
         rebuild_catalog = definitions.get("model_catalog") and "'embedding'" not in definitions["model_catalog"]
         rebuild_rates = definitions.get("billing_model_rates") and any(
@@ -788,7 +792,7 @@ def _upgrade_relay_table_constraints(path: Path) -> None:
                 """
                 CREATE TABLE provider_channels_new (
                     id TEXT PRIMARY KEY, project_name TEXT NOT NULL, name TEXT NOT NULL,
-                    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','volcengine_ark','byteplus_modelark','volcengine_speech','aliyun_bailian','minimax')),
+                    provider TEXT NOT NULL CHECK(provider IN ('openai','maxmodel','modeltop','volcengine_ark','byteplus_modelark','volcengine_speech','aliyun_bailian','minimax')),
                     config_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
                     last_test_status TEXT CHECK(last_test_status IN ('success','failed','manual')),
                     last_test_at TEXT, last_test_latency_ms INTEGER, last_test_error TEXT,
@@ -1153,6 +1157,11 @@ class Database:
                 connection.execute(
                     "INSERT INTO app_migrations(id) VALUES (?)", (byteplus_rate_migration,)
                 )
+            modeltop_migration = f"official-modeltop-rates-{MODELTOP_RATE_VERSION}"
+            if not connection.execute("SELECT 1 FROM app_migrations WHERE id=?", (modeltop_migration,)).fetchone():
+                _seed_official_rates(connection, actor=f"system:modeltop:{MODELTOP_RATE_VERSION}",
+                                     effective_month=MODELTOP_RATE_EFFECTIVE_MONTH, card=MODELTOP_RATES)
+                connection.execute("INSERT INTO app_migrations(id) VALUES (?)", (modeltop_migration,))
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations

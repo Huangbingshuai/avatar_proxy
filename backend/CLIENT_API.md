@@ -1,8 +1,8 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.9
+版本：5.10
 
-更新日期：2026-10-14
+更新日期：2026-10-15
 正式地址：`https://api.richbest.cn`
 
 本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、文本、图片、视频、多模态向量与音频模型接口。
@@ -670,7 +670,7 @@ curl "$BASE_URL/v1/models" \
 | `doubao-seedream-5.0` | 生图、参考图改图；最多 10 张参考图，单次 1 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `doubao-seedream-4.5` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
 | `doubao-seedream-4.0` | 生图、参考图改图、组图；最多 10 张参考图、15 张结果 | 火山方舟 | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
-| `gpt-image-2` | 生图；单次 1 张结果 | MaxModel | `POST /v1/images/generations` | 同步 JSON；结果为 URL 或 Base64 |
+| `gpt-image-2` | 生图；MaxModel单张、ModelTop最多10张 | MaxModel / ModelTop | `POST /v1/images/generations` | 同步JSON；ModelTop优先读取Base64 |
 | `doubao-embedding-vision` | 文本、图片和视频多模态向量化 | 火山方舟 | `POST /v1/embeddings`<br>`POST /v1/embeddings/multimodal` | 同步 JSON |
 | `doubao-seed-tts-2.0` | 语音合成 | 火山语音 | `POST /v1/audio/speech` | 音频二进制响应 |
 | `doubao-seedasr-2.0` | 异步录音识别 | 火山语音 | `POST /v1/audio/transcriptions` | `GET /v1/audio/transcriptions/{taskId}` |
@@ -681,19 +681,47 @@ curl "$BASE_URL/v1/models" \
 | `doubao-seedance-2.0-mini` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `doubao-seedance-1.0-pro` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `doubao-seedance-1.0-pro-fast` | 异步视频 | 火山方舟 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `dreamina-seedance-2.5` | 异步视频 | BytePlus ModelArk（海外） | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `dreamina-seedance-2.0` | 异步视频 | BytePlus ModelArk（海外） | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `dreamina-seedance-2.0-fast` | 异步视频 | BytePlus ModelArk（海外） | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
-| `dreamina-seedance-2.0-mini` | 异步视频 | BytePlus ModelArk（海外） | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.5` | 异步视频 | BytePlus ModelArk（海外） / ModelTop | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0` | 异步视频 | BytePlus ModelArk（海外） / ModelTop | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0-fast` | 异步视频 | BytePlus ModelArk（海外） / ModelTop | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0-mini` | 异步视频 | BytePlus ModelArk（海外） / ModelTop | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `dola-seedream-5.0-pro` | 生图、参考图改图；单次 1 张结果 | BytePlus ModelArk（海外） | `POST /v1/images/generations` | 同步 JSON，结果为 URL 或 Base64 |
 | `dola-seedream-5.0-lite` | 生图、参考图改图、组图；最多 15 张结果 | BytePlus ModelArk（海外） | `POST /v1/images/generations` | 同步 JSON，结果为 URL 或 Base64 |
 | `dola-seedream-5.0-flash` | 生图、参考图改图；单次 1 张结果 | BytePlus ModelArk（海外） | `POST /v1/images/generations` | 同步 JSON，结果为 URL 或 Base64 |
 | `wan3.0-video` | 异步视频 | 阿里百炼 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 | `minimax-h3` | 异步视频 | MiniMax | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `gpt-image-2.5-flare` | 文生图；最多 10 张 | ModelTop | `POST /v1/images/generations` | 同步 JSON，优先读取 `data[].b64_json` |
+| `gpt-image-2.5-sunburst` | 文生图；最多 10 张 | ModelTop | `POST /v1/images/generations` | 同步 JSON，优先读取 `data[].b64_json` |
+| `dreamina-seedance-2.5-filter-off` | 异步视频 | ModelTop | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0-filter-off` | 异步视频 | ModelTop | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0-fast-filter-off` | 异步视频 | ModelTop | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
+| `dreamina-seedance-2.0-mini-filter-off` | 异步视频 | ModelTop | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` |
 
 创建和查询视频任务必须使用同一枚业务 API Key；支持取消的供应商同样要求使用创建任务时的业务 Key。
 
 模型是否已经对当前项目开放，以 `/v1/models` 的实时返回结果为准。请求未开通的模型会返回 `403 model_not_allowed`，请联系管理员确认项目授权和供应商渠道状态。
+
+#### ModelTop 模型调用
+
+模型使用标准名称，不加渠道前缀。同一模型可选择不同供应商渠道；项目当前所选渠道决定上游ID、能力与价格，客户无需也不能传入供应商、渠道或真实模型ID。以下参数适用于管理员已选择ModelTop渠道的项目；需要开通时请联系管理员，以 `/v1/models` 实时结果为准。
+
+对上表三个 GPT 模型，调用 `POST /v1/images/generations`，分别替换以下 `model`：
+
+```json
+{"model":"gpt-image-2","prompt":"白色背景上的蓝色陶瓷杯","n":1,"size":"1024x1024","quality":"medium","response_format":"b64_json"}
+```
+
+尺寸为 `auto` 或 `1024x1024`、`1536x1024`、`1024x1536`、`2048x2048`、`2048x1152`、`3840x2160`、`2160x3840`，不能用 `1K`/`2K` 简写。质量支持 `auto/low/medium/high`；两个 2.5 模型另支持 `xhigh/max`，以及自定义尺寸（边长≤3840，均为16的倍数，宽高比≤3:1，总像素655360～8294400）。2.5 另支持透明背景 `background=transparent`、`output_format=png/jpeg/webp`、JPEG/WebP 的 `output_compression=0..100`；透明背景不能用JPEG。原生返回Base64，请优先读取 `data[].b64_json`，不要假设请求 `url` 一定有URL。本期不提供 ModelTop 参考图编辑、流式或 `-gp` 异步生图。
+
+对上表八个视频模型，调用 `POST /api/v3/contents/generations/tasks`，分别替换以下 `model`：
+
+```json
+{"model":"dreamina-seedance-2.5","content":[{"type":"text","text":"一艘红色纸船缓缓漂过池塘"}],"duration":4,"resolution":"480p","ratio":"16:9","generate_audio":false}
+```
+
+用同一业务 Key 查询 `GET /api/v3/contents/generations/tasks/{taskId}`，`succeeded` 才表示成功。2.5 支持4～30秒，其他4～15秒，均支持 `duration=-1`。2.5支持480p/720p/1080p；2.0另支持 `4k`；Fast/Mini仅480p/720p。参考素材使用 `content` 的 `image_url/video_url/audio_url` 及对应 role；2.5最多30图/10视频/10音频，其他9图/3视频/3音频。首末帧不能与全能参考混用，2.0系列的音频须搭配图或视频。本期不开放取消、草稿、回调或联网工具；素材ID不能保证跨供应商复用，结果URL可能过期。
+
+ModelTop 价格采用其市场详情，按2026-10-15快照 `1 USD = 6.706494 CNY` 折算，不修改其他渠道价格，不随汇率每日自动变化。GPT生图按细分文本输入/图片输入/图片输出/缓存 Token 计价，视频按输出 Token及分辨率/视频参考档位计价。GPT Image 2未单独公示缓存输入价，相关用量需要该价格时待计价，不默认免费。缺失真实细分用量同样待计价。客户通过 `/v1/pricing?model=gpt-image-2` 等名称查询人民币单价。
 
 ### 13.2 项目模型价格表
 

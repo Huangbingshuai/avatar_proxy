@@ -18,19 +18,21 @@ from cryptography.fernet import Fernet, InvalidToken
 from .config import Settings
 from .database import Database
 from .errors import ApiError
+from .modeltop import MODELTOP_MODELS
 from .security import ApiPrincipal
 
 
 PROVIDERS = {
     "openai",
     "maxmodel",
+    "modeltop",
     "volcengine_ark",
     "byteplus_modelark",
     "volcengine_speech",
     "aliyun_bailian",
     "minimax",
 }
-ARK_PROVIDERS = frozenset({"volcengine_ark", "byteplus_modelark"})
+ARK_PROVIDERS = frozenset({"volcengine_ark", "byteplus_modelark", "modeltop"})
 TERMINAL_TASK_STATUSES = {"succeeded", "failed", "canceled"}
 ACTIVE_TASK_STATUSES = {"queued", "running"}
 ALIYUN_REGIONS = {
@@ -63,6 +65,17 @@ def _now_epoch() -> int:
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _channel_model(alias: str, provider: str, upstream: str, capabilities: str) -> tuple[str, dict[str, Any]]:
+    if provider == "modeltop" and alias in MODELTOP_MODELS:
+        model = MODELTOP_MODELS[alias]
+        return model[5], dict(model[6])
+    return upstream, _loaded(capabilities, {})
+
+
+def _model_providers(alias: str, default: str) -> list[str]:
+    return list(dict.fromkeys([default] + (["modeltop"] if alias in MODELTOP_MODELS else [])))
 
 
 def _loaded(value: str | None, default: Any) -> Any:
@@ -276,6 +289,7 @@ class ProviderRelay:
         allowed: dict[str, set[str]] = {
             "openai": {"organization", "project"},
             "maxmodel": set(),
+            "modeltop": set(),
             "volcengine_ark": {"projectName"},
             "byteplus_modelark": set(),
             "volcengine_speech": set(),
@@ -496,6 +510,7 @@ class ProviderRelay:
                 "provider": row["provider"],
                 "modality": row["modality"],
                 "protocol": row["protocol"],
+                "providers": _model_providers(row["alias"], row["provider"]),
                 "upstreamModel": row["upstream_model"],
                 "capabilities": _loaded(row["capabilities_json"], {}),
                 "enabled": bool(row["enabled"]),
@@ -511,7 +526,7 @@ class ProviderRelay:
             rows = connection.execute(
                 """
                 SELECT m.*, b.channel_id, b.enabled AS binding_enabled,
-                       c.name AS channel_name, c.status AS channel_status
+                       c.name AS channel_name, c.status AS channel_status,c.provider AS bound_provider
                 FROM model_catalog m
                 LEFT JOIN project_model_bindings b
                   ON b.model_alias=m.alias AND b.project_name=?
@@ -525,12 +540,15 @@ class ProviderRelay:
             {
                 "model": row["alias"],
                 "displayName": row["display_name"],
-                "provider": row["provider"],
+                "provider": row["bound_provider"] or row["provider"],
+                "providers": _model_providers(row["alias"], row["provider"]),
+                "upstreamModels": {provider: _channel_model(row["alias"],provider,row["upstream_model"],row["capabilities_json"])[0]
+                                   for provider in _model_providers(row["alias"],row["provider"])},
                 "modality": row["modality"],
                 "channelId": row["channel_id"],
                 "channelName": row["channel_name"],
                 "channelStatus": row["channel_status"],
-                "upstreamModel": row["upstream_model"],
+                "upstreamModel": _channel_model(row["alias"], row["bound_provider"] or row["provider"],row["upstream_model"],row["capabilities_json"])[0],
                 "enabled": bool(row["binding_enabled"]) if row["binding_enabled"] is not None else False,
             }
             for row in rows
@@ -563,9 +581,9 @@ class ProviderRelay:
                     raise ApiError("模型或渠道不存在", 404, "model_or_channel_not_found")
                 if channel["project_name"] != canonical:
                     raise ApiError("不能绑定其他项目的渠道", 403, "cross_project_channel_forbidden")
-                if channel["provider"] != model["provider"]:
+                if channel["provider"] not in _model_providers(alias, model["provider"]):
                     raise ApiError("模型与渠道供应商不匹配", 422, "model_provider_mismatch")
-                upstream_model = str(model["upstream_model"] or "").strip()
+                upstream_model = str(_channel_model(alias,channel["provider"],model["upstream_model"],"{}")[0] or "").strip()
                 if not upstream_model or len(upstream_model) > 256:
                     raise ApiError("模型目录中的上游模型ID无效", 500, "model_catalog_invalid")
                 connection.execute(
@@ -591,7 +609,7 @@ class ProviderRelay:
         with self.database.connect() as connection:
             row = connection.execute(
                 """
-                SELECT m.alias,m.display_name,m.provider,m.modality,m.protocol,m.capabilities_json,
+                SELECT m.alias,m.display_name,c.provider,m.modality,m.protocol,m.capabilities_json,
                        m.upstream_model,c.id AS channel_id,c.name AS channel_name,c.config_json,
                        pc.id AS credential_id,pc.secret_ciphertext
                 FROM model_catalog m
@@ -612,8 +630,8 @@ class ProviderRelay:
             provider=row["provider"],
             modality=row["modality"],
             protocol=row["protocol"],
-            capabilities=_loaded(row["capabilities_json"], {}),
-            upstream_model=row["upstream_model"],
+            capabilities=_channel_model(alias,row["provider"],row["upstream_model"],row["capabilities_json"])[1],
+            upstream_model=_channel_model(alias,row["provider"],row["upstream_model"],row["capabilities_json"])[0],
             channel_id=row["channel_id"],
             channel_name=row["channel_name"],
             channel_config=_loaded(row["config_json"], {}),
@@ -626,7 +644,7 @@ class ProviderRelay:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT m.alias,m.display_name,m.modality,m.capabilities_json
+                SELECT m.alias,m.display_name,m.modality,m.capabilities_json,m.upstream_model,c.provider
                 FROM model_catalog m
                 JOIN project_model_bindings b
                   ON b.model_alias=m.alias AND b.project_name=? AND b.enabled=1
@@ -646,7 +664,8 @@ class ProviderRelay:
                 "owned_by": "richbest",
                 "display_name": row["display_name"],
                 "modality": row["modality"],
-                "capabilities": _loaded(row["capabilities_json"], {}),
+                "provider": row["provider"],
+                "capabilities": _channel_model(row["alias"],row["provider"],row["upstream_model"],row["capabilities_json"])[1],
             }
             for row in rows
         ]
@@ -669,6 +688,8 @@ class ProviderRelay:
         return route
 
     def _base_url(self, route: ModelRoute) -> str:
+        if route.provider == "modeltop":
+            return "https://modeltop.ai/api/v3" if route.modality == "video" else "https://modeltop.ai/v1"
         if route.provider == "openai":
             return "https://api.openai.com/v1"
         if route.provider == "maxmodel":
@@ -775,10 +796,11 @@ class ProviderRelay:
             credential_id=row["credential_id"],
             secret=self.vault.decrypt(row["secret_ciphertext"]),
         )
-        if route.provider in {"volcengine_speech", "maxmodel", "byteplus_modelark"}:
+        if route.provider in {"volcengine_speech", "maxmodel", "byteplus_modelark", "modeltop"}:
             provider_name = {
                 "volcengine_speech": "豆包语音", "maxmodel": "MaxModel",
                 "byteplus_modelark": "BytePlus ModelArk",
+                "modeltop": "ModelTop",
             }[route.provider]
             message = f"{provider_name}没有可靠的免费凭证探测接口，请绑定模型后从用户端发起一次真实测试"
             with self.database.connect() as connection:
@@ -1495,6 +1517,8 @@ class ProviderRelay:
                 "image_count_unsupported",
                 details={"maxImages": maximum},
             )
+        if route.provider == "modeltop":
+            return self._modeltop_image_payload(route, payload)
         if route.provider not in ARK_PROVIDERS:
             upstream = dict(payload)
             upstream["model"] = route.upstream_model
@@ -1526,6 +1550,46 @@ class ProviderRelay:
         upstream["model"] = route.upstream_model
         if route.provider == "byteplus_modelark":
             self._validate_byteplus_image_payload(route, payload, upstream, image, count)
+        return upstream
+
+    @staticmethod
+    def _modeltop_image_payload(route: ModelRoute, payload: dict[str, Any]) -> dict[str, Any]:
+        # Only the documented synchronous text-to-image contract. Reference
+        # image editing is multipart /images/edits, not a JSON passthrough.
+        allowed = {"model", "prompt", "n", "size", "quality", "background", "output_format", "output_compression", "response_format", "stream"}
+        unknown = sorted(set(payload) - allowed)
+        if unknown:
+            raise ApiError("ModelTop图片模型不支持部分参数", 422, "image_parameter_unsupported", details={"fields": unknown})
+        size = payload.get("size", "auto")
+        sizes = {"auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152", "3840x2160", "2160x3840"}
+        if not isinstance(size, str):
+            raise ApiError("ModelTop图片尺寸无效", 422, "image_size_invalid")
+        if size not in sizes:
+            match = re.fullmatch(r"(\d{1,5})x(\d{1,5})", str(size))
+            width, height = (int(match[1]), int(match[2])) if match else (0, 0)
+            if not (route.capabilities["customSizes"] and width and height and max(width, height) <= 3840
+                    and width % 16 == height % 16 == 0 and max(width, height) <= 3 * min(width, height)
+                    and 655360 <= width * height <= 8294400):
+                raise ApiError("ModelTop图片尺寸无效", 422, "image_size_invalid")
+        quality = payload.get("quality", "auto")
+        if not isinstance(quality, str) or quality not in route.capabilities["qualityLevels"]:
+            raise ApiError("ModelTop图片质量档位无效", 422, "image_quality_invalid")
+        background = payload.get("background", "auto")
+        if not isinstance(background, str) or background not in {"auto", "opaque", "transparent"} or (background == "transparent" and not route.capabilities["customSizes"]):
+            raise ApiError("ModelTop图片背景参数无效", 422, "image_parameter_unsupported")
+        output_format = payload.get("output_format", "png")
+        if not isinstance(output_format, str) or output_format not in {"png", "jpeg", "webp"} or ("output_format" in payload and not route.capabilities["outputFormat"]):
+            raise ApiError("ModelTop图片输出格式无效", 422, "image_output_format_unsupported")
+        if background == "transparent" and output_format == "jpeg":
+            raise ApiError("透明背景需要png或webp格式", 422, "image_output_format_unsupported")
+        compression = payload.get("output_compression")
+        if "output_compression" in payload and (not route.capabilities["outputFormat"] or output_format == "png"
+                or isinstance(compression, bool) or not isinstance(compression, int) or not 0 <= compression <= 100):
+            raise ApiError("ModelTop图片压缩参数无效", 422, "image_parameter_unsupported")
+        # GPT Image returns Base64 natively. Do not send the legacy DALL-E
+        # response_format flag; expose the returned b64_json without uploading it.
+        upstream = {key: value for key, value in payload.items() if key not in {"response_format", "stream"}}
+        upstream.update(model=route.upstream_model, size=size, quality=quality)
         return upstream
 
     @staticmethod
@@ -1634,7 +1698,7 @@ class ProviderRelay:
         data["model"] = route.alias
         provider_id = provider_id or _provider_request_id(response.headers, data)
         images = data.get("data") if isinstance(data.get("data"), list) else []
-        if route.provider == "byteplus_modelark":
+        if route.provider in {"byteplus_modelark", "modeltop"}:
             # A partial batch can contain error entries. Only actual outputs
             # count as successful images; an empty/malformed response is not free usage.
             images = [item for item in images if isinstance(item, dict) and (item.get("url") or item.get("b64_json")) and not item.get("error")]
@@ -2014,7 +2078,7 @@ class ProviderRelay:
             safe_content.append({"type": content_type, value_field: {"url": url}, "role": role})
         if route.capabilities.get("imageRequired") and not any(item["type"] == "image_url" for item in safe_content):
             raise ApiError("当前模型必须提供参考图片", 422, "video_image_required")
-        if route.provider == "byteplus_modelark":
+        if route.provider in {"byteplus_modelark", "modeltop"}:
             counts = {kind: sum(item["type"] == kind for item in safe_content) for kind in media_fields}
             for kind, limit_name in (("image_url", "maxImages"), ("video_url", "maxVideos"), ("audio_url", "maxAudios")):
                 if counts[kind] > route.capabilities[limit_name]:
@@ -2133,6 +2197,8 @@ class ProviderRelay:
     async def cancel_ark_video(self, principal: ApiPrincipal, task_id: str) -> None:
         task = self.get_local_task(principal, task_id)
         route = self._task_route(task)
+        if route.capabilities.get("cancelSupported") is False:
+            raise ApiError("该供应商未开放任务取消接口", 422, "video_cancel_unsupported")
         if route.provider not in ARK_PROVIDERS:
             raise ApiError(
                 "当前视频供应商不支持通过中转站取消任务",
@@ -2164,7 +2230,7 @@ class ProviderRelay:
         with self.database.connect() as connection:
             row = connection.execute(
                 """
-                SELECT m.display_name,m.provider,m.modality,m.protocol,m.capabilities_json,
+                SELECT m.display_name,c.provider,m.modality,m.protocol,m.capabilities_json,
                        c.name AS channel_name,c.config_json,pc.secret_ciphertext
                 FROM model_catalog m
                 JOIN provider_channels c ON c.id=?
@@ -2181,7 +2247,7 @@ class ProviderRelay:
             provider=row["provider"],
             modality=row["modality"],
             protocol=row["protocol"],
-            capabilities=_loaded(row["capabilities_json"], {}),
+            capabilities=_channel_model(task["model_alias"],row["provider"],task["upstream_model"],row["capabilities_json"])[1],
             upstream_model=task["upstream_model"],
             channel_id=task["channel_id"],
             channel_name=row["channel_name"],

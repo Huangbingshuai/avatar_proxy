@@ -34,6 +34,7 @@ type GlobalRate = {
   rules: RateRule[];
   editableRules: RateRule[];
   officialSource?: { version: string; url: string; currency?: string; fxRateToCny?: string } | null;
+  additionalSources?: Array<{ version: string; url: string; fxRateToCny: string }>;
 };
 
 const providers: Record<string, string> = {
@@ -42,6 +43,7 @@ const providers: Record<string, string> = {
   volcengine_speech: "豆包语音",
   openai: "OpenAI",
   maxmodel: "MaxModel",
+  modeltop: "ModelTop",
   aliyun_bailian: "阿里百炼",
   minimax: "MiniMax",
 };
@@ -87,7 +89,8 @@ function unitLabel(rule: RateRule) {
   return "/ 次";
 }
 
-function dimensionLabel(value: string) {
+function dimensionLabel(value: string): string {
+  if (value.startsWith("modeltop:")) return `ModelTop · ${value.slice(9) === "image" ? "图片" : dimensionLabel(value.slice(9))}`;
   if (!value) return "标准";
   const pixelBucket = /^output:(le|gt)(\d+)$/.exec(value);
   if (pixelBucket) {
@@ -156,7 +159,7 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
   const filteredRates = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("zh-CN");
     return rates.filter((rate) => {
-      if (providerFilter && rate.provider !== providerFilter) return false;
+      if (providerFilter && rate.provider !== providerFilter && !(providerFilter === "modeltop" && rate.rules.some((rule) => rule.dimension.startsWith("modeltop:")))) return false;
       if (modalityFilter && rate.modality !== modalityFilter) return false;
       if (statusFilter === "configured" && !rate.configured) return false;
       if (statusFilter === "pending" && rate.configured) return false;
@@ -256,7 +259,8 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
               {(drafts[rate.model] ?? []).length === 0 && <div className="globalRateEmpty">尚未配置计价规则</div>}
             </div>
             <div className="globalRateAction">
-              {rate.officialSource ? <a href={rate.officialSource.url} target="_blank" rel="noreferrer">{rate.officialSource.currency === "USD" ? `BytePlus 官方价（USD 按 ${rate.officialSource.fxRateToCny} 折算）` : "火山官方价"} · {rate.officialSource.version}</a> : <span>人工定价</span>}
+              {rate.officialSource ? <a href={rate.officialSource.url} target="_blank" rel="noreferrer">{rate.officialSource.currency === "USD" ? `${rate.provider === "modeltop" ? "ModelTop 公示价" : "BytePlus 官方价"}（USD 按 ${rate.officialSource.fxRateToCny} 折算）` : "火山官方价"} · {rate.officialSource.version}</a> : <span>人工定价</span>}
+              {rate.additionalSources?.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">ModelTop 公示价（USD 按 {source.fxRateToCny} 折算） · {source.version}</a>)}
               <button className="primary" type="button" onClick={() => void save(rate)} disabled={busy === rate.model || (drafts[rate.model] ?? []).length === 0}>{busy === rate.model ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}保存</button>
             </div>
           </article>

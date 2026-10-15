@@ -13,6 +13,8 @@ from typing import Any
 from .admin_auth import AdminPrincipal
 from .database import Database
 from .errors import ApiError
+from .modeltop import (MODELTOP_FX, MODELTOP_FX_SOURCE_URL, MODELTOP_FX_TIMESTAMP,
+                      MODELTOP_RATE_VERSION, MODELTOP_RATE_SOURCE_URL, MODELTOP_MODELS, image_token_measurements)
 from .official_rates import (
     BYTEPLUS_RATE_SOURCE_URL,
     BYTEPLUS_RATE_VERSION,
@@ -88,6 +90,8 @@ def timestamp_month(value: str | int | float | None) -> str:
 
 def normalize_resolution(value: Any, width: Any = None, height: Any = None) -> str | None:
     raw = str(value or "").strip().lower()
+    if raw == "4k":
+        return "4k"
     if raw in VIDEO_RESOLUTIONS:
         return raw
     if raw.endswith("p") and raw[:-1].isdigit():
@@ -278,6 +282,10 @@ class BillingManager:
         if modality == "text":
             raw = (("input_tokens", "", TOKEN_UNIT), ("output_tokens", "", TOKEN_UNIT))
         elif modality == "image":
+            if model.get("capabilities", {}).get("imageTokenBilling"):
+                return [{"metric": metric, "dimension": dimension, "unitSize": TOKEN_UNIT, "unitPriceYuan": None}
+                        for metric, dimension in (("input_tokens", "text"), ("input_tokens", "image"),
+                                                  ("output_tokens", "image"), ("cached_input_tokens", ""))]
             threshold = model.get("capabilities", {}).get("billingPixelThreshold")
             raw = (
                 (("image", f"output:le{threshold}", 1), ("image", f"output:gt{threshold}", 1), ("image", "input:after_first", 1))
@@ -288,7 +296,7 @@ class BillingManager:
         elif modality == "audio":
             capabilities = model.get("capabilities") or {}
             raw = ((str(capabilities.get("billingMetric") or "audio_second"), "", int(capabilities.get("billingUnit") or 60)),)
-        elif model["provider"] == "byteplus_modelark":
+        elif model["provider"] in {"byteplus_modelark", "modeltop"}:
             capabilities = model.get("capabilities") or {}
             raw = tuple(
                 ("output_tokens", f"{resolution}:{variant}", TOKEN_UNIT)
@@ -302,10 +310,16 @@ class BillingManager:
             for metric, dimension, unit_size in raw
         ]
 
-    def get_rate(self, alias: str, month: str) -> dict[str, Any]:
+    def get_rate(self, alias: str, month: str, provider_filter: str | None = None) -> dict[str, Any]:
         validate_month(month)
         model = self._catalog_model(alias)
         rows = self._resolved_rates(alias, month)
+        if provider_filter is not None:
+            rows = [dict(row, resolution=row["resolution"].removeprefix("modeltop:")) for row in rows
+                    if row["resolution"].startswith("modeltop:") == (provider_filter == "modeltop")]
+            model["provider"] = provider_filter
+            if provider_filter == "modeltop" and alias in MODELTOP_MODELS:
+                model["capabilities"] = MODELTOP_MODELS[alias][6]
         prices: dict[str, Any]
         simple_rows = [row for row in rows if not row["resolution"]]
         if model["modality"] == "text":
@@ -346,7 +360,11 @@ class BillingManager:
             for row in sorted(rows, key=lambda item: (item["metric"], item["resolution"]))
         ]
         provider = model["provider"]
-        if provider == "byteplus_modelark":
+        if provider == "modeltop":
+            official = {"version": MODELTOP_RATE_VERSION, "url": MODELTOP_RATE_SOURCE_URL,
+                        "currency": "USD", "fxRateToCny": str(MODELTOP_FX),
+                        "fxSource": MODELTOP_FX_SOURCE_URL, "fxTimestamp": MODELTOP_FX_TIMESTAMP}
+        elif provider == "byteplus_modelark":
             official = {"version": BYTEPLUS_RATE_VERSION, "url": BYTEPLUS_RATE_SOURCE_URL,
                         "currency": "USD", "fxRateToCny": str(USD_CNY_FX)}
         elif provider == "volcengine_speech":
@@ -355,6 +373,15 @@ class BillingManager:
             official = {"version": VOLCENGINE_RATE_VERSION, "url": VOLCENGINE_RATE_SOURCE_URL}
         else:
             official = None
+        editable_rules = rules or self._editable_rule_templates(model)
+        if provider_filter is None and alias in MODELTOP_MODELS and model["modality"] == "image":
+            editable_rules = list(rules)
+            templates = self._editable_rule_templates(model) if provider != "modeltop" else []
+            token_model = {**model, "capabilities": MODELTOP_MODELS[alias][6]}
+            templates += [{**rule, "dimension": "modeltop:" + rule["dimension"]}
+                          for rule in self._editable_rule_templates(token_model)]
+            known = {(rule["metric"],rule["dimension"]) for rule in editable_rules}
+            editable_rules += [rule for rule in templates if (rule["metric"],rule["dimension"]) not in known]
         return {
             "model": model["alias"],
             "displayName": model["display_name"],
@@ -366,10 +393,13 @@ class BillingManager:
             "sourceMonths": sorted({row["effective_month"] for row in rows}),
             "prices": prices,
             "rules": rules,
-            "editableRules": rules or self._editable_rule_templates(model),
+            "editableRules": editable_rules,
             "configured": bool(rules),
             "scope": "global",
             "officialSource": official if alias in OFFICIAL_RATES else None,
+            "additionalSources": [{"version": MODELTOP_RATE_VERSION, "url": MODELTOP_RATE_SOURCE_URL,
+                                   "currency": "USD", "fxRateToCny": str(MODELTOP_FX)}]
+                if provider_filter is None and provider != "modeltop" and alias in MODELTOP_MODELS else [],
         }
 
     def rates(self, month: str) -> list[dict[str, Any]]:
@@ -402,7 +432,7 @@ class BillingManager:
             display_name = str(available.get("display_name") or alias)
             if needle and needle not in alias.casefold() and needle not in display_name.casefold():
                 continue
-            rate = self.get_rate(alias, month)
+            rate = self.get_rate(alias, month, str(available.get("provider") or self._catalog_model(alias)["provider"]))
             rules = []
             for rule in rate["rules"]:
                 list_micros = yuan_to_micros(rule["unitPriceYuan"])
@@ -679,6 +709,11 @@ class BillingManager:
                 measurements.append(("cached_input_tokens", dimension, Decimal(cached_tokens)))
             return measurements, None
         if row["modality"] == "image":
+            if row.get("provider") == "modeltop":
+                response = _loaded(row.get("metadata_json"), {}).get("response", {})
+                usage = response.get("usage") if isinstance(response, dict) else None
+                measurements, reason = image_token_measurements(usage if isinstance(usage, dict) else {})
+                return ([(metric, "modeltop:" + dimension, quantity) for metric,dimension,quantity in measurements], None) if measurements is not None else (None, reason)
             if row["generated_images"] is None:
                 return None, "usage_unknown"
             if row.get("model_alias") == "dola-seedream-5.0-pro":
@@ -731,7 +766,7 @@ class BillingManager:
             return [("audio_second", "", Decimal(str(row["audio_seconds"])))], None
         billing_meta = _loaded(row.get("billing_metadata_json"), {})
         provider_meta = _loaded(row.get("metadata_json"), {})
-        if row.get("provider") in {"volcengine_ark", "byteplus_modelark"}:
+        if row.get("provider") in {"volcengine_ark", "byteplus_modelark", "modeltop"}:
             if row.get("output_tokens") is None or int(row["output_tokens"]) <= 0:
                 return None, "usage_unknown"
             dimensions = {dimension for _, dimension, _, _ in OFFICIAL_RATES.get(row["model_alias"], ())}
@@ -744,7 +779,8 @@ class BillingManager:
             if not resolution:
                 return None, "resolution_unknown"
             variant = "video" if billing_meta.get("containsVideoInput") else "no_video"
-            return [("output_tokens", f"{resolution}:{variant}", Decimal(row["output_tokens"]))], None
+            prefix = "modeltop:" if row.get("provider") == "modeltop" else ""
+            return [("output_tokens", f"{prefix}{resolution}:{variant}", Decimal(row["output_tokens"]))], None
         if row["video_seconds"] is None or Decimal(str(row["video_seconds"])) <= 0:
             return None, "usage_unknown"
         resolution = normalize_resolution(
@@ -758,8 +794,8 @@ class BillingManager:
     def _collect_sources(self, connection: Any) -> set[tuple[str, str]]:
         touched: set[tuple[str, str]] = set()
         relay_rows = connection.execute(
-            "SELECT u.*,m.modality,m.provider,m.capabilities_json,t.metadata_json,t.billing_metadata_json FROM inference_usage u "
-            "JOIN model_catalog m ON m.alias=u.model_alias LEFT JOIN inference_tasks t ON t.id=u.task_id "
+            "SELECT u.*,m.modality,c.provider,m.capabilities_json,t.metadata_json,t.billing_metadata_json FROM inference_usage u "
+            "JOIN model_catalog m ON m.alias=u.model_alias JOIN provider_channels c ON c.id=u.channel_id LEFT JOIN inference_tasks t ON t.id=u.task_id "
             "WHERE u.status='succeeded' ORDER BY u.created_at"
         ).fetchall()
         for raw in relay_rows:

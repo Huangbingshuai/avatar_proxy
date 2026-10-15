@@ -42,6 +42,7 @@ const providerLabels: Record<string, string> = {
   volcengine_speech: "豆包语音",
   openai: "OpenAI",
   maxmodel: "MaxModel",
+  modeltop: "ModelTop",
   aliyun_bailian: "阿里百炼",
   minimax: "MiniMax",
 };
@@ -74,7 +75,8 @@ function metricLabel(rate: ModelRate, rule: PriceRule) {
   return rule.metric;
 }
 
-function dimensionLabel(value: string) {
+function dimensionLabel(value: string): string {
+  if (value.startsWith("modeltop:")) return `ModelTop · ${value.slice(9) === "image" ? "图片" : dimensionLabel(value.slice(9))}`;
   if (!value) return "标准";
   const pixelBucket = /^output:(le|gt)(\d+)$/.exec(value);
   if (pixelBucket) {
@@ -148,7 +150,7 @@ export default function ModelPriceTable({ adminApi }: { adminApi: AdminApi }) {
   const filteredRates = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("zh-CN");
     return rates.filter((rate) => {
-      if (provider && rate.provider !== provider) return false;
+      if (provider && rate.provider !== provider && !(provider === "modeltop" && rate.rules.some((rule) => rule.dimension.startsWith("modeltop:")))) return false;
       if (modality && rate.modality !== modality) return false;
       if (status === "configured" && !rate.configured) return false;
       if (status === "pending" && rate.configured) return false;

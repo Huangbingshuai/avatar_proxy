@@ -119,6 +119,9 @@ sqlite3 /opt/avatar-proxy/backups/avatar_proxy-before-admin-auth.db 'PRAGMA inte
 
 - `official-volcengine-rates-2026-09-04`：国内火山官方价目，生效账期 `2026-09`。
 - `official-byteplus-rates-2026-10-14`：海外 BytePlus 官方美元公示价按冻结汇率 `1 USD = 6.705025 CNY` 折算后写入，生效账期 `2026-10`，不叠加加价。
+- `official-modeltop-rates-2026-10-15`：ModelTop市场美元公示价按冻结汇率 `1 USD = 6.706494 CNY` 折算，生效账期 `2026-10`，55条规则使用 `modeltop:` 计价维度隔离，保留已有原厂与其他渠道价格。
+
+ModelTop升级会幂等重建 `provider_channels` 的供应商CHECK约束，保留渠道及其凭证、绑定和任务外键；新增6条不重复模型目录行，不创建任何项目渠道或模型绑定。升级前必须保存一致性SQLite备份、独立加密密钥和原镜像，并在隔离的数据库副本上执行迁移与外键检查。本地供应商Key、项目绑定与测试数据库不得上传生产。
 
 价目写入只新增 `billing_model_rates` 行，不改写、不删除既有行；某个别名不在 `model_catalog` 时会被跳过而不是报错。模型目录写入在价目写入之前完成，因此同一次启动内新增的模型和对应价目都会就位。汇率与官方价是代码中的常量，调整它们需要同时提升价目版本号，否则已升级过的库不会再次写入；超级管理员仍可在控制台按账期覆盖单价。
 

@@ -53,7 +53,7 @@ Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素
 - 可选的模型中转：使用同一枚 `vap_live_*` 调用文本、图片、多模态向量、音频和统一异步视频接口；按项目路由到火山方舟、BytePlus ModelArk（海外）、豆包语音、阿里百炼、MiniMax、MaxModel 或 OpenAI 渠道。
 - 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
 - 普通管理员通过独立的只读“模型价格”页面查看超级管理员配置的完整税前价目；客户可通过 `/v1/pricing` 查询当前项目可用模型的全局价和项目折扣后参考价。
-- 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；图片覆盖 Doubao Seedream 4.0、4.5、5.0、5.0 Lite、5.0 Pro，以及经 MaxModel 转发的 `gpt-image-2`；视频覆盖 6 个 Doubao Seedance 模型、阿里百炼 `wan3.0-video` 和 MiniMax `minimax-h3`；另提供 Doubao 多模态向量、TTS、ASR 和 Seed Audio。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。每个别名在服务端模型目录中固定对应一个真实上游模型 ID，管理员只选择项目渠道，不能手动改写模型 ID。
+- 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；图片覆盖 Doubao Seedream 4.0、4.5、5.0、5.0 Lite、5.0 Pro，以及经 MaxModel 转发的 `gpt-image-2`；视频覆盖 6 个 Doubao Seedance 模型、阿里百炼 `wan3.0-video` 和 MiniMax `minimax-h3`；另提供 Doubao 多模态向量、TTS、ASR 和 Seed Audio。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。模型与所选渠道在服务端固定映射到上游模型ID；管理员选择项目渠道，不手动改写模型ID。
 
 模型中转调用方可直接使用 [模型中转接口文档](backend/MODEL_RELAY_API.md)；素材库及完整客户接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。模型目录的固定映射、接入门槛和验收记录见 [火山方舟模型目录维护文档](backend/VOLCENGINE_MODEL_CATALOG.md)。
 
@@ -66,6 +66,14 @@ Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素
 海外渠道固定请求 `https://ark.ap-southeast.bytepluses.com/api/v3`。视频复用 `/api/v3/contents/generations/tasks`，图片复用 `/v1/images/generations`；任务及用量保留原渠道和凭证版本，日志和近 30 天导出继续覆盖这两个入口。渠道“测试”不会生成视频或图片，真实模型权限须通过实际请求验收。
 
 海外价目按官方美元公示价折算为全局人民币售价：`1 USD = 6.705025 CNY`（2026-10-14 冻结汇率），不叠加加价，也不复用国内价格。视频以真实输出 Token、分辨率和是否含视频参考输入计量；Pro 图片根据实际输出像素档位及首张后的参考图数量计量，Lite/Flash 按成功图片数计量。缺少价格或计量维度时保留为待计价。配置、模型映射与验收说明见 [BytePlus 海外渠道接入说明](backend/BYTEPLUS_MODELARK.md)。
+
+### ModelTop 中转渠道
+
+新增独立供应商 `modeltop`，固定请求 `https://modeltop.ai`，复用渠道凭证加密、超级管理员密码/TOTP再认证和项目隔离。支持3个同步GPT生图型号及8个Seedance视频型号（标准/`filter-off`），模型不加渠道前缀。同一模型只展示一行，通过所选渠道决定上游ID、能力和计价；不覆盖已有绑定、价目或历史任务。
+
+新增价目使用 **ModelTop 自身市场详情**，按2026-10-15汇率快照 `1 USD = 6.706494 CNY` 一次性折算；不是原厂价复制或每日浮动价。GPT按细分Token、视频按真实输出Token和分辨率/视频参考档位计费。缺价格或用量仍待计价。初始化幂等，不覆盖后续超管改价。
+
+配置、价格来源与边界见 [ModelTop 接入说明](backend/MODELTOP_RELAY.md)，客户请求见 [CLIENT_API.md](backend/CLIENT_API.md)。2026-10-15 经用户授权，已通过本地 `test_hb` 业务Key完成11/11最小参数真实付费验收：3张低质量图片、8段4秒/480p无音频视频，最终结果与真实用量均已核对，本地价目计费合计14.067275元。生产发布状态另见部署记录；本地Key、渠道绑定和测试数据不会随代码发布到线上。
 
 ## 客户 API 快速接入
 
@@ -339,9 +347,9 @@ npm test
 - `POST /minidrama/payments/callbacks/wechat` 透明转发微信支付通知到 LocalMiniDrama；
 - 生产环境应保持 `ENABLE_API_DOCS=false`。
 
-### 生产发布基线（2026-09-11）
+### 历史生产发布记录（2026-09-11）
 
-- 当前生产应用 Release 为 `20260911-call-log-detail-19e0215`，控制台对应代码提交 `19e0215`；后续仅修改文档并推送 Git 不代表生产应用已经再次部署。
+- 当次生产应用 Release 为 `20260911-call-log-detail-19e0215`，控制台对应代码提交 `19e0215`；2026-10-14的后续发布见 [BytePlus生产部署记录](backend/BYTEPLUS_MODELARK.md)。仅修改文档并推送 Git 不代表生产应用已经再次部署。
 - 本次只重建并替换 `console`，`api`、客户工具 `edge` 与 HTTPS `api-gateway` 容器均未重启，也没有修改其他宿主机业务容器。
 - 数据库和后端仍沿用 `20260911-call-log-export-5512285` 发布；其 SQLite 一致性快照、`admin_totp.key`、`provider_credentials.key`、生产环境配置及旧 API/控制台镜像均已保留，回滚备份位于 `/opt/avatar-proxy/backups/20260911-call-log-export-before-5512285`。
 - 新控制台镜像已先通过隔离容器首页检查；发布后已确认公网首页和 API 健康、受保护接口继续要求鉴权、新构建包含调用详情稳定展示逻辑，且控制台日志无新增异常。
