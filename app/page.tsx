@@ -6,10 +6,8 @@ import {
   ArrowRight,
   Ban,
   BookOpen,
-  CheckCircle2,
   CircleDollarSign,
   Clipboard,
-  CloudUpload,
   FolderKanban,
   Gauge,
   KeyRound,
@@ -38,6 +36,7 @@ import ApiCallLogsPanel from "./api-call-logs-panel";
 import BillingPanel from "./billing-panel";
 import ModelPriceTable from "./model-price-table";
 import ModelRelayPanel from "./model-relay-panel";
+import { CLIENT_DOCS_URL } from "./client-docs-manifest";
 
 type Project = {
   name: string;
@@ -118,7 +117,6 @@ type Tab = "overview" | "projects" | "keys" | "logs" | "models" | "prices" | "bi
 type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
-const EXAMPLE_VIDEO_MODEL = "doubao-seedance-2.0";
 
 const baseTabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "概览", icon: Gauge },
@@ -792,168 +790,23 @@ function QuotaPanel({ projects, apiKeys, events, audits, adminApi, onChanged }: 
 }
 
 function IntegrationPanel() {
-  const [copied, setCopied] = useState("");
-  const modelList = `curl "${API_BASE_URL}/v1/models" \\
-  -H "Authorization: Bearer $API_KEY"`;
-  const modelPricing = `curl "${API_BASE_URL}/v1/pricing?model=glm-5.2" \\
-  -H "Authorization: Bearer $API_KEY"`;
-  const createVideo = `curl -X POST "${API_BASE_URL}/api/v3/contents/generations/tasks" \\
-  -H "Authorization: Bearer $API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -H "Idempotency-Key: video-order-001" \\
-  -d '{
-    "model": "${EXAMPLE_VIDEO_MODEL}",
-    "content": [
-      {"type": "text", "text": "人物面向镜头介绍产品，画面稳定"},
-      {
-        "type": "image_url",
-        "image_url": {"url": "asset://asset-example"},
-        "role": "reference_image"
-      }
-    ],
-    "ratio": "16:9",
-    "resolution": "720p",
-    "duration": 5,
-    "generate_audio": true,
-    "watermark": false
-  }'`;
-  const queryVideo = `curl "${API_BASE_URL}/api/v3/contents/generations/tasks/$TASK_ID" \\
-  -H "Authorization: Bearer $API_KEY"`;
-  const cancelVideo = `curl -X DELETE "${API_BASE_URL}/api/v3/contents/generations/tasks/$TASK_ID" \\
-  -H "Authorization: Bearer $API_KEY"`;
-  const uploadAsset = `curl -X POST "${API_BASE_URL}/api/asset/upload-file" \\
-  -H "Authorization: Bearer $API_KEY" \\
-  -F "file=@./reference.png;type=image/png"`;
-  const registerAsset = `curl -X POST "${API_BASE_URL}/api/asset/create" \\
-  -H "Authorization: Bearer $API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "groupId": "group-example",
-    "url": "<上传响应中的 url>",
-    "uploadId": "<上传响应中的 uploadId>",
-    "assetType": "Image",
-    "name": "人物参考图"
-  }'`;
-
-  async function copyExample(id: string, value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(id);
-      window.setTimeout(() => setCopied((current) => current === id ? "" : current), 1800);
-    } catch {
-      setCopied("");
-    }
-  }
-
-  return <div className="content integrationPage">
-    <section className="integrationHero">
-      <div className="integrationHeroCopy">
-        <span className="heroTag">PUBLIC API GUIDE</span>
-        <h2>业务 API 接入说明</h2>
-        <p>交付给客户的只有公网 API 地址和一枚 <code>vap_live_...</code> 业务 Key。模型路由、项目归属和火山凭证全部由服务端管理。</p>
+  return <section className="content clientDocsPanel" aria-label="客户 API 接口文档">
+    <div className="clientDocsActions">
+      <span>完整客户接口文档 · 与独立 HTML 同步</span>
+      <div>
+        <a className="secondary" href={CLIENT_DOCS_URL} target="_blank" rel="noopener noreferrer">独立窗口阅读</a>
+        <a className="primary" href={CLIENT_DOCS_URL} download="星辰平台-API-接口文档.html">下载 HTML</a>
       </div>
-      <dl className="integrationFacts">
-        <div><dt>API 地址</dt><dd><code>{API_BASE_URL}</code></dd></div>
-        <div><dt>鉴权方式</dt><dd>Bearer API Key</dd></div>
-        <div><dt>项目隔离</dt><dd>按 Key 自动绑定</dd></div>
-      </dl>
-    </section>
-
-    <section className="integrationFlow" aria-label="推荐接入流程">
-      {[
-        ["01", "验证密钥", "GET /api/auth/me"],
-        ["02", "获取模型", "GET /v1/models"],
-        ["03", "提交任务", "POST /api/v3/.../tasks"],
-        ["04", "轮询结果", "GET /api/v3/.../tasks/{id}"],
-      ].map((item, index) => <div className="integrationFlowItem" key={item[0]}><span>{item[0]}</span><div><b>{item[1]}</b><code>{item[2]}</code></div>{index < 3 && <ArrowRight size={16} />}</div>)}
-    </section>
-
-    <div className="integrationLayout">
-      <main className="integrationMain">
-        <section className="panel integrationSection">
-          <header><span className="docIcon"><KeyRound size={18} /></span><div><small>STEP 1</small><h3>准备鉴权与可用模型</h3><p>所有业务请求使用同一枚业务 Key。先读取模型列表，再使用返回的模型别名发起调用。</p></div></header>
-          <div className="authContract"><code>Authorization: Bearer vap_live_xxx</code><span>JSON 请求还需 Content-Type: application/json</span></div>
-          <DocCode id="models" label="查询当前项目可用模型" value={modelList} copied={copied} onCopy={copyExample} />
-          <DocCode id="pricing" label="查询模型价格（可选名称过滤）" value={modelPricing} copied={copied} onCopy={copyExample} />
-          <p className="docHint">若 <code>data</code> 为空，表示当前项目尚未启用模型；不要猜测或硬编码列表中未返回的模型。</p>
-        </section>
-
-        <section className="panel integrationSection">
-          <header><span className="docIcon coral"><Sparkles size={18} /></span><div><small>STEP 2</small><h3>创建 Seedance 视频任务</h3><p>创建接口是异步任务。成功响应仅返回 <code>{"{\"id\":\"vid_...\"}"}</code>，请保存任务 ID。</p></div></header>
-          <DocCode id="create-video" label="文本 + 素材生成视频" value={createVideo} copied={copied} onCopy={copyExample} />
-          <div className="mediaContract">
-            <div><b>图片</b><code>image_url</code><span>reference_image / first_frame / last_frame</span></div>
-            <div><b>视频</b><code>video_url</code><span>reference_video</span></div>
-            <div><b>音频</b><code>audio_url</code><span>reference_audio</span></div>
-          </div>
-          <p className="docHint"><code>content</code> 必须包含文本。素材数量、类型、分辨率和时长应以 <code>/v1/models</code> 返回的模型能力为准；素材库引用统一使用 <code>asset://&lt;assetId&gt;</code>。</p>
-        </section>
-
-        <section className="panel integrationSection">
-          <header><span className="docIcon"><Activity size={18} /></span><div><small>STEP 3</small><h3>轮询、读取结果与取消</h3><p>建议按 5～10 秒间隔轮询，不要并发高频查询。</p></div></header>
-          <div className="integrationCodePair">
-            <DocCode id="query-video" label="查询任务" value={queryVideo} copied={copied} onCopy={copyExample} />
-            <DocCode id="cancel-video" label="取消任务" value={cancelVideo} copied={copied} onCopy={copyExample} />
-          </div>
-          <div className="statusRail">
-            <span className="queued">queued</span><ArrowRight size={14} /><span className="running">running</span><ArrowRight size={14} /><span className="succeeded">succeeded</span>
-            <i>或</i><span className="failed">failed / cancelled</span>
-          </div>
-          <p className="docHint">成功后读取 <code>content.video_url</code>。结果 URL 可能过期，请由客户服务器及时下载；创建、查询和取消必须使用创建任务时的同一枚业务 Key。</p>
-        </section>
-
-        <section className="panel integrationSection">
-          <header><span className="docIcon coral"><CloudUpload size={18} /></span><div><small>OPTIONAL</small><h3>使用项目素材库</h3><p>本地文件需要先上传到对象存储，再登记到素材组；只有 <code>Active</code> 素材才能用于视频任务。</p></div></header>
-          <ol className="assetSteps">
-            <li><span>1</span><div><b>创建素材组</b><code>POST /api/asset-group/create</code></div></li>
-            <li><span>2</span><div><b>上传文件</b><code>POST /api/asset/upload-file</code></div></li>
-            <li><span>3</span><div><b>登记素材</b><code>POST /api/asset/create</code></div></li>
-            <li><span>4</span><div><b>等待可用</b><code>GET /api/asset/get?assetId=...</code></div></li>
-          </ol>
-          <div className="integrationCodePair">
-            <DocCode id="upload-asset" label="上传图片、视频或音频" value={uploadAsset} copied={copied} onCopy={copyExample} />
-            <DocCode id="register-asset" label="登记到素材组" value={registerAsset} copied={copied} onCopy={copyExample} />
-          </div>
-          <p className="docHint">上传响应中的 <code>url</code>、<code>uploadId</code> 和 <code>assetType</code> 必须原样传给登记接口。上传成功不等于登记完成。</p>
-        </section>
-      </main>
-
-      <aside className="integrationAside">
-        <section className="panel deliveryCard">
-          <span className="docIcon"><CheckCircle2 size={19} /></span><h3>客户交付清单</h3>
-          <ul><li>公网 HTTPS API 地址</li><li>单独签发的业务 API Key</li><li>允许调用的模型名称</li><li>错误排查与技术支持渠道</li></ul>
-        </section>
-        <section className="panel securityCard">
-          <ShieldCheck size={20} /><div><h3>必须服务端调用</h3><p>业务 Key 不得写入网页、App 安装包、公开仓库、日志或 URL。不要向客户提供管理员账号、<code>projectName</code>、火山 AK/SK 或 Ark API Key。</p></div>
-        </section>
-        <section className="panel errorGuide">
-          <h3>常见响应</h3>
-          <dl><div><dt>401</dt><dd>Key 缺失、无效或已禁用</dd></div><div><dt>403</dt><dd>项目未开通模型或渠道不可用</dd></div><div><dt>409</dt><dd>幂等键对应了不同请求体</dd></div><div><dt>422</dt><dd>字段、素材或模型能力不匹配</dd></div><div><dt>429</dt><dd>项目或 Key 额度不足</dd></div><div><dt>502</dt><dd>供应商不可达或拒绝请求</dd></div></dl>
-          <p>排查时保留响应体和 <code>X-Request-Id</code>，不要发送完整业务 Key。</p>
-        </section>
-      </aside>
     </div>
-
-    <section className="panel endpointReference">
-      <div className="panelHead"><div><h3>业务接口总览</h3><p>以下接口全部使用业务 Bearer Key；只有 <code>/health</code> 无需鉴权。</p></div><span className="version">API v5.6</span></div>
-      <div className="endpointTable">
-        <div className="endpointRow endpointHead"><span>模块</span><span>方法</span><span>路径</span><span>说明</span></div>
-        {[
-          ["基础", "GET", "/health", "服务健康检查"], ["基础", "GET", "/api/auth/me", "验证业务 Key"], ["模型", "GET", "/v1/models", "查询当前项目可用模型"], ["模型", "GET", "/v1/pricing", "查询当前项目模型价格，可按名称过滤"],
-          ["文本", "POST", "/v1/chat/completions", "OpenAI 兼容对话，支持 JSON / SSE"], ["文本", "POST", "/v1/responses", "OpenAI 兼容 Responses，支持 JSON / SSE"], ["图片", "POST", "/v1/images/generations", "图片生成或参考图改图"],
-          ["素材组", "POST", "/api/asset-group/create", "创建素材组"], ["素材组", "GET", "/api/asset-group/list", "查询素材组列表"], ["素材组", "GET", "/api/asset-group/get", "查询素材组详情"], ["素材组", "PUT", "/api/asset-group/update", "修改素材组"], ["素材组", "DELETE", "/api/asset-group/delete", "删除素材组"],
-          ["素材", "POST", "/api/asset/upload-file", "上传图片、视频或音频"], ["素材", "POST", "/api/asset/create", "登记素材"], ["素材", "GET", "/api/asset/list", "查询素材列表"], ["素材", "GET", "/api/asset/get", "查询素材详情与状态"], ["素材", "PUT", "/api/asset/update", "修改素材名称"], ["素材", "DELETE", "/api/asset/delete", "删除素材"],
-          ["视频", "POST", "/api/v3/contents/generations/tasks", "创建异步视频任务"], ["视频", "GET", "/api/v3/contents/generations/tasks/{taskId}", "查询任务状态与结果"], ["视频", "DELETE", "/api/v3/contents/generations/tasks/{taskId}", "取消运行中的任务"],
-        ].map((row) => <div className="endpointRow" key={row.join("-")}><span>{row[0]}</span><span><code>{row[1]}</code></span><span><code>{row[2]}</code></span><span>{row[3]}</span></div>)}
-      </div>
-    </section>
-
-    <section className="deploymentNote"><Server size={21} /><div><h3>服务部署边界</h3><p>客户只访问公网 API 服务，不访问本控制台。控制台使用管理员 Session 与 CSRF；客户业务接口仅接受 <code>Authorization: Bearer vap_live_...</code>。火山凭证和供应商凭证只能保存在 API 服务器。</p></div></section>
-  </div>;
-}
-
-function DocCode({ id, label, value, copied, onCopy }: { id: string; label: string; value: string; copied: string; onCopy: (id: string, value: string) => Promise<void> }) {
-  return <div className="docCode"><div><span>{label}</span><button type="button" onClick={() => void onCopy(id, value)} aria-label={`复制${label}`}><Clipboard size={14} />{copied === id ? "已复制" : "复制"}</button></div><pre>{value}</pre></div>;
+    <iframe
+      className="clientDocsFrame"
+      title="星辰平台 API 接口文档"
+      src={CLIENT_DOCS_URL}
+      sandbox="allow-scripts allow-downloads allow-modals"
+      allow="clipboard-write"
+      referrerPolicy="no-referrer"
+    />
+  </section>;
 }
 
 function Stat({ label, value, note, warn }: { label: string; value: number; note: string; warn?: boolean }) {

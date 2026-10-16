@@ -254,18 +254,19 @@ describe("内部控制台", () => {
     expect(calls.some((call) => call.path.startsWith("/api/internal/call-logs?") && call.path.includes("apiKeyId=key-a"))).toBe(true);
   });
 
-  it("移除视频调试入口并展示完整业务接入说明", async () => {
+  it("接入说明使用统一 HTML 文档并提供独立阅读和下载", async () => {
     installFetch();
     const user = await login();
     expect(screen.queryByRole("button", { name: "视频调试" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "接入说明" }));
-    expect(await screen.findByRole("heading", { name: "业务 API 接入说明" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "准备鉴权与可用模型" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "创建 Seedance 视频任务" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "使用项目素材库" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "业务接口总览" })).toBeInTheDocument();
-    expect(screen.getAllByText("/api/v3/contents/generations/tasks", { exact: true }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("/api/asset/upload-file", { exact: true }).length).toBeGreaterThan(0);
+    const frame = await screen.findByTitle("星辰平台 API 接口文档");
+    expect(frame.getAttribute("src")).toMatch(/^\/docs\/client-api\.html\?v=[a-f0-9]{16}$/);
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-downloads allow-modals");
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(screen.getByRole("link", { name: "独立窗口阅读" })).toHaveAttribute("href", frame.getAttribute("src"));
+    expect(screen.getByRole("link", { name: "下载 HTML" })).toHaveAttribute("download", "星辰平台-API-接口文档.html");
+    expect(screen.queryByRole("heading", { name: "创建 Seedance 视频任务" })).not.toBeInTheDocument();
+    expect(screen.queryByText("API v5.6")).not.toBeInTheDocument();
   });
 
   it("普通管理员可以查看项目计费预估和月度账单，但不能修改全局价目", async () => {

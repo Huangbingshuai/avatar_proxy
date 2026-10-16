@@ -1,0 +1,847 @@
+[
+  {
+    "id": "deepseek-v4-flash",
+    "name": "DeepSeek V4 Flash",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true
+    },
+    "summary": "文本对话"
+  },
+  {
+    "id": "deepseek-v4-pro",
+    "name": "DeepSeek V4 Pro",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true
+    },
+    "summary": "文本对话"
+  },
+  {
+    "id": "glm-5.2",
+    "name": "GLM 5.2",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true
+    },
+    "summary": "文本对话"
+  },
+  {
+    "id": "doubao-seedream-5.0-pro",
+    "name": "Doubao Seedream 5.0 Pro",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 10,
+      "maxInputImageBytes": 10485760,
+      "maxN": 1
+    },
+    "summary": "生图、参考图改图；最多 10 张参考图，单次 1 张结果"
+  },
+  {
+    "id": "doubao-seedream-5.0-lite",
+    "name": "Doubao Seedream 5.0 Lite",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 10,
+      "maxInputImageBytes": 10485760,
+      "sequentialImages": true,
+      "maxN": 15,
+      "outputFormat": true,
+      "webSearch": true
+    },
+    "summary": "生图、参考图改图、组图；最多 10 张参考图、15 张结果"
+  },
+  {
+    "id": "doubao-seedream-5.0",
+    "name": "Doubao Seedream 5.0",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 10,
+      "maxInputImageBytes": 10485760,
+      "maxN": 1,
+      "outputFormat": true,
+      "webSearch": true
+    },
+    "summary": "生图、参考图改图；最多 10 张参考图，单次 1 张结果"
+  },
+  {
+    "id": "doubao-seedream-4.5",
+    "name": "Doubao Seedream 4.5",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 10,
+      "maxInputImageBytes": 10485760,
+      "sequentialImages": true,
+      "maxN": 15
+    },
+    "summary": "生图、参考图改图、组图；最多 10 张参考图、15 张结果"
+  },
+  {
+    "id": "doubao-seedream-4.0",
+    "name": "Doubao Seedream 4.0",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 10,
+      "maxInputImageBytes": 10485760,
+      "sequentialImages": true,
+      "maxN": 15
+    },
+    "summary": "生图、参考图改图、组图；最多 10 张参考图、15 张结果"
+  },
+  {
+    "id": "doubao-seed-2.1-pro",
+    "name": "Doubao Seed 2.1 Pro",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true,
+      "imageInput": true,
+      "vision": true
+    },
+    "summary": "文本、识图"
+  },
+  {
+    "id": "doubao-seed-2.1-turbo",
+    "name": "Doubao Seed 2.1 Turbo",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true,
+      "imageInput": true,
+      "vision": true
+    },
+    "summary": "文本、识图"
+  },
+  {
+    "id": "doubao-seed-2.0-pro",
+    "name": "Doubao Seed 2.0 Pro",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true,
+      "imageInput": true,
+      "vision": true
+    },
+    "summary": "文本、识图"
+  },
+  {
+    "id": "doubao-seed-2.0-lite",
+    "name": "Doubao Seed 2.0 Lite",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true,
+      "imageInput": true,
+      "vision": true
+    },
+    "summary": "文本、识图"
+  },
+  {
+    "id": "doubao-seed-2.0-mini",
+    "name": "Doubao Seed 2.0 Mini",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true,
+      "imageInput": true,
+      "vision": true
+    },
+    "summary": "文本、识图"
+  },
+  {
+    "id": "doubao-seed-evolving",
+    "name": "Doubao Seed Evolving",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true,
+      "imageInput": true,
+      "vision": true
+    },
+    "summary": "文本、识图、Coding 与 Agent"
+  },
+  {
+    "id": "doubao-seed-character",
+    "name": "Doubao Seed Character",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true
+    },
+    "summary": "文本对话、角色扮演"
+  },
+  {
+    "id": "doubao-seed-2.0-code",
+    "name": "Doubao Seed 2.0 Code",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": true,
+      "stream": true,
+      "imageInput": true,
+      "vision": true
+    },
+    "summary": "文本、识图、编程"
+  },
+  {
+    "id": "doubao-seed-translation",
+    "name": "Doubao Seed Translation",
+    "modality": "text",
+    "capabilities": {
+      "chat": false,
+      "responses": true,
+      "stream": false,
+      "translation": true
+    },
+    "summary": "文本翻译"
+  },
+  {
+    "id": "doubao-seedance-2.5",
+    "name": "Doubao Seedance 2.5",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 30,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "maxContent": 50,
+      "maxN": 1
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "doubao-seedance-2.0",
+    "name": "Doubao Seedance 2.0",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "maxContent": 20,
+      "maxN": 1
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "doubao-seedance-2.0-fast",
+    "name": "Doubao Seedance 2.0 Fast",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "maxContent": 20,
+      "maxN": 1
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "doubao-seedance-2.0-mini",
+    "name": "Doubao Seedance 2.0 Mini",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "maxContent": 20,
+      "maxN": 1
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "doubao-seedance-1.0-pro",
+    "name": "Doubao Seedance 1.0 Pro",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "durationMin": 2,
+      "durationMax": 12,
+      "frames": true,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "maxN": 1
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "doubao-seedance-1.0-pro-fast",
+    "name": "Doubao Seedance 1.0 Pro Fast",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "durationMin": 2,
+      "durationMax": 12,
+      "frames": true,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "maxN": 1
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "dreamina-seedance-2.5",
+    "name": "Dreamina Seedance 2.5",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 30,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "maxContent": 50,
+      "maxN": 1,
+      "cameraFixed": false,
+      "seed": false,
+      "serviceTiers": [
+        "default"
+      ],
+      "maxImages": 30,
+      "maxVideos": 10,
+      "maxAudios": 10,
+      "audioOnly": true,
+      "returnLastFrame": true,
+      "billingMetric": "output_tokens",
+      "billingUnit": 1000000,
+      "outputFormats": [
+        "mp4",
+        "mov"
+      ]
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "dreamina-seedance-2.0",
+    "name": "Dreamina Seedance 2.0",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "maxContent": 20,
+      "maxN": 1,
+      "cameraFixed": false,
+      "seed": false,
+      "serviceTiers": [
+        "default"
+      ],
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "audioOnly": false,
+      "returnLastFrame": false,
+      "billingMetric": "output_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "dreamina-seedance-2.0-fast",
+    "name": "Dreamina Seedance 2.0 Fast",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "maxContent": 20,
+      "maxN": 1,
+      "cameraFixed": false,
+      "seed": false,
+      "serviceTiers": [
+        "default"
+      ],
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "audioOnly": false,
+      "returnLastFrame": false,
+      "billingMetric": "output_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "dreamina-seedance-2.0-mini",
+    "name": "Dreamina Seedance 2.0 Mini",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "maxContent": 20,
+      "maxN": 1,
+      "cameraFixed": false,
+      "seed": false,
+      "serviceTiers": [
+        "default"
+      ],
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "audioOnly": false,
+      "returnLastFrame": false,
+      "billingMetric": "output_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "dola-seedream-5.0-pro",
+    "name": "Dola Seedream 5.0 Pro",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 10,
+      "maxInputImageBytes": 31457280,
+      "maxN": 1,
+      "outputFormat": true,
+      "sizes": [
+        "1K",
+        "1.5K",
+        "2K"
+      ],
+      "defaultSize": "2K",
+      "minPixels": 921600,
+      "maxPixels": 4624220,
+      "optimizePromptModes": [
+        "standard",
+        "fast"
+      ],
+      "billingPixelThreshold": 2610000
+    },
+    "summary": "生图、参考图改图；单次 1 张结果"
+  },
+  {
+    "id": "dola-seedream-5.0-flash",
+    "name": "Dola Seedream 5.0 Flash",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 10,
+      "maxInputImageBytes": 31457280,
+      "maxN": 1,
+      "outputFormat": true,
+      "sizes": [
+        "1K",
+        "1.5K",
+        "2K"
+      ],
+      "defaultSize": "2K",
+      "minPixels": 921600,
+      "maxPixels": 4624220,
+      "optimizePromptModes": [
+        "standard"
+      ]
+    },
+    "summary": "生图、参考图改图；单次 1 张结果"
+  },
+  {
+    "id": "dola-seedream-5.0-lite",
+    "name": "Dola Seedream 5.0 Lite",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 14,
+      "maxInputImageBytes": 31457280,
+      "maxN": 15,
+      "outputFormat": true,
+      "sizes": [
+        "2K",
+        "3K",
+        "4K"
+      ],
+      "defaultSize": "2K",
+      "minPixels": 3686400,
+      "maxPixels": 16777216,
+      "sequentialImages": true,
+      "optimizePromptModes": [
+        "standard"
+      ]
+    },
+    "summary": "生图、参考图改图、组图；最多 15 张结果"
+  },
+  {
+    "id": "wan3.0-video",
+    "name": "Wan 3.0 Video",
+    "modality": "video",
+    "capabilities": {
+      "image": true,
+      "maxN": 1
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "minimax-h3",
+    "name": "MiniMax H3",
+    "modality": "video",
+    "capabilities": {
+      "image": true,
+      "maxN": 1
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "gpt-image-2",
+    "name": "GPT Image 2",
+    "modality": "image",
+    "capabilities": {
+      "generations": true
+    },
+    "summary": "生图；MaxModel单张、ModelTop最多10张"
+  },
+  {
+    "id": "doubao-embedding-vision",
+    "name": "Doubao Embedding Vision",
+    "modality": "embedding",
+    "capabilities": {
+      "embeddings": true,
+      "multimodal": true,
+      "inputTypes": [
+        "text",
+        "image",
+        "video"
+      ],
+      "dimensions": [
+        1024,
+        2048
+      ],
+      "billingMetric": "input_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "文本、图片和视频多模态向量化"
+  },
+  {
+    "id": "doubao-seed-tts-2.0",
+    "name": "Doubao Seed TTS 2.0",
+    "modality": "audio",
+    "capabilities": {
+      "speech": true,
+      "formats": [
+        "mp3",
+        "pcm",
+        "ogg_opus"
+      ],
+      "billingMetric": "characters",
+      "billingUnit": 10000
+    },
+    "summary": "语音合成"
+  },
+  {
+    "id": "doubao-seedasr-2.0",
+    "name": "Doubao Seed ASR 2.0",
+    "modality": "audio",
+    "capabilities": {
+      "transcriptions": true,
+      "async": true,
+      "billingMetric": "audio_second",
+      "billingUnit": 3600
+    },
+    "summary": "异步录音识别"
+  },
+  {
+    "id": "doubao-seed-audio-1.0",
+    "name": "Doubao Seed Audio 1.0",
+    "modality": "audio",
+    "capabilities": {
+      "audioGenerations": true,
+      "maxDuration": 120,
+      "billingMetric": "audio_second",
+      "billingUnit": 60
+    },
+    "summary": "音频生成"
+  },
+  {
+    "id": "gpt-image-2.5-flare",
+    "name": "gpt-image-2.5-flare",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "maxN": 10,
+      "billingMetric": "image_tokens",
+      "billingUnit": 1000000,
+      "imageTokenBilling": true,
+      "qualityLevels": [
+        "auto",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "customSizes": true,
+      "outputFormat": true
+    },
+    "summary": "文生图；最多 10 张"
+  },
+  {
+    "id": "gpt-image-2.5-sunburst",
+    "name": "gpt-image-2.5-sunburst",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "maxN": 10,
+      "billingMetric": "image_tokens",
+      "billingUnit": 1000000,
+      "imageTokenBilling": true,
+      "qualityLevels": [
+        "auto",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "customSizes": true,
+      "outputFormat": true
+    },
+    "summary": "文生图；最多 10 张"
+  },
+  {
+    "id": "dreamina-seedance-2.5-filter-off",
+    "name": "dreamina-seedance-2.5-filter-off",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 30,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "maxContent": 50,
+      "maxN": 1,
+      "cameraFixed": false,
+      "seed": true,
+      "serviceTiers": [
+        "default"
+      ],
+      "maxImages": 30,
+      "maxVideos": 10,
+      "maxAudios": 10,
+      "audioOnly": true,
+      "returnLastFrame": true,
+      "cancelSupported": false,
+      "billingMetric": "output_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "dreamina-seedance-2.0-filter-off",
+    "name": "dreamina-seedance-2.0-filter-off",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "maxContent": 20,
+      "maxN": 1,
+      "cameraFixed": false,
+      "seed": true,
+      "serviceTiers": [
+        "default"
+      ],
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "audioOnly": false,
+      "returnLastFrame": true,
+      "cancelSupported": false,
+      "billingMetric": "output_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "dreamina-seedance-2.0-fast-filter-off",
+    "name": "dreamina-seedance-2.0-fast-filter-off",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "maxContent": 20,
+      "maxN": 1,
+      "cameraFixed": false,
+      "seed": true,
+      "serviceTiers": [
+        "default"
+      ],
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "audioOnly": false,
+      "returnLastFrame": true,
+      "cancelSupported": false,
+      "billingMetric": "output_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "异步视频"
+  },
+  {
+    "id": "dreamina-seedance-2.0-mini-filter-off",
+    "name": "dreamina-seedance-2.0-mini-filter-off",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "maxContent": 20,
+      "maxN": 1,
+      "cameraFixed": false,
+      "seed": true,
+      "serviceTiers": [
+        "default"
+      ],
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "audioOnly": false,
+      "returnLastFrame": true,
+      "cancelSupported": false,
+      "billingMetric": "output_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "异步视频"
+  }
+]

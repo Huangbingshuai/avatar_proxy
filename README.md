@@ -79,7 +79,7 @@ Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素
 
 模型长请求使用独立的连接/响应等待设置，不再受旧 `UPSTREAM_TIMEOUT_SECONDS=30` 限制：同步生成默认读等待1800秒，连接10秒，流式空闲300秒。两层Nginx模型代理读等待3660秒并关闭代理重试，生图代理在客户断开后继续等待后端。客户端也需配置长等待；这不是无限等待或供应商成功保证。
 
-生图通过幂等键保护后台执行：断线后使用原业务Key、原请求体与原 `Idempotency-Key` 可取回缓存结果，不能换键自动重试。未知结果和重启中断会保留待核对用量，缺失用量不算零；已启用计费的项目出现未知用量时阻止账单确认。单实例后台生图默认最多16个，满载在供应商调用前返回503。配置见 `backend/.env.example`，客户错误与恢复契约见 [CLIENT_API.md §13.9](backend/CLIENT_API.md#139-长耗时生成断线与安全重试)。
+生图通过幂等键保护后台执行：断线后使用原业务Key、原请求体与原 `Idempotency-Key` 可取回缓存结果，不能换键自动重试。未知结果和重启中断会保留待核对用量，缺失用量不算零；已启用计费的项目出现未知用量时阻止账单确认。单实例后台生图默认最多16个，满载在供应商调用前返回503。配置见 `backend/.env.example`，客户错误与恢复契约见 [客户安全重试文档](backend/docs/client-api/errors.md#幂等与断线恢复)。
 
 所有客户接口使用同一套业务 Key 鉴权：
 
@@ -393,7 +393,8 @@ PAYMENT_ORIGIN_HOST=drama.richbest.cn
 
 ## 相关文档
 
-- [客户 API 接入文档](backend/CLIENT_API.md)
+- [客户 API 接入文档](backend/CLIENT_API.md)（快速开始及分类参考）
+- [独立 HTML 接口文档](backend/CLIENT_API.html)（离线阅读、全文搜索、代码复制；控制台“接入说明”显示同一份内容）
 - [模型中转接口文档](backend/MODEL_RELAY_API.md)
 - [RichiDrama 对接中转站改造说明](backend/RICHIDRAMA_RELAY_ALIGNMENT.md)
 - [管理端计费账单 API 文档](backend/ADMIN_BILLING_API.md)
@@ -403,3 +404,10 @@ PAYMENT_ORIGIN_HOST=drama.richbest.cn
 - [客户工具说明](user-portal/README.md)
 - [漫剧微信支付回调代理说明](deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md)
 - [开发代理协作约定](AGENTS.md)
+
+
+### 客户文档维护
+
+客户契约入口为 `backend/CLIENT_API.md`，详细参考位于 `backend/docs/client-api/`；不要在控制台组件中另外手写请求示例。首次生成前执行 `npm ci --prefix tools/client-docs`，之后使用 `npm run docs:build` 生成独立 `backend/CLIENT_API.html` 和控制台静态文件 `public/docs/client-api.html`。
+
+`npm run docs:check` 校验两份 HTML 与源文档一致并检查所有内置链接；`npm run docs:test` 检查构建与阅读器交互。构建工具依赖仅在文档工具目录，不增加 API 或控制台运行时依赖。控制台部署使用已生成的静态文件，不增加 API 路由、不迁移数据库，也不自动部署独立文档。
