@@ -1,4 +1,5 @@
 from typing import Annotated, Any
+import json
 
 from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -103,8 +104,20 @@ async def _text(
         request.app.state.provider_relay.validate_text_operation(
             principal, alias, operation, stream=True
         )
+        async def events():
+            try:
+                async for chunk in request.app.state.provider_relay.text_stream(principal, alias, operation, payload):
+                    yield chunk
+            except ApiError as error:
+                # Headers are already sent; return a structured SSE error,
+                # never a misleading successful EOF or a second HTTP response.
+                data = {"error": {"code": error.code, "message": error.message,
+                                  "details": error.details},
+                        "request_id": getattr(request.state, "request_id", None)}
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8")
+
         return StreamingResponse(
-            request.app.state.provider_relay.text_stream(principal, alias, operation, payload),
+            events(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

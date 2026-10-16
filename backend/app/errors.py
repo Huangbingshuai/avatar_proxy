@@ -53,6 +53,7 @@ def install_error_handlers(app: FastAPI) -> None:
                     "type": "invalid_request_error" if error.status_code < 500 else "upstream_error",
                     "param": error.details.get("param"),
                     "code": error.code,
+                    **({"details": error.details} if error.details else {}),
                 },
                 "request_id": request_id,
             }

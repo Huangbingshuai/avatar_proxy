@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import binascii
 import hashlib
 import json
@@ -274,6 +275,74 @@ class ProviderRelay:
         self.database = database
         self.vault = CredentialVault(settings, database.path)
         self.transport: httpx.AsyncBaseTransport | None = None
+        self._image_jobs: set[asyncio.Task] = set()
+
+    def _model_timeout(self, *, generation: bool = False, stream: bool = False) -> httpx.Timeout:
+        read = self.settings.upstream_timeout_seconds
+        if generation:
+            read = self.settings.model_generation_timeout_seconds
+        elif stream:
+            read = self.settings.model_stream_idle_timeout_seconds
+        return httpx.Timeout(
+            read, connect=self.settings.model_connect_timeout_seconds,
+            write=self.settings.model_write_timeout_seconds, pool=10.0,
+        )
+
+    @staticmethod
+    def _transport_error(error: httpx.RequestError, *, submitted: bool) -> ApiError:
+        # Do not include str(error): it may contain credentials or signed URLs.
+        uncertain = submitted and not isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout))
+        phase = (
+            "connect" if isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout)) else
+            "pool" if isinstance(error, httpx.PoolTimeout) else
+            "write" if isinstance(error, (httpx.WriteError, httpx.WriteTimeout)) else "read"
+        )
+        if isinstance(error, httpx.TimeoutException):
+            code = "provider_connect_timeout" if phase == "connect" else "provider_response_timeout"
+            message = "连接供应商超时" if phase == "connect" else "等待供应商响应超时"
+            status = 504
+        else:
+            code, message, status = "provider_unreachable", "供应商连接或响应传输失败", 502
+        if uncertain:
+            message += "；上游可能仍在执行，请勿更换幂等键重新提交，费用需核对"
+        return ApiError(message, status, code, details={
+            "phase": phase, "outcomeUnknown": uncertain, "automaticRetry": False,
+        })
+
+    async def aclose(self) -> None:
+        # Deployment must drain requests first. If shutdown still interrupts a
+        # job, retain an ambiguous outcome rather than silently allowing a retry.
+        jobs = list(self._image_jobs)
+        for job in jobs:
+            job.cancel()
+        if jobs:
+            await asyncio.gather(*jobs, return_exceptions=True)
+
+    def recover_interrupted_images(self) -> None:
+        """Single-instance restart recovery: never replay a possibly paid POST."""
+        with self.database.connect() as connection:
+            tasks = connection.execute(
+                "SELECT * FROM inference_tasks WHERE operation='image' AND status IN ('queued','running')"
+            ).fetchall()
+            for task in tasks:
+                connection.execute(
+                    "UPDATE inference_tasks SET status='failed',error_code='provider_outcome_unknown',"
+                    "error_message='服务重启前的生图结果未确认，请联系管理员核对，勿重复提交',"
+                    "metadata_json=?,completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (_json({"outcomeUnknown": True}), task["id"]),
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO inference_usage "
+                    "(id,request_id,task_id,api_key_id,project_name,model_alias,channel_id,status) "
+                    "VALUES (?,?,?,?,?,?,?,'unknown')",
+                    (uuid.uuid4().hex, task["id"], task["id"], task["api_key_id"],
+                     task["project_name"], task["model_alias"], task["channel_id"]),
+                )
+
+    def _image_job_done(self, job: asyncio.Task) -> None:
+        self._image_jobs.discard(job)
+        if not job.cancelled():
+            job.exception()  # Retrieve errors even if the original client disconnected.
 
     def require_enabled(self) -> None:
         if not self.settings.multi_provider_enabled:
@@ -731,7 +800,9 @@ class ProviderRelay:
     ) -> tuple[httpx.Response, dict[str, Any]]:
         try:
             async with httpx.AsyncClient(
-                timeout=self.settings.upstream_timeout_seconds,
+                timeout=self._model_timeout(generation=method == "POST" and (
+                    route.modality in {"text", "image", "audio"} or path == "/contents/generations/tasks"
+                )),
                 transport=self.transport,
             ) as client:
                 response = await client.request(
@@ -741,7 +812,7 @@ class ProviderRelay:
                     json=payload,
                 )
         except httpx.RequestError as error:
-            raise ApiError("无法连接模型供应商", 502, "provider_unreachable") from error
+            raise self._transport_error(error, submitted=method == "POST") from error
         try:
             data = response.json()
         except ValueError:
@@ -906,7 +977,7 @@ class ProviderRelay:
     ) -> tuple[httpx.Response, dict[str, Any]]:
         try:
             async with httpx.AsyncClient(
-                timeout=self.settings.upstream_timeout_seconds,
+                timeout=self._model_timeout(generation=not path.endswith("/query")),
                 transport=self.transport,
             ) as client:
                 response = await client.post(
@@ -920,7 +991,7 @@ class ProviderRelay:
                     json=payload,
                 )
         except httpx.RequestError as error:
-            raise ApiError("无法连接豆包语音服务", 502, "provider_unreachable") from error
+            raise self._transport_error(error, submitted=True) from error
         status_code = response.headers.get("x-api-status-code")
         status_ok = not status_code or status_code == "0" or status_code.startswith("2000000")
         if response.status_code >= 400 or not status_ok:
@@ -1074,7 +1145,7 @@ class ProviderRelay:
             },
         }
         try:
-            async with httpx.AsyncClient(timeout=self.settings.upstream_timeout_seconds, transport=self.transport) as client:
+            async with httpx.AsyncClient(timeout=self._model_timeout(generation=True), transport=self.transport) as client:
                 response = await client.post(
                     f"{self._base_url(route)}/api/v3/tts/unidirectional/sse",
                     headers=self._speech_headers(
@@ -1083,7 +1154,7 @@ class ProviderRelay:
                     json=body,
                 )
         except httpx.RequestError as error:
-            raise ApiError("无法连接豆包语音服务", 502, "provider_unreachable") from error
+            raise self._transport_error(error, submitted=True) from error
         if response.status_code >= 400:
             raise ApiError(
                 response.headers.get("x-api-message") or "豆包语音服务拒绝了请求",
@@ -1321,7 +1392,7 @@ class ProviderRelay:
         upstream_payload["model"] = route.upstream_model
         upstream_payload["stream"] = True
         client = httpx.AsyncClient(
-            timeout=self.settings.upstream_timeout_seconds,
+            timeout=self._model_timeout(stream=True),
             transport=self.transport,
         )
         provider_request_id: str | None = None
@@ -1367,7 +1438,7 @@ class ProviderRelay:
                     else:
                         yield f"{line}\n".encode("utf-8")
         except httpx.RequestError as error:
-            raise ApiError("无法连接模型供应商", 502, "provider_unreachable") from error
+            raise self._transport_error(error, submitted=True) from error
         finally:
             await client.aclose()
             self._record_usage(
@@ -1674,26 +1745,59 @@ class ProviderRelay:
         if route.modality != "image":
             raise ApiError("该模型不支持图片接口", 422, "model_modality_mismatch")
         upstream = self._image_upstream_payload(route, payload)
+        if len(self._image_jobs) >= self.settings.model_image_max_inflight and not (
+            idempotency_key and self._find_idempotent_task(
+                principal, "image", idempotency_key, _request_hash("image", payload)
+            )
+        ):
+            raise ApiError("生图并发已满，本次尚未提交供应商，请稍后使用相同幂等键重试", 503,
+                           "model_capacity_exceeded", details={"outcomeUnknown": False},
+                           headers={"Retry-After": "10"})
         task, created = self._create_task(principal, route, "image", payload, idempotency_key)
         if not created:
             metadata = _loaded(task.get("metadata_json"), {})
             if task["status"] == "succeeded" and isinstance(metadata.get("response"), dict):
                 return metadata["response"]
             if task["status"] in ACTIVE_TASK_STATUSES:
-                raise ApiError("相同幂等请求仍在处理中", 409, "idempotency_request_in_progress")
+                raise ApiError("上次生图仍在处理中；稍后使用相同幂等键查询，不会重新生成", 409,
+                               "idempotency_request_in_progress", details={"taskId": task["id"], "automaticRetry": False})
+            if metadata.get("outcomeUnknown") or task.get("error_code") in {
+                "provider_response_timeout", "provider_unreachable", "provider_outcome_unknown",
+            }:
+                raise ApiError("上次生图结果尚未确认，请联系管理员核对，勿更换幂等键重复付费生成", 409,
+                               "idempotency_outcome_unknown", details={"taskId": task["id"], "outcomeUnknown": True})
             raise ApiError("相同幂等请求此前执行失败", 409, "idempotency_request_failed")
+        job = asyncio.create_task(self._execute_image(principal, route, upstream, task))
+        self._image_jobs.add(job)
+        job.add_done_callback(self._image_job_done)
+        # A closed browser connection must not abort an already submitted paid
+        # generation. The same idempotency key can retrieve the cached response.
+        return await asyncio.shield(job)
+
+    async def _execute_image(
+        self, principal: ApiPrincipal, route: ModelRoute, upstream: dict[str, Any], task: dict[str, Any]
+    ) -> dict[str, Any]:
         try:
             response, data = await self._request(route, "POST", "/images/generations", upstream)
             provider_id: str | None = None
             if route.provider == "maxmodel":
                 data, provider_id = self._maxmodel_image_response(response, data)
-        except ApiError as error:
+        except (ApiError, asyncio.CancelledError) as error:
+            if isinstance(error, asyncio.CancelledError):
+                failure = ApiError("服务中断，生图结果未确认，请勿重复提交", 503, "provider_outcome_unknown",
+                                   details={"outcomeUnknown": True})
+            else:
+                failure = error
+            uncertain = failure.details.get("outcomeUnknown") is True
             with self.database.connect() as connection:
                 connection.execute(
                     "UPDATE inference_tasks SET status='failed',error_code=?,error_message=?,"
-                    "completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                    (error.code, error.message, task["id"]),
+                    "metadata_json=?,completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (failure.code, failure.message, _json({"outcomeUnknown": uncertain}), task["id"]),
                 )
+            if uncertain:
+                self._record_usage(request_id=task["id"], task_id=task["id"], principal=principal,
+                                   route=route, status="unknown")
             raise
         data["model"] = route.alias
         provider_id = provider_id or _provider_request_id(response.headers, data)

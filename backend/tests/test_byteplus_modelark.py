@@ -375,7 +375,10 @@ def test_byteplus_submission_failure_is_not_retried_or_billed(tmp_path: Path, fa
         _, secret, _ = provision(client, provider="byteplus_modelark", alias=MODELS[0][0], upstream_model="ignored")
         client.app.state.provider_relay.transport = httpx.MockTransport(handler)
         response = client.post(TASKS, headers={"Authorization": f"Bearer {secret}"}, json={"model": MODELS[0][0], "content": [{"type": "text", "text": "Hello"}]})
-        assert response.status_code == (403 if failure == "denied" else 502)
+        assert response.status_code == {"denied":403, "timeout":504, "missing_id":502}[failure]
+        if failure == "timeout":
+            assert response.json()["error"]["code"] == "provider_response_timeout"
+            assert response.json()["error"]["outcomeUnknown"] is True
         assert "secret-byteplus_modelark-abcdefgh" not in response.text
         with client.app.state.database.connect() as connection:
             assert connection.execute("SELECT status FROM inference_tasks").fetchone()[0] == "failed"

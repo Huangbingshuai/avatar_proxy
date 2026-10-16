@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     cors_origin_regex: str = ""
     enable_api_docs: bool = False
     upstream_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    # Model execution is not an ordinary metadata request. Never let a legacy
+    # UPSTREAM_TIMEOUT_SECONDS=30 deployment truncate normal generation.
+    model_connect_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    model_generation_timeout_seconds: float = Field(default=1800.0, gt=0, le=3600)
+    model_stream_idle_timeout_seconds: float = Field(default=300.0, gt=0, le=3600)
+    model_write_timeout_seconds: float = Field(default=120.0, gt=0, le=300)
+    model_image_max_inflight: int = Field(default=16, ge=1, le=128)
 
     @field_validator("system_monitor_path", mode="before")
     @classmethod

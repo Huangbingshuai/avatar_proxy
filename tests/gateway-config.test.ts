@@ -88,3 +88,27 @@ describe("model request body limits", () => {
     expect(compose).not.toContain("doubao-seedance-2-0-260128");
   });
 });
+
+describe("long-running model relay", () => {
+  function location(config: string, route: string) {
+    const start = config.indexOf(`location ${route} {`);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const end = config.indexOf("\n    }", start);
+    return config.slice(start, end);
+  }
+
+  it("keeps both proxy layers above the maximum model read window without replay", () => {
+    for (const config of [nginxTemplate, edgeNginx]) {
+      for (const route of ["= /v1/images/generations", "= /api/v3/contents/generations/tasks"]) {
+        const block = location(config, route);
+        expect(block).toContain("proxy_read_timeout 3660s;");
+        expect(block).toContain("proxy_connect_timeout 10s;");
+        expect(block).toContain("proxy_next_upstream off;");
+      }
+      expect(location(config, "= /v1/images/generations")).toContain("proxy_ignore_client_abort on;");
+      expect(location(config, "= /v1/images/generations")).toContain("proxy_buffering off;");
+    }
+    // Payment isolation and its short timeout remain unchanged.
+    expect(callbackLocation()).toContain("proxy_read_timeout 30s;");
+  });
+});

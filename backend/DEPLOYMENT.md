@@ -133,3 +133,23 @@ python deploy/volcengine/verify_admin_auth.py \
 ```
 
 密码由终端安全提示读取。脚本只登录并退出当前会话，不改动任何业务数据。
+
+## 7. 模型长请求与发布排空
+
+模型接口独立于 `UPSTREAM_TIMEOUT_SECONDS`（仍用于普通查询/轮询）。新增非敏感设置：
+
+| 配置 | 默认 | 范围/作用 |
+|---|---|---|
+| `MODEL_CONNECT_TIMEOUT_SECONDS` | 10 | >0～60秒，建立供应商连接 |
+| `MODEL_GENERATION_TIMEOUT_SECONDS` | 1800 | >0～3600秒，同步图片、非流式文本/音频及视频提交的读等待 |
+| `MODEL_STREAM_IDLE_TIMEOUT_SECONDS` | 300 | >0～3600秒，流式响应连续无数据等待 |
+| `MODEL_WRITE_TIMEOUT_SECONDS` | 120 | >0～300秒，向供应商发送请求数据 |
+| `MODEL_IMAGE_MAX_INFLIGHT` | 16 | 1～128，单实例后台生图上限 |
+
+HTTPX 的读取超时是两次接收数据之间的等待，不是整个请求的总秒数（[官方说明](https://www.python-httpx.org/advanced/timeouts/)）。不要简单把所有超时都关闭；保持短连接超时、较长生成读等待和有界后台并发。`httpx` 不自动重试，两个网关模型路由显式 `proxy_next_upstream off`。
+
+HTTPS模板和8080入口的 `/v1/*` 及视频创建读等待为3660秒，超过允许的最大后端读等待。生图精确匹配路由额外设置 `proxy_ignore_client_abort on`；支付回调、管理员会话、健康检查和素材接口的超时与安全配置保持不变。客户的SDK、外层CDN/负载均衡也必须匹配，否则仍会先断线。
+
+发布API前停止接收新生成请求，等当前请求与后台生图排空，再替换进程；不能把前端断线当作上游取消。正常客户端断开不会取消已提交生图；服务退出则中止后台等待并标记结果未知。单实例启动时幂等标记遗留生图、写入未知用量，但绝不重新提交。恢复后应凭任务和供应商记录人工核对，不能清空幂等记录再试；未知用量不应确认为免费账单。
+
+本地回归仅使用临时SQLite、MockTransport和网关配置检查，不需要真实供应商调用，也不会产生生成费用。

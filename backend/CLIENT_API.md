@@ -1,8 +1,8 @@
 # 瑞池 AI 模型与素材 API 接入文档
 
-版本：5.10
+版本：5.11
 
-更新日期：2026-10-15
+更新日期：2026-10-16
 正式地址：`https://api.richbest.cn`
 
 本文档面向直接通过 HTTP API 接入的客户，不依赖控制台或其他前端页面。当前文档描述素材上传、方舟素材库管理、文本、图片、视频、多模态向量与音频模型接口。
@@ -1226,3 +1226,39 @@ curl "$BASE_URL/v1/audio/generations" \
 业务 Key 只能保存在客户自己的服务端，不应下发给浏览器或终端用户。请求不得包含 `provider`、供应商 Key、火山 ProjectName、渠道 ID、Base URL 覆盖值或真实上游模型 ID。图片和视频创建建议使用客户自己的业务记录 ID 构造唯一 `Idempotency-Key`；供应商返回的图片、视频和音频 URL 可能过期，应及时转存到客户自己的媒体存储。
 
 特定系统的代码改造和版本进度不属于客户公开 HTTP 契约，应在独立对接文档中维护。例如 RichiDrama 的适配要求见 [RICHIDRAMA_RELAY_ALIGNMENT.md](RICHIDRAMA_RELAY_ALIGNMENT.md)，该文档不能覆盖本文档定义的公开路径、字段、响应和错误规则。
+
+### 13.9 长耗时生成、断线与安全重试
+
+同步生图、非流式文本/音频及视频提交不再套用普通查询的 30 秒响应等待。默认模型连接等待 10 秒，生成响应的读取等待 1800 秒；流式响应默认允许连续 300 秒没有数据，持续有输出时不限制总生成时长。客户端应分别配置连接和读取等待，不能仍用 30 秒总超时。具体等待上限可由服务方配置；更长等待不保证供应商必定成功。
+
+图片生成请求务必在发起前保存唯一 `Idempotency-Key`、原始请求体及业务 Key 对应关系。不要用 SDK 的自动重试或换一个幂等键重发超时请求。示例：
+
+```bash
+curl --connect-timeout 10 --max-time 1900 "$BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-image-order-001" \
+  -d '{"model":"gpt-image-2","prompt":"白色背景上的蓝色杯子","n":1}'
+```
+
+浏览器或客户端断线不代表已提交的生图被取消。在当前服务进程仍正常运行时，中转站会继续等待上游，保存成功结果和真实用量。使用**同一业务 Key、同一幂等键、完全相同请求体**再次调用图片接口时：
+
+- 已完成：返回缓存的原结果，不重新调用供应商，也不重复登记用量。
+- 仍在执行：返回 `409 idempotency_request_in_progress`；稍后手动查询原请求，不能换键创建另一份。
+- 结果不确定：返回 `409 idempotency_outcome_unknown`；请联系管理员核对供应商记录，不能假设没有扣费。
+- 同一幂等键配不同请求体：返回 `409 idempotency_key_conflict`。
+
+服务重启无法恢复供应商的同步 HTTP 连接。未完成的生图会保留为结果待核对，不自动重放；未知用量不会按零元处理。没有提供幂等键的请求无法通过上述方式找回，请联系管理员并提供响应中的 `request_id` 或 `X-Request-Id`。
+
+错误区分如下：
+
+| HTTP / 错误码 | 含义与处理 |
+|---|---|
+| `504 provider_connect_timeout` | 未能及时连接供应商，不等同于模型权限不足 |
+| `504 provider_response_timeout` | 响应或请求传输等待超时；检查 `error.details.outcomeUnknown`，为 `true` 时上游可能仍在执行 |
+| `502 provider_unreachable` | 连接或响应传输故障；同样检查结果是否未知，不能自动重放 |
+| `503 model_capacity_exceeded` | 中转站生图并发已满，本次尚未调用供应商，可按 `Retry-After` 使用原幂等键稍后重试 |
+
+`/v1/*` 错误的 `error.details` 可包含 `phase`（connect/read/write/pool）、`outcomeUnknown` 和 `automaticRetry=false`，不会包含供应商 Key。视频兼容接口的同类错误详情直接位于 `error` 内。网关断开时也可能返回非 JSON 的 502/504；此时按结果未知处理，保留原请求信息，不自动重试。
+
+流式响应在 HTTP 头发送后发生上游异常，会通过 SSE `data:` 发送含 `error.code`、`error.message` 的事件。客户端必须处理该错误；未收到正常结束标记而连接断开时，仅视为收到部分内容，不能当作完整成功。

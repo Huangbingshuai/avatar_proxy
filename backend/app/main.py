@@ -44,6 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.quota = QuotaManager(database)
         app.state.billing = BillingManager(database)
         app.state.provider_relay = ProviderRelay(resolved, database)
+        app.state.provider_relay.recover_interrupted_images()
         app.state.volcengine = volcengine
         app.state.storage = TosStorage(
             resolved, database, app.state.quota, app.state.maintenance_gate
@@ -70,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await system_monitor_maintenance
             with suppress(asyncio.CancelledError):
                 await billing_maintenance
+            await app.state.provider_relay.aclose()
             await app.state.system_monitor.aclose()
             await volcengine.aclose()
 

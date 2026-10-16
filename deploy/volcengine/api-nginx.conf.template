@@ -88,6 +88,36 @@ server {
         proxy_send_timeout 300s;
     }
 
+    # Paid synchronous generation must outlive a closed client connection so
+    # the backend can settle usage and cache the result under Idempotency-Key.
+    location = /v1/images/generations {
+        proxy_pass http://api:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 3660s;
+        proxy_send_timeout 300s;
+        proxy_buffering off;
+        proxy_ignore_client_abort on;
+        proxy_next_upstream off;
+    }
+
+    location = /api/v3/contents/generations/tasks {
+        proxy_pass http://api:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 3660s;
+        proxy_send_timeout 300s;
+        proxy_next_upstream off;
+    }
+
     # OpenAI-compatible public model relay. It uses the customer's business
     # API Key and is intentionally separate from administrator sessions.
     location ^~ /v1/ {
@@ -97,9 +127,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_read_timeout 300s;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 3660s;
         proxy_send_timeout 300s;
         proxy_buffering off;
+        proxy_next_upstream off;
     }
 
     location / {

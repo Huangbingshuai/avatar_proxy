@@ -796,11 +796,11 @@ class BillingManager:
         relay_rows = connection.execute(
             "SELECT u.*,m.modality,c.provider,m.capabilities_json,t.metadata_json,t.billing_metadata_json FROM inference_usage u "
             "JOIN model_catalog m ON m.alias=u.model_alias JOIN provider_channels c ON c.id=u.channel_id LEFT JOIN inference_tasks t ON t.id=u.task_id "
-            "WHERE u.status='succeeded' ORDER BY u.created_at"
+            "WHERE u.status IN ('succeeded','unknown') ORDER BY u.created_at"
         ).fetchall()
         for raw in relay_rows:
             row = dict(raw)
-            measurements, reason = self._relay_measurements(row)
+            measurements, reason = (None, "provider_outcome_unknown") if row["status"] == "unknown" else self._relay_measurements(row)
             self._upsert_item(
                 connection,
                 source_type="relay", source_id=row["id"], api_key_id=row["api_key_id"],

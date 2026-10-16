@@ -159,6 +159,17 @@ export default function ModelPlayground({
   const [result, setResult] = useState<PlaygroundResult | null>(null);
   const [streamingText, setStreamingText] = useState("");
   const streamController = useRef<AbortController | null>(null);
+  const requestInFlight = useRef(false);
+  const imageAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
+  const otherAttempts = useRef<Record<string, { fingerprint: string; key: string }>>({});
+
+  function attemptKey(kind: string, input: unknown) {
+    const fingerprint = JSON.stringify([apiKey, input]);
+    if (otherAttempts.current[kind]?.fingerprint !== fingerprint) {
+      otherAttempts.current[kind] = { fingerprint, key: requestKey(`portal-${kind}`) };
+    }
+    return otherAttempts.current[kind].key;
+  }
 
   const selectedModel = useMemo(
     () => models.find((item) => item.id === modelId) ?? models[0],
@@ -204,6 +215,7 @@ export default function ModelPlayground({
   useEffect(() => () => streamController.current?.abort(), []);
 
   async function runTest() {
+    if (requestInFlight.current) return;
     if (!selectedModel) return setError("当前项目没有已启用的可用模型");
     const isTranscription = selectedModel.capabilities.transcriptions === true;
     if (!isTranscription && prompt.trim().length < 2)
@@ -217,6 +229,7 @@ export default function ModelPlayground({
     ) {
       return setError("当前视频模型必须填写参考图片 URL");
     }
+    requestInFlight.current = true;
     setRunning(true);
     setError("");
     setResult(null);
@@ -252,15 +265,22 @@ export default function ModelPlayground({
           );
         }
       } else if (model.modality === "image") {
+        // Network failure does not mean the paid generation failed. A manual
+        // second click for the same input retrieves the original attempt.
+        const fingerprint = JSON.stringify([apiKey, model.id, prompt.trim(), referenceImage.trim()]);
+        if (imageAttempt.current?.fingerprint !== fingerprint) {
+          imageAttempt.current = { fingerprint, key: requestKey("portal-image") };
+        }
         response = await testRelayImage(
           apiKey,
           model.id,
           prompt.trim(),
-          requestKey("portal-image"),
+          imageAttempt.current.key,
           model.capabilities.imageInput === true
             ? referenceImage.trim() || undefined
             : undefined,
         );
+        imageAttempt.current = null;
       } else if (model.modality === "embedding") {
         response = await testRelayEmbedding(apiKey, model.id, prompt.trim());
       } else if (model.modality === "audio") {
@@ -276,8 +296,9 @@ export default function ModelPlayground({
             apiKey,
             model.id,
             audioUrl.trim(),
-            requestKey("portal-asr"),
+            attemptKey("asr", [model.id, audioUrl.trim()]),
           );
+          delete otherAttempts.current.asr;
         } else {
           response = await testRelayAudioGeneration(
             apiKey,
@@ -300,8 +321,9 @@ export default function ModelPlayground({
               ? parsedDuration
               : undefined,
           },
-          requestKey("portal-video"),
+          attemptKey("video", [model.id, prompt.trim(), referenceImage.trim(), parsedDuration]),
         );
+        delete otherAttempts.current.video;
       }
       setResult({
         ...response,
@@ -315,6 +337,7 @@ export default function ModelPlayground({
         setError(caught instanceof Error ? caught.message : "模型测试失败");
       }
     } finally {
+      requestInFlight.current = false;
       streamController.current = null;
       setRunning(false);
     }

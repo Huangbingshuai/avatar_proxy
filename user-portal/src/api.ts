@@ -325,12 +325,21 @@ async function relayRequest(
   headers.set("Accept", "application/json");
   if (init.body) headers.set("Content-Type", "application/json");
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers,
-    credentials: "omit",
-  });
-  const text = await response.text();
+  let response: Response;
+  let text: string;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers,
+      credentials: "omit",
+    });
+    text = await response.text();
+  } catch (error) {
+    if (init.method === "POST") {
+      throw new Error("连接中断，但上游可能仍在执行。请勿重复付费提交；生图可用相同输入再次查询原请求，必要时联系管理员核对。");
+    }
+    throw error;
+  }
   let data: unknown = {};
   if (text) {
     try {
@@ -339,7 +348,14 @@ async function relayRequest(
       data = { message: text };
     }
   }
-  if (!response.ok) throw new Error(errorMessage(data, response.status));
+  if (!response.ok) {
+    const jsonError = isRecord(data) && isRecord(data.error);
+    const message = !jsonError && [502, 504].includes(response.status)
+      ? "网关或供应商响应中断，上游结果尚未确认，请勿更换幂等键重复提交。"
+      : errorMessage(data, response.status);
+    const id = response.headers.get("x-request-id");
+    throw new Error(message + (id ? `（请求 ID：${id}）` : ""));
+  }
   return {
     body: isRecord(data) ? data : {},
     status: response.status,
@@ -491,12 +507,17 @@ export async function testRelayTextStream(
   let accumulated = "";
   let usage: Record<string, unknown> = {};
   let requestId = response.headers.get("x-request-id") || undefined;
+  let completed = false;
 
   function consumeLine(rawLine: string) {
     const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
     if (!line.startsWith("data:")) return;
     const payload = line.slice(5).trimStart();
-    if (!payload || payload === "[DONE]") return;
+    if (payload === "[DONE]") {
+      completed = true;
+      return;
+    }
+    if (!payload) return;
     let event: unknown;
     try {
       event = JSON.parse(payload);
@@ -504,6 +525,9 @@ export async function testRelayTextStream(
       return;
     }
     if (!isRecord(event)) return;
+    if (isRecord(event.error)) {
+      throw new Error(errorMessage(event, 502));
+    }
     if (!requestId) requestId = firstString(event, ["id"]) || undefined;
     if (isRecord(event.usage)) usage = event.usage;
     const delta = chatStreamDelta(event);
@@ -512,15 +536,25 @@ export async function testRelayTextStream(
     options.onDelta?.(delta, accumulated);
   }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) consumeLine(line);
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) consumeLine(line);
+      if (done) break;
+    }
+    if (buffer) consumeLine(buffer);
+    if (!completed) throw new Error("流式连接提前结束，已收到的内容仅为部分结果，请勿自动重试付费请求。");
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error("流式连接中断，当前内容可能不完整；上游可能仍在执行，请勿自动重复付费调用。");
+    }
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
-  if (buffer) consumeLine(buffer);
 
   return {
     status: response.status,
