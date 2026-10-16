@@ -51,7 +51,7 @@ def test_client_api_model_table_matches_builtin_catalog() -> None:
 def test_each_model_has_its_own_reference_and_public_metadata() -> None:
     expected = {row[0] for row in BUILTIN_MODEL_CATALOG if row[0] not in BUILTIN_DISABLED_MODEL_ALIASES}
     reference = _text(REFERENCE_ROOT / "model-reference.md")
-    documented = set(re.findall(r"^## `([^`]+)`$", reference, re.M))
+    documented = set(re.findall(r"^### `([^`]+)`$", reference, re.M))
     assert documented == expected
     metadata = json.loads((BACKEND_ROOT.parent / "tools/client-docs/models.json").read_text(encoding="utf-8"))
     assert {row["id"] for row in metadata} == expected
@@ -61,7 +61,7 @@ def test_each_model_has_its_own_reference_and_public_metadata() -> None:
         assert set(row) == {"id", "name", "modality", "capabilities", "summary"}
         assert row["capabilities"] == catalog[row["id"]][6]
         assert row["modality"] == catalog[row["id"]][3]
-    for block in re.split(r"^## `[^`]+`$", reference, flags=re.M)[1:]:
+    for block in re.split(r"^### `[^`]+`$", reference, flags=re.M)[1:]:
         assert "```bash" in block
         assert "参数" in block
         assert "响应" in block or "结果" in block

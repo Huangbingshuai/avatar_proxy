@@ -59,6 +59,20 @@ API 路径已经包含 `/v1` 或 `/api`，拼接完整请求 URL 时不要重复
 
 所有模型名称均使用 [`GET /v1/models`](models.md#查询可用模型) 返回的 `id`。同名模型的能力、价格由项目当前绑定渠道决定，不能由调用方在请求中切换。
 
+目录按“供应商 → 模型”组织；同名模型可以出现在多个供应商下。先从 `/v1/pricing?model=模型名` 的同名项目读取 `provider`，再阅读对应供应商下的参数和示例，`/v1/models` 的能力用于进一步核对。公开契约一致的内容共用同一套生成规则，存在差异的参数按供应商说明。阅读页面不会切换项目渠道，请勿在请求体中添加 `provider` 或 `channel`。
+
+| `provider` 返回值 | 文档中的供应商 |
+|---|---|
+| `volcengine_ark` | 火山引擎 |
+| `byteplus_modelark` | BytePlus |
+| `maxmodel` | MaxModel |
+| `modeltop` | ModelTop |
+| `volcengine_speech` | 豆包语音 |
+| `aliyun_bailian` | 阿里百炼 |
+| `minimax` | MiniMax |
+
+示例中的 `customer.example.com`、`cdn.example.com`、`provider.example.com` 及 `example.com` 媒体地址只是占位符，不是测试素材。调用前替换为自己的公网可访问媒体地址；`group-xxxxxxxx`、`asset-xxxxxxxx`、`upload_*` 和 `$TASK_ID` 使用对应创建或上传接口实际返回的 ID。本地上传示例也需准备同名真实文件。每次新的生图、视频或识别操作使用新的幂等键；恢复同一请求时保留原键。
+
 ## 响应与请求标识
 
 - JSON 接口按 HTTP 状态和响应正文共同判断结果；异步任务提交成功不代表生成成功。

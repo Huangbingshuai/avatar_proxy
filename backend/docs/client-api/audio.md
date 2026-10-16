@@ -63,16 +63,22 @@ curl "$BASE_URL/v1/audio/transcriptions" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: asr-order-001" \
   -d '{"model":"doubao-seedasr-2.0","url":"https://example.com/meeting.mp3"}'
-
-curl "$BASE_URL/v1/audio/transcriptions/asr_xxx" \
-  -H "Authorization: Bearer $API_KEY"
 ```
+
+保存 `202` 响应中的 `id`，作为下文的 `TASK_ID`；不要使用示例 ID 查询自己的任务。
 
 ## 查询录音识别任务
 
 `GET /v1/audio/transcriptions/{taskId}`
 
 任务状态为 `queued`、`running`、`succeeded` 或 `failed`；成功时响应包含 `text` 和供应商返回的真实 `duration`。不要将创建返回 `202` 当成识别完成。
+
+将创建返回的 `id` 设置为环境变量 `TASK_ID`，使用创建时的同一枚业务 Key 每 5～10 秒查询，直到终态：
+
+```bash
+curl "$BASE_URL/v1/audio/transcriptions/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
 
 ```json
 {

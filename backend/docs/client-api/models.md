@@ -94,6 +94,8 @@ curl "$BASE_URL/v1/models" \
 
 每个“查看接口”包含该模型的请求、参数、示例与结果；无需先猜测应使用哪类接口。
 
+左侧按供应商分组，再选择模型。`gpt-image-2` 同时出现在 MaxModel 和 ModelTop 下；四个标准 `dreamina-seedance-*` 型号同时出现在 BytePlus 和 ModelTop 下。它们的公开路径及模型别名相同，但数量限制、参数、结果格式或取消能力可能不同，请按当前项目的 `provider` 阅读。`-filter-off` 型号只列在 ModelTop 下。
+
 ## 查询模型价格
 
 ```bash

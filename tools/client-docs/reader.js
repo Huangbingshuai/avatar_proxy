@@ -20,8 +20,11 @@
     document.querySelectorAll('.page-link').forEach(link => {
       if (link.dataset.page === page.id) {
         link.setAttribute('aria-current', 'page');
-        const folder = link.closest('details');
-        if (folder) folder.open = true;
+        let folder = link.closest('details');
+        while (folder) {
+          folder.open = true;
+          folder = folder.parentElement?.closest('details');
+        }
       }
       else link.removeAttribute('aria-current');
     });

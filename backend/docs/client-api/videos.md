@@ -69,7 +69,7 @@ curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
 
 公共字段不代表所有模型都支持。比如给 `wan3.0-video` 传 `seed`，或给 `minimax-h3` 传 `generate_audio`，会返回 `422 video_parameter_unsupported`，不会把未知参数直接传给供应商。
 
-海外视频不接受 `seed`、`camera_fixed`、`frames`、`draft` 或 `service_tier=flex`。2.5 全能参考最多 30 张图片、10 个视频、10 段音频；2.0 系列最多 9 张图片、3 个视频、3 段音频；首末帧不能与全能参考混用。仅填写末帧而缺少首帧会返回 `422`。本系统素材库中的国内素材库的 `asset://` ID 不能直接用于海外模型，请传海外服务可访问的 HTTP(S) 素材地址、合法的图片/音频 Data URL，或海外同一账号可用的素材 ID。
+BytePlus 渠道的海外视频不接受 `seed`、`camera_fixed`、`frames`、`draft` 或 `service_tier=flex`；ModelTop 的差异见[ModelTop 视频](#modeltop-视频)。2.5 全能参考最多 30 张图片、10 个视频、10 段音频；2.0 系列最多 9 张图片、3 个视频、3 段音频；首末帧不能与全能参考混用。仅填写末帧而缺少首帧会返回 `422`。国内素材库的 `asset://` ID 不能直接用于海外模型，请传海外服务可访问的 HTTP(S) 素材地址、合法的图片/音频 Data URL，或海外同一账号可用的素材 ID。
 
 海外视频示例（更换 `model` 即可使用另外三款，参数需在对应能力范围内）：
 
@@ -194,11 +194,16 @@ curl -X DELETE "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 
 用同一业务 Key 查询 `GET /api/v3/contents/generations/tasks/{taskId}`，`succeeded` 才表示成功。2.5 支持4～30秒，其他4～15秒，均支持 `duration=-1`。2.5支持480p/720p/1080p；2.0另支持 `4k`；Fast/Mini仅480p/720p。参考素材使用 `content` 的 `image_url/video_url/audio_url` 及对应 role；2.5最多30图/10视频/10音频，其他9图/3视频/3音频。首末帧不能与全能参考混用，2.0系列的音频须搭配图或视频。当前不开放取消、草稿、回调或联网工具；素材ID不能保证跨供应商复用，结果URL可能过期。
 
+ModelTop 渠道接受 `seed` 和 `return_last_frame`；BytePlus 渠道不接受 `seed`，且 2.0 系列不支持 `return_last_frame=true`。两者都不接受 `camera_fixed`、`frames`、`draft` 或 `service_tier=flex`。以当前项目 `/v1/models` 返回的 `seed`、`returnLastFrame`、`resolutions`、`cancelSupported` 等能力为准，不要将一个渠道的限制套用到另一个渠道。
+
 ## 参数与轮询注意事项
 
 - `model` 和 `content` 必填；`content` 是内容数组，至少包含模型允许的文本或参考素材。
 - 画幅只使用 `ratio`，不使用 `aspect_ratio`。首帧、末帧、全能参考的角色不能随意混用。
 - `duration=-1` 只适用于声明支持智能时长的模型；最终时长、Token 以任务结果为准。
+- Seedance 的 `duration` 为整数秒；`frames` 仅在能力允许时使用，取值为 29～289，且 `(frames-25)` 能被 4 整除；`duration` 和 `frames` 不能同时设置。
+- Seedance 的 `ratio` 仅允许 `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9`、`adaptive`。`watermark`、`generate_audio`、`draft`、`camera_fixed`、`return_last_frame` 必须为布尔值，并且模型须支持相应能力；不能用字符串 `"false"` 代替 `false`。
+- `execution_expires_after` 为 3600～259200 的整数秒，`service_tier` 为 `default` 或模型支持的 `flex`，`task_type` 为 `t2v` 或 `i2v`。`output_format` 只在模型的 `outputFormats` 声明支持时使用。
 - 国内 1.0 Pro / Pro Fast 的时长能力为 2～12 秒；2.0 系列为 4～15 秒，2.5 为 4～30 秒。可选分辨率以 `/v1/models` 的 `resolutions` 为准。
 - 创建成功只表示收到任务 ID。保存 `vid_*`，使用创建任务的同一业务 Key，每 5～10 秒查询一次，直到终态。
 - 视频没有 `/v1/videos` 接口。查询与取消使用中转站 ID，不使用上游 ID。

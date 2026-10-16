@@ -4,7 +4,9 @@
 
 ## 素材接口概览
 
-原有素材接口全部保留：上传 1 项、素材组管理 5 项、素材管理 5 项。接口使用星辰平台业务 Key，素材范围由 Key 所属项目确定。
+素材接口归属火山引擎，在目录的“火山引擎 → 素材接口”下查阅。原有接口全部保留：上传 1 项、素材组管理 5 项、素材管理 5 项。接口使用星辰平台业务 Key，素材范围由 Key 所属项目确定，不随项目的模型供应商渠道切换。
+
+素材登记进入火山引擎素材库，`asset://` ID 不能默认跨供应商复用。给 BytePlus、ModelTop 等其他供应商的模型传入参考素材时，应使用目标供应商可访问的媒体 URL 或该模型明确支持的输入格式；不能把火山素材 ID 当作通用文件地址。
 
 素材组和素材管理响应保留 `ResponseMetadata` 和返回结果结构，字段区分大小写。HTTP `2xx` 表示请求已接收；登记素材还需查询状态。保留 `ResponseMetadata.RequestId` 用于排查。上传接口使用下文单独列出的 JSON 结构。
 
@@ -12,9 +14,11 @@
 
 | 素材类型 | `assetType` | 扩展名 | MIME 类型 | 大小及媒体要求 |
 |---|---|---|---|---|
-| 图片 | `Image` | jpg、jpeg、png、webp、bmp、tif、tiff、gif、heic、heif | `image/jpeg`、`image/png`、`image/webp`、`image/bmp`、`image/tiff`、`image/gif`、`image/heic`、`image/heif` | 小于 30 MB；宽高分别大于 300px 且小于 6000px；宽高比大于 0.4 且小于 2.5 |
-| 视频 | `Video` | mp4、mov | `video/mp4`、`video/quicktime` | 不超过 200 MB；2～30 秒；24～60 FPS；宽高分别为 300～6000px；宽高比为 0.4～2.5；总像素数为 407,696～8,295,044 |
-| 音频 | `Audio` | wav、mp3 | `audio/wav`、`audio/mpeg` | 不超过 15 MB；2～30 秒 |
+| 图片 | `Image` | jpg、jpeg、png、webp、bmp、tif、tiff、gif、heic、heif | `image/jpeg`、`image/png`、`image/webp`、`image/bmp`、`image/tiff`、`image/gif`、`image/heic`、`image/heif` | 小于 30 MiB；宽高分别大于 300px 且小于 6000px；宽高比大于 0.4 且小于 2.5 |
+| 视频 | `Video` | mp4、mov | `video/mp4`、`video/quicktime` | 不超过 200 MiB；2～30 秒；24～60 FPS；宽高分别为 300～6000px；宽高比为 0.4～2.5；总像素数为 407,696～8,295,044 |
+| 音频 | `Audio` | wav、mp3 | `audio/wav`、`audio/mpeg` | 不超过 15 MiB；2～30 秒 |
+
+`1 MiB = 1,048,576` 字节。以上为类型上限；实际上传还受服务端单文件上限及项目/Key 额度约束，达到限制时返回 `413` 或 `429`。
 
 服务端会检查真实媒体内容，而不只检查扩展名或请求声明的 MIME。空文件、损坏文件、伪造 MIME、扩展名不匹配以及超出规格的媒体都会在上传阶段被拒绝。
 

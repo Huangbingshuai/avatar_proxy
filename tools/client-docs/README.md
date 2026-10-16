@@ -2,9 +2,9 @@
 
 ## 内容来源
 
-`backend/CLIENT_API.md` 是客户入口，`backend/docs/client-api/` 是接口参考。左侧按模型系列组织，每个模型独立展示示例、参数和结果；素材接口按操作独立展示。独立文件 `backend/CLIENT_API.html` 与控制台的 `public/docs/client-api.html` 必须字节一致。
+`backend/CLIENT_API.md` 是客户入口，`backend/docs/client-api/` 是接口参考。左侧按供应商组织，每个模型条目展示适用的示例、参数和结果；11 项素材接口归入“火山引擎 → 素材接口”，按操作独立展示。独立文件 `backend/CLIENT_API.html` 与控制台的 `public/docs/client-api.html` 必须字节一致。
 
-`models.json` 仅保存公开模型名称、类型和静态能力，不含真实上游 ID 或凭证。`model-guides.mjs` 与已有通用参考生成 43 个模型页，同时生成 Markdown 阅读版 `backend/docs/client-api/model-reference.md`；不要手工修改生成文件。新增模型时同步更新模型元数据，契约测试会校验模型别名覆盖。素材操作从 `assets.md` 的独立章节生成，不维护第二份参数。
+`models.json` 仅保存公开模型名称、类型和静态能力，不含真实上游 ID 或凭证。`model-guides.mjs` 与已有通用参考生成 48 个供应商/模型页，同时生成 Markdown 阅读版 `backend/docs/client-api/model-reference.md`；不要手工修改生成文件。新增模型时同步更新模型元数据，契约测试会校验模型别名覆盖。素材操作从 `assets.md` 的独立章节生成，不维护第二份参数。
 
 ## 设计参考
 
@@ -38,5 +38,7 @@ npm run docs:test
 控制台使用不授予同源权限的沙箱 iframe 加载静态 HTML，并提供独立窗口和下载。打印输出包含全部章节。修改 Markdown、阅读器或样式后均须重新生成；构建一致性测试会阻止遗忘更新任一 HTML 副本。
 
 构建同时更新 `app/client-docs-manifest.ts`，以 HTML 内容哈希生成控制台文档 URL 的版本参数，避免升级后继续读取浏览器缓存中的旧标题或内容。
+
+`supplier-guides.mjs` 将 43 个模型整理为 7 个供应商、48 个“供应商/模型”条目；同名模型可以分别出现在不同供应商下面，不再增加渠道对照或隔离层。内容仍复用公共模板，参数能力按实际供应商适配。请求中不增加渠道字段；读者通过 `/v1/pricing` 中同名项的 `provider` 确认当前供应商。契约测试会逐条核对供应商和能力并回放示例；素材示例覆盖全部 11 项操作，供应商、TOS 均使用模拟实现。
 
 额外契约检查：在 `backend` 中运行 `python -m pytest tests/test_public_docs_contract.py`，覆盖模型清单、路由与方法、字段白名单、JSON/curl 示例、跨文件链接和敏感信息边界。不使用真实供应商，不产生费用。

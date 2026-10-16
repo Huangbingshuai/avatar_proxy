@@ -5,7 +5,8 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createHash } from 'node:crypto';
 import { JSDOM, VirtualConsole } from 'jsdom';
-import { build, pages, root, escapeHtml, modelCatalog, assetOperations } from './build.mjs';
+import { build, pages, root, escapeHtml, modelCatalog, assetOperations, supplierCatalog } from './build.mjs';
+import { supplierPageId } from './supplier-guides.mjs';
 
 const html = await build();
 function reader(t, options = {}) {
@@ -31,7 +32,7 @@ test('HTML is deterministic, self-contained, and both delivery copies are curren
   const version = createHash('sha256').update(html).digest('hex').slice(0, 16);
   assert.match(await readFile(path.join(root, 'app/client-docs-manifest.ts'), 'utf8'), new RegExp('client-api\\.html\\?v=' + version));
   const dom = new JSDOM(html);
-  assert.equal(dom.window.document.querySelectorAll('.docs-page').length, pages.length + modelCatalog.length + assetOperations.length);
+  assert.equal(dom.window.document.querySelectorAll('.docs-page').length, pages.length + supplierCatalog.length + assetOperations.length);
   assert.equal(dom.window.document.querySelectorAll('script[src], link[rel="stylesheet"], iframe, form').length, 0);
   assert.match(dom.window.document.querySelector('meta[http-equiv]').content, /connect-src 'none'/);
   const ids = [...dom.window.document.querySelectorAll('[id]')].map(el => el.id);
@@ -41,6 +42,94 @@ test('HTML is deterministic, self-contained, and both delivery copies are curren
   }
   assert.match(escapeHtml('<script>"&'), /&lt;script&gt;&quot;&amp;/);
   dom.window.close();
+});
+
+test('supplier then model navigation includes duplicate aliases without a channel isolation layer', t => {
+  const window = reader(t);
+  const { document } = window;
+  assert.equal(supplierCatalog.length, 48);
+  for (const variant of supplierCatalog) {
+      const id = supplierPageId(variant);
+      window.location.hash = '#' + id;
+      window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+      const page = document.querySelector('.docs-page:not([hidden])');
+      assert.equal(page.id, id);
+      assert.match(page.textContent, new RegExp('供应商：' + variant.supplierLabel));
+      assert.equal(page.dataset.provider, variant.provider);
+      assert.ok(page.querySelector('.endpoint-bar'));
+      const link = document.querySelector('[aria-current="page"]');
+      let folder = link.closest('details');
+      let count = 0;
+      while (folder) { assert.equal(folder.open, true); count++; folder = folder.parentElement.closest('details'); }
+      assert.equal(count, 1);
+      assert.equal(link.closest('details').dataset.provider, variant.provider);
+      if (variant.provider === 'modeltop') {
+        assert.ok(![...page.querySelectorAll('pre code')].some(code => code.textContent.includes('curl -X DELETE')));
+        assert.ok(!page.textContent.includes('BytePlus 渠道不接受'));
+      }
+  }
+  assert.equal(document.querySelectorAll('.supplier-folder').length, 7);
+  assert.equal(document.querySelectorAll('.channel-folder').length, 0);
+});
+
+test('all material operations belong to Volcengine and deep links expand the supplier folder', t => {
+  const window = reader(t);
+  const { document } = window;
+  const assets = document.querySelector('.asset-folder');
+  assert.equal(assets.closest('.supplier-folder').dataset.provider, 'volcengine_ark');
+  assert.equal(document.querySelectorAll('.asset-folder').length, 1);
+  for (const [id] of assetOperations) {
+    const link = document.querySelector('.page-link[data-page="' + id + '"]');
+    assert.equal(link.closest('.supplier-folder').dataset.provider, 'volcengine_ark');
+    const article = document.getElementById(id);
+    assert.equal(article.dataset.provider, 'volcengine_ark');
+    assert.match(article.textContent, /供应商：火山引擎/);
+  }
+  window.location.hash = '#asset-get';
+  window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+  assert.equal(assets.open, true);
+  assert.equal(assets.closest('.supplier-folder').open, true);
+  assert.equal(document.querySelector('.docs-page:not([hidden])').id, 'asset-get');
+});
+
+test('JavaScript examples execute offline with matching URLs, headers, bodies and response readers', async () => {
+  const dom = new JSDOM(html);
+  try {
+    const blocks = [...dom.window.document.querySelectorAll('.code-block')].filter(block => block.querySelector('pre[data-language="javascript"]'));
+    assert.ok(blocks.length > 150);
+    for (const block of blocks) {
+      const shell = block.querySelector('pre[data-language="shell"] code').textContent;
+      const script = block.querySelector('pre[data-language="javascript"] code').textContent;
+      const body = shell.match(/-d '([\s\S]+)'/)?.[1];
+      const endpoint = shell.match(/"\$BASE_URL([^"]+)"/)[1].replace('$TASK_ID', 'mock-task');
+      const method = shell.match(/-X (\w+)/)?.[1] || (body ? 'POST' : 'GET');
+      const output = shell.match(/--output ([\w.-]+)/)?.[1];
+      const expected = body ? JSON.parse(body) : undefined;
+      const calls = [];
+      const writes = [];
+      const source = script.replace('const { writeFile } = await import("node:fs/promises");', 'const writeFile = mockWriteFile;');
+      const context = vm.createContext({
+        Buffer, process: { env: { API_KEY: 'mock-key', TASK_ID: 'mock-task' }, stdout: { write() {} } }, console: { log() {} },
+        mockWriteFile: async (file, bytes) => { writes.push([file, bytes.toString()]); },
+        fetch: async (url, options) => {
+          calls.push({ url, options });
+          return {
+            ok: true, status: method === 'DELETE' ? 204 : 200,
+            json: async () => { assert.notEqual(method, 'DELETE'); assert.ok(!output); assert.ok(!expected?.stream); return {}; },
+            arrayBuffer: async () => Buffer.from('mock-audio'),
+            body: (async function* () { assert.equal(expected?.stream, true); yield Buffer.from('data: [DONE]\n\n'); })(),
+          };
+        },
+      });
+      await new vm.Script('(async () => {\n' + source + '\n})()').runInContext(context);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].url, 'https://api.richbest.cn' + endpoint);
+      assert.equal(calls[0].options.method, method);
+      assert.equal(calls[0].options.headers.Authorization, 'Bearer mock-key');
+      assert.deepEqual(calls[0].options.body ? JSON.parse(calls[0].options.body) : undefined, expected);
+      assert.deepEqual(writes, output ? [[output, 'mock-audio']] : []);
+    }
+  } finally { dom.window.close(); }
 });
 
 test('every model and original asset operation has a dedicated navigable reference', t => {
