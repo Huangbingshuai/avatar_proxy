@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { createHash } from 'node:crypto';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { build, pages, root, escapeHtml, modelCatalog, assetOperations, supplierCatalog } from './build.mjs';
-import { supplierPageId } from './supplier-guides.mjs';
+import { supplierPageId, supplierGroups } from './supplier-guides.mjs';
 
 const html = await build();
 function reader(t, options = {}) {
@@ -54,21 +54,26 @@ test('supplier then model navigation includes duplicate aliases without a channe
       window.dispatchEvent(new window.HashChangeEvent('hashchange'));
       const page = document.querySelector('.docs-page:not([hidden])');
       assert.equal(page.id, id);
-      assert.match(page.textContent, new RegExp('供应商：' + variant.supplierLabel));
+      assert.match(page.textContent, new RegExp('供应商：' + (variant.provider === 'volcengine_speech' ? '火山引擎（豆包语音）' : variant.supplierLabel)));
       assert.equal(page.dataset.provider, variant.provider);
       assert.ok(page.querySelector('.endpoint-bar'));
       const link = document.querySelector('[aria-current="page"]');
       let folder = link.closest('details');
       let count = 0;
       while (folder) { assert.equal(folder.open, true); count++; folder = folder.parentElement.closest('details'); }
-      assert.equal(count, 1);
-      assert.equal(link.closest('details').dataset.provider, variant.provider);
+      const groupedProvider = variant.provider.startsWith('volcengine_');
+      assert.equal(count, groupedProvider ? 2 : 1);
+      assert.equal(link.closest('.supplier-folder').dataset.supplier, groupedProvider ? 'volcengine' : variant.provider);
+      if (groupedProvider) assert.equal(link.closest('.provider-folder').dataset.provider, variant.provider);
       if (variant.provider === 'modeltop') {
         assert.ok(![...page.querySelectorAll('pre code')].some(code => code.textContent.includes('curl -X DELETE')));
         assert.ok(!page.textContent.includes('BytePlus 渠道不接受'));
       }
   }
-  assert.equal(document.querySelectorAll('.supplier-folder').length, 7);
+  assert.equal(document.querySelectorAll('.supplier-folder').length, supplierGroups.length);
+  assert.equal(document.querySelectorAll('.supplier-folder').length, 6);
+  assert.equal(document.querySelectorAll('.speech-folder .page-link').length, 3);
+  assert.match(document.querySelector('.speech-folder').textContent, /豆包语音/);
   assert.equal(document.querySelectorAll('.channel-folder').length, 0);
 });
 
@@ -76,11 +81,13 @@ test('all material operations belong to Volcengine and deep links expand the sup
   const window = reader(t);
   const { document } = window;
   const assets = document.querySelector('.asset-folder');
-  assert.equal(assets.closest('.supplier-folder').dataset.provider, 'volcengine_ark');
+  assert.equal(assets.closest('.supplier-folder').dataset.supplier, 'volcengine');
+  assert.equal(assets.closest('.provider-folder').dataset.provider, 'volcengine_ark');
   assert.equal(document.querySelectorAll('.asset-folder').length, 1);
   for (const [id] of assetOperations) {
     const link = document.querySelector('.page-link[data-page="' + id + '"]');
-    assert.equal(link.closest('.supplier-folder').dataset.provider, 'volcengine_ark');
+    assert.equal(link.closest('.supplier-folder').dataset.supplier, 'volcengine');
+    assert.equal(link.closest('.provider-folder').dataset.provider, 'volcengine_ark');
     const article = document.getElementById(id);
     assert.equal(article.dataset.provider, 'volcengine_ark');
     assert.match(article.textContent, /供应商：火山引擎/);
@@ -88,6 +95,7 @@ test('all material operations belong to Volcengine and deep links expand the sup
   window.location.hash = '#asset-get';
   window.dispatchEvent(new window.HashChangeEvent('hashchange'));
   assert.equal(assets.open, true);
+  assert.equal(assets.closest('.provider-folder').open, true);
   assert.equal(assets.closest('.supplier-folder').open, true);
   assert.equal(document.querySelector('.docs-page:not([hidden])').id, 'asset-get');
 });

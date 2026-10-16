@@ -192,7 +192,7 @@ export function modelGuide(model, refs) {
     '## ' + (model.primary === false ? supplierHeading(model.id, model.supplierLabel) : inline(model.id)), model.summary,
     '[鉴权](basics.md) · [错误与安全重试](errors.md)',
     '需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。',
-    ...(model.supplierLabel ? ['供应商：' + model.supplierLabel + '。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=' + inline(model.provider) + ' 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。'] : []),
+    ...(model.supplierLabel ? ['供应商：' + (model.provider === 'volcengine_speech' ? '火山引擎（豆包语音）' : model.supplierLabel) + '。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=' + inline(model.provider) + ' 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。'] : []),
     ...(model.otherSuppliers ? ['同名模型的其他供应商参考：' + model.otherSuppliers + '。请选择项目实际绑定的供应商。'] : []),
     body,
     '### 查询模型价格',

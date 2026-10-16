@@ -4,7 +4,16 @@ export const supplierLabels = {
   volcengine_ark: '火山引擎', byteplus_modelark: 'BytePlus', maxmodel: 'MaxModel', modeltop: 'ModelTop',
   volcengine_speech: '豆包语音', aliyun_bailian: '阿里百炼', minimax: 'MiniMax',
 };
-export const supplierOrder = Object.keys(supplierLabels);
+export const supplierGroups = [
+  { id: 'volcengine', label: '火山引擎', providers: ['volcengine_ark', 'volcengine_speech'] },
+  { id: 'byteplus_modelark', label: 'BytePlus', providers: ['byteplus_modelark'] },
+  { id: 'maxmodel', label: 'MaxModel', providers: ['maxmodel'] },
+  { id: 'modeltop', label: 'ModelTop', providers: ['modeltop'] },
+  { id: 'aliyun_bailian', label: '阿里百炼', providers: ['aliyun_bailian'] },
+  { id: 'minimax', label: 'MiniMax', providers: ['minimax'] },
+];
+export const supplierOrder = supplierGroups.flatMap(group => group.providers);
+export const supplierGroupLabel = provider => supplierGroups.find(group => group.providers.includes(provider))?.label || supplierLabels[provider];
 export const supplierPageId = model => 'model-' + model.id + (model.primary ? '' : '-' + model.provider);
 export const supplierHeading = (alias, label) => alias + ' ' + label + ' 供应商';
 export function primarySupplier(model) {
@@ -18,14 +27,15 @@ export function primarySupplier(model) {
 }
 export function supplierModels(model) {
   let variants;
-  if (model.id === 'gpt-image-2') return [
+  const withGroup = variants => variants.map(variant => ({ ...variant, supplierGroup: supplierGroupLabel(variant.provider) }));
+  if (model.id === 'gpt-image-2') return withGroup([
     { ...model, summary: '同步文生图；单次 1 张结果', primary: true, provider: 'maxmodel', supplierLabel: 'MaxModel' },
     { ...model, summary: '同步文生图；最多 10 张，原生返回 Base64', primary: false, provider: 'modeltop', supplierLabel: 'ModelTop', capabilities: {
       generations: true, maxN: 10, billingMetric: 'image_tokens', billingUnit: 1000000,
       imageTokenBilling: true, qualityLevels: ['auto', 'low', 'medium', 'high'],
       customSizes: false, outputFormat: false,
     } },
-  ];
+  ]);
   if (/^dreamina-seedance-2\.(5|0)(-fast|-mini)?$/.test(model.id)) variants = [
     { ...model, primary: true, provider: 'byteplus_modelark', supplierLabel: 'BytePlus' },
     { ...model, primary: false, provider: 'modeltop', supplierLabel: 'ModelTop', capabilities: {
@@ -35,7 +45,7 @@ export function supplierModels(model) {
       outputFormats: undefined,
     } },
   ];
-  if (variants) return variants;
+  if (variants) return withGroup(variants);
   const provider = primarySupplier(model);
-  return [{ ...model, primary: true, provider, supplierLabel: supplierLabels[provider] }];
+  return withGroup([{ ...model, primary: true, provider, supplierLabel: supplierLabels[provider] }]);
 }

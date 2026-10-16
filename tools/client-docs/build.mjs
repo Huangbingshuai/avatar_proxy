@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { Marked } from 'marked';
 import { modelGuide, section } from './model-guides.mjs';
 import { curlSamples } from './code-samples.mjs';
-import { supplierModels, supplierPageId, supplierLabels, supplierOrder } from './supplier-guides.mjs';
+import { supplierModels, supplierPageId, supplierLabels, supplierGroups } from './supplier-guides.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const root = path.resolve(here, '../..');
@@ -139,11 +139,21 @@ export async function build() {
   const navLink = page => `<a class="page-link" href="#${page.id}" data-page="${page.id}" title="${escapeHtml(page.label)}"><span>${escapeHtml(page.navLabel || page.label)}</span>${['asset', 'model'].includes(page.kind) ? `<small class="method method-${(page.method || 'POST').toLowerCase()}">${page.method || 'POST'}</small>` : ''}</a>`;
   const intro = sources.filter(p => ['start', 'basics', 'models', 'errors'].includes(p.id)).map(navLink).join('\n');
   const assetNav = `<details class="nav-folder asset-folder"><summary>素材接口<span>${assetOperations.length}</span></summary><div>${navLink(sources.find(p => p.id === 'assets'))}${sources.filter(p => p.kind === 'asset').map(navLink).join('\n')}</div></details>`;
-  const modelNav = supplierOrder.map(provider => {
-    const models = sources.filter(p => p.kind === 'model' && p.provider === provider);
-    const volcano = provider === 'volcengine_ark';
-    const count = volcano ? models.length + ' 模型 / ' + assetOperations.length + ' 素材' : models.length + ' 模型';
-    return `<details class="nav-folder supplier-folder" data-provider="${provider}"><summary>${escapeHtml(supplierLabels[provider])}<span>${count}</span></summary><div>${volcano ? '<p class="nav-label">模型接口</p>' : ''}${models.map(navLink).join('\n')}${volcano ? assetNav : ''}</div></details>`;
+  const modelNav = supplierGroups.map(group => {
+    const models = group.providers.flatMap(provider => sources.filter(p => p.kind === 'model' && p.provider === provider));
+    const count = models.length + ' 模型' + (group.id === 'volcengine' ? ' / ' + assetOperations.length + ' 素材' : '');
+    const channels = group.providers.map(provider => {
+      const providerModels = sources.filter(p => p.kind === 'model' && p.provider === provider);
+      const entries = providerModels.map(navLink).join('\n');
+      if (group.id === 'volcengine') {
+        const isArk = provider === 'volcengine_ark';
+        const sectionLabel = isArk ? '模型与素材接口' : supplierLabels[provider];
+        const sectionCount = isArk ? providerModels.length + ' 模型 / ' + assetOperations.length + ' 素材' : providerModels.length + ' 模型';
+        return `<details class="nav-folder provider-folder${isArk ? ' ark-folder' : ' speech-folder'}" data-provider="${provider}"><summary>${escapeHtml(sectionLabel)}<span>${sectionCount}</span></summary><div>${isArk ? '<p class="nav-label">模型接口</p>' : ''}${entries}${isArk ? assetNav : ''}</div></details>`;
+      }
+      return entries;
+    }).join('\n');
+    return `<details class="nav-folder supplier-folder" data-supplier="${group.id}"><summary>${escapeHtml(group.label)}<span>${count}</span></summary><div>${channels}</div></details>`;
   }).join('\n');
   const referenceNav = `<details class="nav-folder"><summary>通用协议参考</summary><div>${sources.filter(p => ['text', 'images', 'videos', 'audio', 'embeddings'].includes(p.id)).map(navLink).join('\n')}</div></details>`;
   const nav = intro + '<p class="nav-label">供应商 API</p>' + modelNav + '<p class="nav-label">其他参考</p>' + referenceNav;
@@ -166,7 +176,11 @@ export async function build() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const sources = await loadSources();
-  const modelMarkdown = '# 按供应商和模型接入\n\n[文档首页](../../CLIENT_API.md) · [模型目录与价格](models.md) · [素材接口](assets.md)\n\n' + supplierOrder.map(provider => '## ' + supplierLabels[provider] + '\n\n' + sources.filter(p => p.kind === 'model' && p.provider === provider).map(p => p.source.replace(/^## /gm, '#### ').replace(/^# /gm, '### ')).join('\n')).join('\n');
+  const modelMarkdown = '# 按供应商和模型接入\n\n[文档首页](../../CLIENT_API.md) · [模型目录与价格](models.md) · [素材接口](assets.md)\n\n' + supplierGroups.map(group => '## ' + group.label + '\n\n' + group.providers.map(provider => {
+    const pages = sources.filter(p => p.kind === 'model' && p.provider === provider);
+    const subsection = group.providers.length > 1 ? '#### ' + (provider === 'volcengine_ark' ? '模型接口' : supplierLabels[provider]) + '\n\n' : '';
+    return subsection + pages.map(p => p.source.replace(/^## /gm, '#### ').replace(/^# /gm, '### ')).join('\n');
+  }).join('\n')).join('\n');
   const modelTarget = path.join(root, 'backend/docs/client-api/model-reference.md');
   if (process.argv.includes('--check')) {
     if (await readFile(modelTarget, 'utf8') !== modelMarkdown) throw new Error('Model reference is stale; run npm run docs:build');
