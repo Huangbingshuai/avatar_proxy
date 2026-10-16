@@ -1,4 +1,3 @@
-import { supplierHeading } from './supplier-guides.mjs';
 const tick = String.fromCharCode(96);
 const inline = value => tick + value + tick;
 const fence = (language, body) => tick.repeat(3) + language + '\n' + body + '\n' + tick.repeat(3);
@@ -96,7 +95,7 @@ function imageGuide(model) {
     [inline('prompt'), '是', '字符串，1～32000 个字符'],
     [inline('n'), '否', '整数；该模型数量限制：' + n],
     [inline('size'), '否', gpt ? '像素尺寸，例如 1024x1024；不能使用 1K/2K 简写' : overseas ? '支持 ' + caps.sizes.join('、') + '，默认 2K' : '本页示例使用 2K；其他尺寸等级或像素尺寸须符合该型号限制'],
-    [inline('response_format'), '否', modeltop ? 'url 或 b64_json；ModelTop 原生返回 Base64，此参数不传往上游，按 data[].b64_json 读取' : 'url 或 b64_json；默认 url'],
+    [inline('response_format'), '否', modeltop ? 'url 或 b64_json；原生返回 Base64，此参数不传往上游，按 data[].b64_json 读取' : 'url 或 b64_json；默认 url'],
   ];
   if (caps.imageInput) rows.push([inline('image'), '否', 'URL、Data URL 或数组；最多 ' + caps.maxInputImages + ' 张参考图']);
   if (modeltop) rows.push([inline('quality'), '否', caps.qualityLevels.join('、') + '；默认 auto']);
@@ -106,12 +105,12 @@ function imageGuide(model) {
     '### 请求示例', curl('/v1/images/generations', body, { idempotency: true }),
     '### 请求参数', table(rows), '### 模型限制'];
   if (modeltop) parts.push(
-    '此页只适用于 ModelTop。当前只开放文生图，不提供参考图编辑、流式或 -gp 异步生图。',
+    '当前只开放文生图，不提供参考图编辑、流式或 -gp 异步生图。',
     id === 'gpt-image-2' ? '最多 10 张，不支持自定义尺寸、透明背景或显式 output_format/output_compression。可选背景仅 auto、opaque。' : '支持透明背景、自定义尺寸、png/jpeg/webp 和输出压缩率。透明背景不能输出 JPEG。',
     'size 可选 auto、1024x1024、1536x1024、1024x1536、2048x2048、2048x1152、3840x2160、2160x3840。不能使用 1K/2K 简写。',
     ...(caps.customSizes ? ['自定义尺寸边长≤3840，均为16的倍数，宽高比≤3:1，总像素655360～8294400。background 为 auto/opaque/transparent；output_format 为 png/jpeg/webp；仅 JPEG/WebP 可设置整数 output_compression=0..100。'] : []),
     '不接受 image、watermark、style、seed、tools、moderation 等其他渠道字段。原生返回 Base64，响应中的 usage 保留实际细分 Token，不按固定张价推算。');
-  else if (gpt) parts.push('此页只适用于 MaxModel。当前单次只能生成 1 张；不要套用 ModelTop 的多图、自定义尺寸、透明背景或图片 Token 能力。示例仅使用当前已接入的同步文生图字段。其他兼容选项由该渠道校验，不作为本页可用能力承诺。');
+  else if (gpt) parts.push('当前单次只能生成 1 张；不要套用其他渠道的多图、自定义尺寸、透明背景或图片 Token 能力。示例仅使用当前已接入的同步文生图字段。其他兼容选项由服务校验，不作为本页可用能力承诺。');
   else if (overseas) parts.push(
     '参考图单张 Data URL 解码后不超过 30 MiB。' + (caps.maxN > 1 ? '参考图与结果图合计不能超过 15。' : '每次只输出 1 张，不接受组图参数。'),
     'Pro/Flash 自定义尺寸总像素为 921,600～4,624,220；Lite 为 3,686,400～16,777,216，宽高比为 1/16～16。三款支持 png/jpeg，不接受 quality、style、background；Pro 的提示词优化额外支持 fast。',
@@ -137,7 +136,7 @@ function videoGuide(model) {
     duration: seedance ? 4 : id.startsWith('wan') ? 8 : 6,
     resolution: seedance ? '480p' : id.startsWith('wan') ? '1080P' : '768P', ratio: '16:9' };
   const parts = ['### 接口', [inline('POST ' + path), inline('GET ' + path + '/{taskId}'), ...(cancellable ? [inline('DELETE ' + path + '/{taskId}')] : [])].join('\n\n'),
-    '创建为异步操作。' + (cancellable ? '支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。' : '当前模型渠道不支持取消任务；调用 DELETE 会返回 422 video_cancel_unsupported。'),
+    '创建为异步操作。' + (cancellable ? '支持取消；排队任务可取消，运行中任务可能被拒绝。' : '当前模型渠道不支持取消任务；调用 DELETE 会返回 422 video_cancel_unsupported。'),
     '### 创建示例', curl(path, body, { idempotency: true }),
     '### 请求参数', table([modelField(id),
       [inline('content'), '是', '内容数组，包含文本及模型支持的参考素材'],
@@ -146,7 +145,7 @@ function videoGuide(model) {
       [inline('ratio'), '否', '画幅比例，例如 16:9；不使用 aspect_ratio'],
       [inline('generate_audio'), '否', id.startsWith('minimax') ? '不支持该字段' : '按模型能力决定是否接受，示例中省略'],
       [inline('watermark'), '否', '布尔值，按模型能力决定是否支持'],
-      ...(overseas && caps.seed ? [[inline('seed'), '否', '随机种子；当前渠道接受，具体范围由供应商校验']] : []),
+      ...(overseas && caps.seed ? [[inline('seed'), '否', '随机种子；当前渠道接受，具体范围由服务端校验']] : []),
       ...(overseas && caps.returnLastFrame ? [[inline('return_last_frame'), '否', '布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取']] : []),
       ...(overseas ? [[inline('service_tier'), '否', '仅 default'], [inline('execution_expires_after'), '否', '3600～259200 的整数秒'], [inline('task_type'), '否', 't2v 或 i2v']] : []),
       ...(caps.outputFormats ? [[inline('output_format'), '否', caps.outputFormats.join('、')]] : []),
@@ -154,7 +153,7 @@ function videoGuide(model) {
   if (seedance) parts.push('ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必须为整数，不能与 frames 同时设置。execution_expires_after 为 3600～259200 的整数秒。其他可选参数见[视频参数](videos.md#参数与轮询注意事项)。');
   if (overseas) parts.push(
     '图片最多 ' + caps.maxImages + ' 张，视频最多 ' + caps.maxVideos + ' 个，音频最多 ' + caps.maxAudios + ' 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。',
-    modeltop ? '此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。' : '此页只适用于 BytePlus。不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。' + (caps.returnLastFrame ? '支持 return_last_frame。' : '不支持 return_last_frame=true。'),
+    modeltop ? '接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。' : '不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。' + (caps.returnLastFrame ? '支持 return_last_frame。' : '不支持 return_last_frame=true。'),
     '素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。');
   else if (id.startsWith('wan')) parts.push('最多一张 HTTP(S) 首帧图片，role 必须为 first_frame。只支持 duration、resolution、ratio、generate_audio、watermark，不支持 seed 等额外参数。');
   else if (id.startsWith('minimax')) parts.push('只接受 HTTP(S) 图片，内容总计不超过 20 项。支持 duration、resolution、ratio、seed、watermark，不支持 generate_audio 与取消任务。');
@@ -163,7 +162,7 @@ function videoGuide(model) {
     '### 查询结果', fence('bash', 'curl "$BASE_URL' + path + '/$TASK_ID" \\\n  -H "Authorization: Bearer $API_KEY"'),
     '必须使用创建任务的同一枚业务 Key，每 5～10 秒查询一次。queued / running 未完成，succeeded / failed / cancelled 为终态。',
     '### 成功结果示例', json({ id: 'vid_example', model: id, status: 'succeeded', resolution: body.resolution, ratio: '16:9', duration: body.duration, content: { video_url: 'https://provider.example.com/result.mp4' } }),
-    '若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。');
+    '若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。');
   if (cancellable) parts.push('### 取消任务', fence('bash', 'curl -X DELETE "$BASE_URL' + path + '/$TASK_ID" \\\n  -H "Authorization: Bearer $API_KEY"'),
     '仅在项目绑定渠道支持取消时执行。成功返回 204，无响应体。');
   parts.push('公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。');
@@ -189,11 +188,9 @@ export function modelGuide(model, refs) {
     if (nextSection > 0) body = body.slice(0, nextSection) + '\n\n' + parameters + body.slice(nextSection);
   }
   return [
-    '## ' + (model.primary === false ? supplierHeading(model.id, model.supplierLabel) : inline(model.id)), model.summary,
+    '## ' + inline(model.id), model.summary,
     '[鉴权](basics.md) · [错误与安全重试](errors.md)',
     '需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。',
-    ...(model.supplierLabel ? ['供应商：' + (model.provider === 'volcengine_speech' ? '火山引擎（豆包语音）' : model.supplierLabel) + '。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=' + inline(model.provider) + ' 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。'] : []),
-    ...(model.otherSuppliers ? ['同名模型的其他供应商参考：' + model.otherSuppliers + '。请选择项目实际绑定的供应商。'] : []),
     body,
     '### 查询模型价格',
     fence('bash', 'curl "$BASE_URL/v1/pricing?model=' + model.id + '" \\\n  -H "Authorization: Bearer $API_KEY"'),

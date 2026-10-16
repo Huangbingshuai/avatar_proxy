@@ -14,8 +14,6 @@
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/chat/completions` · `POST /v1/responses`
@@ -137,8 +135,6 @@ curl "$BASE_URL/v1/pricing?model=deepseek-v4-flash" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -262,8 +258,6 @@ curl "$BASE_URL/v1/pricing?model=deepseek-v4-pro" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/chat/completions` · `POST /v1/responses`
@@ -386,8 +380,6 @@ curl "$BASE_URL/v1/pricing?model=glm-5.2" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/images/generations`
@@ -479,8 +471,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedream-5.0-pro" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -575,8 +565,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedream-5.0-lite" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/images/generations`
@@ -668,8 +656,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedream-5.0" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -764,8 +750,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedream-4.5" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/images/generations`
@@ -858,8 +842,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedream-4.0" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -1008,8 +990,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-2.1-pro" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/chat/completions` · `POST /v1/responses`
@@ -1156,8 +1136,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-2.1-turbo" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -1306,8 +1284,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-2.0-pro" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/chat/completions` · `POST /v1/responses`
@@ -1454,8 +1430,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-2.0-lite" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -1604,8 +1578,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-2.0-mini" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/chat/completions` · `POST /v1/responses`
@@ -1753,8 +1725,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-evolving" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/chat/completions` · `POST /v1/responses`
@@ -1876,8 +1846,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-character" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -2026,8 +1994,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-2.0-code" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/responses`
@@ -2093,8 +2059,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-translation" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -2103,7 +2067,7 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-translation" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -2178,7 +2142,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -2208,8 +2172,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-2.5" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -2218,7 +2180,7 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-2.5" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -2293,7 +2255,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -2323,8 +2285,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-2.0" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -2333,7 +2293,7 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-2.0" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -2408,7 +2368,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -2438,8 +2398,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-2.0-fast" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -2448,7 +2406,7 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-2.0-fast" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -2523,7 +2481,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -2553,8 +2511,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-2.0-mini" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -2563,7 +2519,7 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-2.0-mini" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -2638,7 +2594,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -2668,8 +2624,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-1.0-pro" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -2678,7 +2632,7 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-1.0-pro" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -2753,7 +2707,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -2782,8 +2736,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedance-1.0-pro-fast" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_ark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 
 
@@ -2856,8 +2808,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-embedding-vision" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎（豆包语音）。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_speech` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口与参数
 
 `POST /v1/audio/speech`
@@ -2908,8 +2858,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-tts-2.0" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：火山引擎（豆包语音）。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_speech` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口与参数
 
@@ -2982,8 +2930,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seedasr-2.0" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：火山引擎（豆包语音）。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`volcengine_speech` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口与参数
 
 `POST /v1/audio/generations`
@@ -3034,10 +2980,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-audio-1.0" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：BytePlus。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`byteplus_modelark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[ModelTop](#dreamina-seedance-25-modeltop-供应商)。请选择项目实际绑定的供应商。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -3046,7 +2988,7 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-audio-1.0" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -3093,7 +3035,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 30 张，视频最多 10 个，音频最多 10 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 BytePlus。不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。支持 return_last_frame。
+不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。支持 return_last_frame。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -3130,7 +3072,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -3160,10 +3102,6 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.5" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：BytePlus。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`byteplus_modelark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[ModelTop](#dreamina-seedance-20-modeltop-供应商)。请选择项目实际绑定的供应商。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -3172,7 +3110,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.5" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -3217,7 +3155,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 BytePlus。不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。不支持 return_last_frame=true。
+不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。不支持 return_last_frame=true。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -3254,7 +3192,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -3284,10 +3222,6 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：BytePlus。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`byteplus_modelark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[ModelTop](#dreamina-seedance-20-fast-modeltop-供应商)。请选择项目实际绑定的供应商。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -3296,7 +3230,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -3341,7 +3275,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 BytePlus。不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。不支持 return_last_frame=true。
+不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。不支持 return_last_frame=true。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -3378,7 +3312,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -3408,10 +3342,6 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-fast" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：BytePlus。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`byteplus_modelark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[ModelTop](#dreamina-seedance-20-mini-modeltop-供应商)。请选择项目实际绑定的供应商。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -3420,7 +3350,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-fast" \
 
 `DELETE /api/v3/contents/generations/tasks/{taskId}`
 
-创建为异步操作。支持取消；BytePlus 仅允许取消排队任务，运行中任务可能被拒绝。
+创建为异步操作。支持取消；排队任务可取消，运行中任务可能被拒绝。
 
 
 #### 请求参数
@@ -3465,7 +3395,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 BytePlus。不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。不支持 return_last_frame=true。
+不接受 seed、camera_fixed、frames、draft 或 service_tier=flex。不支持 return_last_frame=true。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -3502,7 +3432,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 #### 取消任务
 
@@ -3531,8 +3461,6 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-mini" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：BytePlus。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`byteplus_modelark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -3628,8 +3556,6 @@ curl "$BASE_URL/v1/pricing?model=dola-seedream-5.0-pro" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：BytePlus。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`byteplus_modelark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/images/generations`
@@ -3723,8 +3649,6 @@ curl "$BASE_URL/v1/pricing?model=dola-seedream-5.0-flash" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：BytePlus。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`byteplus_modelark` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -3823,10 +3747,6 @@ curl "$BASE_URL/v1/pricing?model=dola-seedream-5.0-lite" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：MaxModel。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`maxmodel` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[ModelTop](#gpt-image-2-modeltop-供应商)。请选择项目实际绑定的供应商。
-
 #### 接口
 
 `POST /v1/images/generations`
@@ -3862,7 +3782,7 @@ curl "$BASE_URL/v1/images/generations" \
 
 #### 模型限制
 
-此页只适用于 MaxModel。当前单次只能生成 1 张；不要套用 ModelTop 的多图、自定义尺寸、透明背景或图片 Token 能力。示例仅使用当前已接入的同步文生图字段。其他兼容选项由该渠道校验，不作为本页可用能力承诺。
+当前单次只能生成 1 张；不要套用其他渠道的多图、自定义尺寸、透明背景或图片 Token 能力。示例仅使用当前已接入的同步文生图字段。其他兼容选项由服务校验，不作为本页可用能力承诺。
 
 #### 返回结果
 
@@ -3893,17 +3813,13 @@ curl "$BASE_URL/v1/pricing?model=gpt-image-2" \
 
 ## ModelTop
 
-### dreamina-seedance-2.5 ModelTop 供应商
+### `dreamina-seedance-2.5`
 
 异步视频
 
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[BytePlus](#dreamina-seedance-25)。请选择项目实际绑定的供应商。
 
 #### 接口
 
@@ -3925,7 +3841,7 @@ curl "$BASE_URL/v1/pricing?model=gpt-image-2" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
-| `seed` | 否 | 随机种子；当前渠道接受，具体范围由供应商校验 |
+| `seed` | 否 | 随机种子；当前渠道接受，具体范围由服务端校验 |
 | `return_last_frame` | 否 | 布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取 |
 | `service_tier` | 否 | 仅 default |
 | `execution_expires_after` | 否 | 3600～259200 的整数秒 |
@@ -3958,7 +3874,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 30 张，视频最多 10 个，音频最多 10 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
+接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -3995,7 +3911,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -4008,17 +3924,13 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.5" \
 
 价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `dreamina-seedance-2.5` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
 
-### dreamina-seedance-2.0 ModelTop 供应商
+### `dreamina-seedance-2.0`
 
 异步视频
 
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[BytePlus](#dreamina-seedance-20)。请选择项目实际绑定的供应商。
 
 #### 接口
 
@@ -4040,7 +3952,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.5" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
-| `seed` | 否 | 随机种子；当前渠道接受，具体范围由供应商校验 |
+| `seed` | 否 | 随机种子；当前渠道接受，具体范围由服务端校验 |
 | `return_last_frame` | 否 | 布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取 |
 | `service_tier` | 否 | 仅 default |
 | `execution_expires_after` | 否 | 3600～259200 的整数秒 |
@@ -4073,7 +3985,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
+接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -4110,7 +4022,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -4123,17 +4035,13 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0" \
 
 价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `dreamina-seedance-2.0` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
 
-### dreamina-seedance-2.0-fast ModelTop 供应商
+### `dreamina-seedance-2.0-fast`
 
 异步视频
 
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[BytePlus](#dreamina-seedance-20-fast)。请选择项目实际绑定的供应商。
 
 #### 接口
 
@@ -4155,7 +4063,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
-| `seed` | 否 | 随机种子；当前渠道接受，具体范围由供应商校验 |
+| `seed` | 否 | 随机种子；当前渠道接受，具体范围由服务端校验 |
 | `return_last_frame` | 否 | 布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取 |
 | `service_tier` | 否 | 仅 default |
 | `execution_expires_after` | 否 | 3600～259200 的整数秒 |
@@ -4188,7 +4096,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
+接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -4225,7 +4133,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -4238,17 +4146,13 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-fast" \
 
 价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `dreamina-seedance-2.0-fast` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
 
-### dreamina-seedance-2.0-mini ModelTop 供应商
+### `dreamina-seedance-2.0-mini`
 
 异步视频
 
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[BytePlus](#dreamina-seedance-20-mini)。请选择项目实际绑定的供应商。
 
 #### 接口
 
@@ -4270,7 +4174,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-fast" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
-| `seed` | 否 | 随机种子；当前渠道接受，具体范围由供应商校验 |
+| `seed` | 否 | 随机种子；当前渠道接受，具体范围由服务端校验 |
 | `return_last_frame` | 否 | 布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取 |
 | `service_tier` | 否 | 仅 default |
 | `execution_expires_after` | 否 | 3600～259200 的整数秒 |
@@ -4303,7 +4207,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
+接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -4340,7 +4244,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -4353,17 +4257,13 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-mini" \
 
 价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `dreamina-seedance-2.0-mini` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
 
-### gpt-image-2 ModelTop 供应商
+### `gpt-image-2`
 
 同步文生图；最多 10 张，原生返回 Base64
 
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
-同名模型的其他供应商参考：[MaxModel](#gpt-image-2)。请选择项目实际绑定的供应商。
 
 #### 接口
 
@@ -4380,7 +4280,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-mini" \
 | `prompt` | 是 | 字符串，1～32000 个字符 |
 | `n` | 否 | 整数；该模型数量限制：10 |
 | `size` | 否 | 像素尺寸，例如 1024x1024；不能使用 1K/2K 简写 |
-| `response_format` | 否 | url 或 b64_json；ModelTop 原生返回 Base64，此参数不传往上游，按 data[].b64_json 读取 |
+| `response_format` | 否 | url 或 b64_json；原生返回 Base64，此参数不传往上游，按 data[].b64_json 读取 |
 | `quality` | 否 | auto、low、medium、high；默认 auto |
 
 #### 请求示例
@@ -4401,7 +4301,7 @@ curl "$BASE_URL/v1/images/generations" \
 
 #### 模型限制
 
-此页只适用于 ModelTop。当前只开放文生图，不提供参考图编辑、流式或 -gp 异步生图。
+当前只开放文生图，不提供参考图编辑、流式或 -gp 异步生图。
 
 最多 10 张，不支持自定义尺寸、透明背景或显式 output_format/output_compression。可选背景仅 auto、opaque。
 
@@ -4444,8 +4344,6 @@ curl "$BASE_URL/v1/pricing?model=gpt-image-2" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/images/generations`
@@ -4461,7 +4359,7 @@ curl "$BASE_URL/v1/pricing?model=gpt-image-2" \
 | `prompt` | 是 | 字符串，1～32000 个字符 |
 | `n` | 否 | 整数；该模型数量限制：10 |
 | `size` | 否 | 像素尺寸，例如 1024x1024；不能使用 1K/2K 简写 |
-| `response_format` | 否 | url 或 b64_json；ModelTop 原生返回 Base64，此参数不传往上游，按 data[].b64_json 读取 |
+| `response_format` | 否 | url 或 b64_json；原生返回 Base64，此参数不传往上游，按 data[].b64_json 读取 |
 | `quality` | 否 | auto、low、medium、high、xhigh、max；默认 auto |
 
 #### 请求示例
@@ -4482,7 +4380,7 @@ curl "$BASE_URL/v1/images/generations" \
 
 #### 模型限制
 
-此页只适用于 ModelTop。当前只开放文生图，不提供参考图编辑、流式或 -gp 异步生图。
+当前只开放文生图，不提供参考图编辑、流式或 -gp 异步生图。
 
 支持透明背景、自定义尺寸、png/jpeg/webp 和输出压缩率。透明背景不能输出 JPEG。
 
@@ -4527,8 +4425,6 @@ curl "$BASE_URL/v1/pricing?model=gpt-image-2.5-flare" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /v1/images/generations`
@@ -4544,7 +4440,7 @@ curl "$BASE_URL/v1/pricing?model=gpt-image-2.5-flare" \
 | `prompt` | 是 | 字符串，1～32000 个字符 |
 | `n` | 否 | 整数；该模型数量限制：10 |
 | `size` | 否 | 像素尺寸，例如 1024x1024；不能使用 1K/2K 简写 |
-| `response_format` | 否 | url 或 b64_json；ModelTop 原生返回 Base64，此参数不传往上游，按 data[].b64_json 读取 |
+| `response_format` | 否 | url 或 b64_json；原生返回 Base64，此参数不传往上游，按 data[].b64_json 读取 |
 | `quality` | 否 | auto、low、medium、high、xhigh、max；默认 auto |
 
 #### 请求示例
@@ -4565,7 +4461,7 @@ curl "$BASE_URL/v1/images/generations" \
 
 #### 模型限制
 
-此页只适用于 ModelTop。当前只开放文生图，不提供参考图编辑、流式或 -gp 异步生图。
+当前只开放文生图，不提供参考图编辑、流式或 -gp 异步生图。
 
 支持透明背景、自定义尺寸、png/jpeg/webp 和输出压缩率。透明背景不能输出 JPEG。
 
@@ -4610,8 +4506,6 @@ curl "$BASE_URL/v1/pricing?model=gpt-image-2.5-sunburst" \
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
 
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
-
 #### 接口
 
 `POST /api/v3/contents/generations/tasks`
@@ -4632,7 +4526,7 @@ curl "$BASE_URL/v1/pricing?model=gpt-image-2.5-sunburst" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
-| `seed` | 否 | 随机种子；当前渠道接受，具体范围由供应商校验 |
+| `seed` | 否 | 随机种子；当前渠道接受，具体范围由服务端校验 |
 | `return_last_frame` | 否 | 布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取 |
 | `service_tier` | 否 | 仅 default |
 | `execution_expires_after` | 否 | 3600～259200 的整数秒 |
@@ -4665,7 +4559,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 30 张，视频最多 10 个，音频最多 10 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
+接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -4702,7 +4596,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -4722,8 +4616,6 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.5-filter-off" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -4745,7 +4637,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.5-filter-off" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
-| `seed` | 否 | 随机种子；当前渠道接受，具体范围由供应商校验 |
+| `seed` | 否 | 随机种子；当前渠道接受，具体范围由服务端校验 |
 | `return_last_frame` | 否 | 布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取 |
 | `service_tier` | 否 | 仅 default |
 | `execution_expires_after` | 否 | 3600～259200 的整数秒 |
@@ -4778,7 +4670,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
+接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -4815,7 +4707,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -4835,8 +4727,6 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-filter-off" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -4858,7 +4748,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-filter-off" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
-| `seed` | 否 | 随机种子；当前渠道接受，具体范围由供应商校验 |
+| `seed` | 否 | 随机种子；当前渠道接受，具体范围由服务端校验 |
 | `return_last_frame` | 否 | 布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取 |
 | `service_tier` | 否 | 仅 default |
 | `execution_expires_after` | 否 | 3600～259200 的整数秒 |
@@ -4891,7 +4781,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
+接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -4928,7 +4818,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -4948,8 +4838,6 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-fast-filter-off" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：ModelTop。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`modeltop` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -4971,7 +4859,7 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-fast-filter-off" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
-| `seed` | 否 | 随机种子；当前渠道接受，具体范围由供应商校验 |
+| `seed` | 否 | 随机种子；当前渠道接受，具体范围由服务端校验 |
 | `return_last_frame` | 否 | 布尔值；true 请求返回末帧，结果从 content.last_frame_url 读取 |
 | `service_tier` | 否 | 仅 default |
 | `execution_expires_after` | 否 | 3600～259200 的整数秒 |
@@ -5004,7 +4892,7 @@ ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必�
 
 图片最多 9 张，视频最多 3 个，音频最多 3 段。首末帧不能与全能参考混用；2.0 系列音频需搭配图片或视频。
 
-此页只适用于 ModelTop。接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
+接受 seed 和 return_last_frame；不接受 camera_fixed、frames、draft、output_format 或 service_tier=flex，不开放取消、回调或联网工具。
 
 素材 ID 不能保证跨渠道复用，优先使用目标模型可访问的 HTTP(S) URL 或允许的 Data URL。
 
@@ -5041,7 +4929,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -5063,8 +4951,6 @@ curl "$BASE_URL/v1/pricing?model=dreamina-seedance-2.0-mini-filter-off" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：阿里百炼。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`aliyun_bailian` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -5145,7 +5031,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 
@@ -5167,8 +5053,6 @@ curl "$BASE_URL/v1/pricing?model=wan3.0-video" \
 [鉴权](basics.md) · [错误与安全重试](errors.md)
 
 需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
-
-供应商：MiniMax。本页适用于项目绑定的该供应商渠道；公开路径及 model 名称保持不变。用 /v1/pricing 中同名项的 provider=`minimax` 确认当前供应商，再用 /v1/models 核对能力。目录只用于查阅，不会切换供应商；不要向请求体增加 provider/channel 字段。
 
 #### 接口
 
@@ -5249,7 +5133,7 @@ curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
 }
 ```
 
-若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在供应商返回时出现，尤其 Wan 不保证返回全部维度。
+若返回 usage.completion_tokens，则是上游真实输出 Token；未返回时不能估算为零。计价指标和维度以 /v1/pricing 为准。结果链接可能过期，应及时保存。resolution、ratio、duration 等维度仅在响应中提供时出现，尤其 Wan 不保证返回全部维度。
 
 公共可选参数及渠道限制见[视频参考](videos.md#渠道与模型参数)。
 

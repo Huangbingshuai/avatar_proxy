@@ -44,12 +44,10 @@ export async function loadSources() {
   })));
   const refs = Object.fromEntries(sources.map(page => [page.id, page.source]));
   for (const model of supplierCatalog) {
-    const siblings = supplierCatalog.filter(other => other.id === model.id && other.provider !== model.provider);
-    const otherSuppliers = siblings.map(other => '[' + other.supplierLabel + '](#' + slug(other.primary ? other.id : other.id + ' ' + other.supplierLabel + ' 供应商') + ')').join(' · ');
     sources.push({ id: supplierPageId(model), group: model.supplierLabel, provider: model.provider,
-      label: model.id + ' · ' + model.supplierLabel, navLabel: model.id,
+      label: model.id, navLabel: model.id,
       file: 'backend/docs/client-api/model-reference.md', kind: 'model',
-      source: modelGuide({ ...model, otherSuppliers }, refs).replace(/^## /gm, '# ').replace(/^### /gm, '## '),
+      source: modelGuide(model, refs).replace(/^## /gm, '# ').replace(/^### /gm, '## '),
     });
   }
   for (const [id, heading, label, method, endpoint] of assetOperations) {

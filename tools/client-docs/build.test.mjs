@@ -54,7 +54,9 @@ test('supplier then model navigation includes duplicate aliases without a channe
       window.dispatchEvent(new window.HashChangeEvent('hashchange'));
       const page = document.querySelector('.docs-page:not([hidden])');
       assert.equal(page.id, id);
-      assert.match(page.textContent, new RegExp('供应商：' + (variant.provider === 'volcengine_speech' ? '火山引擎（豆包语音）' : variant.supplierLabel)));
+      assert.equal(page.dataset.label, variant.id);
+      assert.equal(page.querySelector('h1').textContent, variant.id);
+      assert.doesNotMatch(page.textContent, /供应商：|ModelTop 供应商|BytePlus 供应商/);
       assert.equal(page.dataset.provider, variant.provider);
       assert.ok(page.querySelector('.endpoint-bar'));
       const link = document.querySelector('[aria-current="page"]');
