@@ -4,8 +4,6 @@
 
 ## 火山引擎
 
-#### 模型接口
-
 ### `deepseek-v4-flash`
 
 文本对话
@@ -2797,8 +2795,6 @@ curl "$BASE_URL/v1/pricing?model=doubao-embedding-vision" \
 ```
 
 价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `doubao-embedding-vision` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
-
-#### 豆包语音
 
 ### `doubao-seed-tts-2.0`
 
