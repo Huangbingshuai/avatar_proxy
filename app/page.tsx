@@ -33,7 +33,7 @@ import {
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminPanel from "./admin-panel";
-import { AdminApiError, isPasswordChangeRequired, isSessionError, requestAdminApi, type AdminApi, type AdminUser } from "./admin-api";
+import { AdminApiError, isPasswordChangeRequired, isSessionError, refreshAdminCsrf, requestAdminApi, type AdminApi, type AdminUser } from "./admin-api";
 import ApiCallLogsPanel from "./api-call-logs-panel";
 import BillingPanel from "./billing-panel";
 import ModelPriceTable from "./model-price-table";
@@ -199,11 +199,21 @@ export default function ConsolePage() {
     try {
       return await requestAdminApi(path, init, csrfToken);
     } catch (caught) {
+      if (caught instanceof AdminApiError && caught.status === 403 && caught.code === "invalid_csrf_token") {
+        // Read-only recovery for a stale tab. Never replay a rejected write.
+        try {
+          setCsrfToken(await refreshAdminCsrf(currentUser));
+        } catch {
+          clearSession("安全校验已失效或登录身份已变化，请重新登录后再操作");
+          throw caught;
+        }
+        throw new AdminApiError("安全校验已更新，本次操作未执行。请重新提交；敏感操作请使用新的动态验证码。", 403, "csrf_token_refreshed", undefined, caught.requestId);
+      }
       if (isSessionError(caught)) clearSession("登录会话已过期，请重新登录");
       else if (isPasswordChangeRequired(caught)) setAuthStatus("password_change_required");
       throw caught;
     }
-  }, [clearSession, csrfToken]);
+  }, [clearSession, csrfToken, currentUser]);
 
   const loadAll = useCallback(async () => {
     if (currentUser?.role === "super_admin") {

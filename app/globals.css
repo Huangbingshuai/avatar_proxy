@@ -568,6 +568,12 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .providerTestError { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
 .providerChannelCard footer { display: flex; flex-wrap: wrap; gap: 7px; }
 .providerModal { max-height: 88vh; overflow: auto; }
+.providerFormError { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid #f0c6bd; border-radius: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.providerFormError > svg { flex-shrink: 0; margin-top: 2px; }
+.providerFormError strong { font-size: 13px; }
+.providerFormError p { margin: 4px 0; }
+.providerFormError small { display: block; margin-top: 3px; font-size: 11px; }
+.providerFormError:focus { outline: 2px solid var(--coral); outline-offset: 2px; }
 
 .modelRelayPanel { gap: 16px; }
 .relayIntro { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 24px; background: linear-gradient(115deg, #fff 0%, #fffaf6 100%); }

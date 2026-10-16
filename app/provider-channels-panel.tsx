@@ -12,9 +12,9 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-import type { AdminApi } from "./admin-api";
+import { AdminApiError, type AdminApi } from "./admin-api";
 
 type Provider =
   | "openai"
@@ -75,6 +75,49 @@ function channelConfig(form: typeof emptyForm) {
   return {};
 }
 
+type ChannelFormError = { message: string; code?: string; status?: number; requestId?: string };
+
+function channelFormError(caught: unknown, sensitive: string[] = []): ChannelFormError {
+  if (!(caught instanceof AdminApiError)) {
+    const aborted = caught !== null && typeof caught === "object" && "name" in caught && caught.name === "AbortError";
+    return { message: aborted
+      ? "请求等待超时，尚不能确认是否已创建。请先关闭弹窗并刷新渠道列表，确认结果后再重试，避免重复创建。"
+      : "网络连接失败，尚不能确认操作结果。请检查网络并先刷新渠道列表，避免重复提交。" };
+  }
+  const messages: Record<string, string> = {
+    invalid_csrf_token: "安全校验已失效，可能在其他标签页切换过账号。请刷新页面或重新登录后再提交。",
+    admin_reauthentication_failed: "超级管理员当前密码不正确，请重新输入。",
+    invalid_admin_totp: "动态验证码错误或已过期。请输入验证器当前显示的6位验证码，并确认手机时间已自动同步。",
+    admin_totp_replayed: "该验证码已使用（登录也会使用验证码），请等待下一组动态验证码后重新提交。",
+    super_admin_required: "当前账号无权管理供应商凭证，请重新登录超级管理员账号。",
+  };
+  let message = messages[caught.code] || (caught.status >= 500
+    ? "服务器暂时无法完成操作，请稍后重试；仍失败时请提供下方错误码和请求编号。"
+    : caught.message);
+  for (const value of sensitive.filter(Boolean)) message = message.split(value).join("[已隐藏]");
+  return { message, code: caught.code, status: caught.status, requestId: caught.requestId };
+}
+
+function ChannelErrorNotice({ error }: { error: ChannelFormError | null }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!error) return;
+    ref.current?.focus({ preventScroll: true });
+    ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [error]);
+  return error ? (
+    <div className="formError providerFormError" role="alert" tabIndex={-1} ref={ref}>
+      <XCircle size={18} aria-hidden="true" />
+      <div>
+        <strong>提交未完成</strong>
+        <p>{error.message}</p>
+        {error.code && <small>错误码：{error.code}{error.status ? ` · HTTP ${error.status}` : ""}</small>}
+        {error.requestId && <small>请求编号：{error.requestId}</small>}
+      </div>
+    </div>
+  ) : null;
+}
+
 export default function ProviderChannelsPanel({
   adminApi,
 }: {
@@ -85,6 +128,9 @@ export default function ProviderChannelsPanel({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [modalError, setModalError] = useState<ChannelFormError | null>(null);
+  const [notice, setNotice] = useState("");
+  const createPending = useRef(false);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [renameTarget, setRenameTarget] = useState<Channel | null>(null);
@@ -133,11 +179,29 @@ export default function ProviderChannelsPanel({
 
   async function createChannel(event: FormEvent) {
     event.preventDefault();
+    if (createPending.current) return;
+    setModalError(null);
+    const validation = !form.projectName ? "请选择客户项目。"
+      : !form.name.trim() ? "请填写渠道名称，不能只包含空格。"
+      : form.name.length > 100 ? "渠道名称不能超过100个字符。"
+      : form.secret.trim().length < 8 || form.secret.trim().length > 4096 ? "供应商 API Key 必须为8～4096个字符，请确认已完整复制。"
+      : !form.currentPassword || form.currentPassword.length > 128 ? "请输入当前超级管理员密码，最多128个字符。"
+      : !/^\d{6}$/.test(form.totpCode) ? "请输入6位 TOTP 动态验证码。"
+      : form.provider === "aliyun_bailian" && !form.workspaceId.trim() ? "请填写 Workspace ID。" : "";
+    if (validation) {
+      setModalError({ message: validation });
+      return;
+    }
+    createPending.current = true;
     setBusy("create");
     setError("");
+    setNotice("");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20_000);
     try {
       await adminApi("/api/internal/provider/channels", {
         method: "POST",
+        signal: controller.signal,
         body: JSON.stringify({
           projectName: form.projectName,
           name: form.name,
@@ -150,12 +214,25 @@ export default function ProviderChannelsPanel({
       });
       setForm({ ...emptyForm, projectName: form.projectName });
       setShowCreate(false);
+      setNotice("渠道已创建，供应商凭证已加密保存。");
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "渠道创建失败");
+      setModalError(channelFormError(caught, [form.secret, form.currentPassword, form.totpCode]));
+      if (caught instanceof AdminApiError && ["csrf_token_refreshed", "invalid_admin_totp", "admin_totp_replayed"].includes(caught.code)) {
+        setForm((current) => ({ ...current, totpCode: "" }));
+      }
     } finally {
+      window.clearTimeout(timeout);
+      createPending.current = false;
       setBusy("");
     }
+  }
+
+  function closeCreate() {
+    if (createPending.current) return;
+    setShowCreate(false);
+    setModalError(null);
+    setForm({ ...emptyForm, projectName: form.projectName });
   }
 
   async function testChannel(channel: Channel) {
@@ -178,6 +255,7 @@ export default function ProviderChannelsPanel({
     event.preventDefault();
     if (!renameTarget) return;
     setBusy(`rename-${renameTarget.id}`);
+    setModalError(null);
     setError("");
     try {
       await adminApi(
@@ -191,7 +269,7 @@ export default function ProviderChannelsPanel({
       setRenameName("");
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "渠道名称修改失败");
+      setModalError(channelFormError(caught));
     } finally {
       setBusy("");
     }
@@ -201,6 +279,7 @@ export default function ProviderChannelsPanel({
     event.preventDefault();
     if (!rotateTarget) return;
     setBusy(`rotate-${rotateTarget.id}`);
+    setModalError(null);
     setError("");
     try {
       await adminApi(
@@ -214,7 +293,7 @@ export default function ProviderChannelsPanel({
       setRotateForm({ secret: "", currentPassword: "", totpCode: "" });
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "凭证轮换失败");
+      setModalError(channelFormError(caught, Object.values(rotateForm)));
     } finally {
       setBusy("");
     }
@@ -225,6 +304,7 @@ export default function ProviderChannelsPanel({
     if (!confirmTarget) return;
     const { channel, kind } = confirmTarget;
     setBusy(`${kind}-${channel.id}`);
+    setModalError(null);
     setError("");
     try {
       const path = `/api/internal/provider/channels/${encodeURIComponent(channel.id)}`;
@@ -246,7 +326,7 @@ export default function ProviderChannelsPanel({
       setConfirmForm({ currentPassword: "", totpCode: "" });
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "渠道操作失败");
+      setModalError(channelFormError(caught, Object.values(confirmForm)));
     } finally {
       setBusy("");
     }
@@ -262,7 +342,7 @@ export default function ProviderChannelsPanel({
           </p>
         </div>
         <div className="panelHeadActions">
-          <button className="secondary" onClick={() => setShowCreate(true)}>
+          <button className="secondary" onClick={() => { setModalError(null); setNotice(""); setShowCreate(true); }} disabled={Boolean(busy)}>
             <Plus size={15} />
             创建渠道
           </button>
@@ -281,6 +361,7 @@ export default function ProviderChannelsPanel({
           {error}
         </div>
       )}
+      {notice && <div className="note" role="status"><CheckCircle2 size={15} aria-hidden="true" /> {notice}</div>}
       <div className="providerChannelGrid">
         {channels.map((channel) => (
           <article className="providerChannelCard" key={channel.id}>
@@ -295,6 +376,7 @@ export default function ProviderChannelsPanel({
                     type="button"
                     className="channelRenameButton"
                     onClick={() => {
+                      setModalError(null);
                       setRenameTarget(channel);
                       setRenameName(channel.name);
                     }}
@@ -359,7 +441,7 @@ export default function ProviderChannelsPanel({
               </button>
               <button
                 className="secondary"
-                onClick={() => setRotateTarget(channel)}
+                onClick={() => { setModalError(null); setRotateTarget(channel); }}
                 disabled={Boolean(busy)}
               >
                 <RotateCcw size={13} />
@@ -367,14 +449,14 @@ export default function ProviderChannelsPanel({
               </button>
               <button
                 className="secondary"
-                onClick={() => setConfirmTarget({ channel, kind: "status" })}
+                onClick={() => { setModalError(null); setConfirmTarget({ channel, kind: "status" }); }}
                 disabled={Boolean(busy)}
               >
                 {channel.status === "active" ? "禁用" : "启用"}
               </button>
               <button
                 className="dangerButton"
-                onClick={() => setConfirmTarget({ channel, kind: "delete" })}
+                onClick={() => { setModalError(null); setConfirmTarget({ channel, kind: "delete" }); }}
                 disabled={Boolean(busy)}
               >
                 <Trash2 size={13} />
@@ -400,11 +482,11 @@ export default function ProviderChannelsPanel({
           >
             <header>
               <h2 id="create-channel-title">创建供应商渠道</h2>
-              <button onClick={() => setShowCreate(false)} aria-label="关闭">
+              <button type="button" onClick={closeCreate} disabled={busy === "create"} aria-label="关闭">
                 ×
               </button>
             </header>
-            <form className="stackForm" onSubmit={createChannel}>
+            <form className="stackForm" onSubmit={createChannel} noValidate aria-busy={busy === "create"}>
               <label>
                 客户项目
                 <select
@@ -511,6 +593,7 @@ export default function ProviderChannelsPanel({
                   autoComplete="new-password"
                   required
                   minLength={8}
+                  maxLength={4096}
                   value={form.secret}
                   onChange={(event) =>
                     setForm({ ...form, secret: event.target.value })
@@ -550,6 +633,7 @@ export default function ProviderChannelsPanel({
                   type="password"
                   autoComplete="current-password"
                   required
+                  maxLength={128}
                   value={form.currentPassword}
                   onChange={(event) =>
                     setForm({ ...form, currentPassword: event.target.value })
@@ -575,7 +659,8 @@ export default function ProviderChannelsPanel({
                   }
                 />
               </label>
-              <button className="primary wide" disabled={busy === "create"}>
+              <ChannelErrorNotice error={modalError} />
+              <button type="submit" className="primary wide" disabled={busy === "create"}>
                 {busy === "create" ? (
                   <>
                     <LoaderCircle size={15} className="spin" />
@@ -604,7 +689,9 @@ export default function ProviderChannelsPanel({
                 onClick={() => {
                   setRenameTarget(null);
                   setRenameName("");
+                  setModalError(null);
                 }}
+                disabled={Boolean(busy)}
                 aria-label="关闭"
               >
                 ×
@@ -620,6 +707,7 @@ export default function ProviderChannelsPanel({
                   onChange={(event) => setRenameName(event.target.value)}
                 />
               </label>
+              <ChannelErrorNotice error={modalError} />
               <button
                 className="primary wide"
                 disabled={busy === `rename-${renameTarget.id}`}
@@ -648,7 +736,7 @@ export default function ProviderChannelsPanel({
           >
             <header>
               <h2 id="rotate-channel-title">轮换“{rotateTarget.name}”凭证</h2>
-              <button onClick={() => setRotateTarget(null)} aria-label="关闭">
+              <button onClick={() => { setRotateTarget(null); setRotateForm({ secret: "", currentPassword: "", totpCode: "" }); setModalError(null); }} disabled={Boolean(busy)} aria-label="关闭">
                 ×
               </button>
             </header>
@@ -702,7 +790,8 @@ export default function ProviderChannelsPanel({
                   }
                 />
               </label>
-              <button className="primary wide">
+              <ChannelErrorNotice error={modalError} />
+              <button className="primary wide" disabled={Boolean(busy)}>
                 <KeyRound size={15} />
                 确认轮换
               </button>
@@ -725,7 +814,7 @@ export default function ProviderChannelsPanel({
                   ? "删除供应商渠道"
                   : `${confirmTarget.channel.status === "active" ? "禁用" : "启用"}供应商渠道`}
               </h2>
-              <button onClick={() => setConfirmTarget(null)} aria-label="关闭">
+              <button onClick={() => { setConfirmTarget(null); setConfirmForm({ currentPassword: "", totpCode: "" }); setModalError(null); }} disabled={Boolean(busy)} aria-label="关闭">
                 ×
               </button>
             </header>
@@ -768,7 +857,9 @@ export default function ProviderChannelsPanel({
                   }
                 />
               </label>
+              <ChannelErrorNotice error={modalError} />
               <button
+                disabled={Boolean(busy)}
                 className={
                   confirmTarget.kind === "delete"
                     ? "dangerButton wide"

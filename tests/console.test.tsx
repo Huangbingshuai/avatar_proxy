@@ -19,6 +19,8 @@ type MockData = {
   backupCreatedAt?: string | null;
   monitorPercent?: number;
   modeltop?: boolean;
+  channelCreateCsrfOnce?: boolean;
+  channelCreateIdentityChange?: boolean;
 };
 
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -26,6 +28,7 @@ function jsonResponse(body: unknown, status = 200, headers: Record<string, strin
 }
 
 function installFetch(data: MockData = {}) {
+  let channelCsrfChanged = false;
   const projects = data.projects ?? [
     { name: "customer_a", displayName: "客户 A", description: "", keyCount: 1, activeKeyCount: 1, activeAssetCount: 0 },
     { name: "customer_b", displayName: "客户 B", description: "", keyCount: 1, activeKeyCount: 1, activeAssetCount: 0 },
@@ -72,7 +75,7 @@ function installFetch(data: MockData = {}) {
     }
     if (url.pathname === "/api/internal/auth/me") {
       if (!authenticated) return jsonResponse({ error: { message: "需要管理员会话", code: "admin_session_required" } }, 401);
-      return jsonResponse({ user: { ...currentUser, mustChangePassword: !passwordChanged }, csrfToken: "csrf-test", session: sessions[0] });
+      return jsonResponse({ user: { ...currentUser, mustChangePassword: !passwordChanged, ...(channelCsrfChanged && data.channelCreateIdentityChange ? { role: "admin" } : {}) }, csrfToken: channelCsrfChanged ? "csrf-updated" : "csrf-test", session: sessions[0] });
     }
     if (!authenticated || data.expireOnPath === url.pathname) return jsonResponse({ error: { message: "管理员会话已过期", code: "admin_session_expired" } }, 401);
     if (url.pathname === "/api/internal/auth/change-password") {
@@ -103,6 +106,10 @@ function installFetch(data: MockData = {}) {
     if (url.pathname === "/api/internal/admin/system-monitor/settings" && init?.method === "PUT") { const body = JSON.parse(String(init.body)); return jsonResponse({ settings: { ...monitorSettings, ...body, currentPassword: undefined } }); }
     if (url.pathname === "/api/internal/provider/projects") return jsonResponse({ projects: projects.map((project) => ({ name: project.name, displayName: project.displayName })) });
     if (url.pathname === "/api/internal/provider/channels" && init?.method === "POST") {
+      if (data.channelCreateCsrfOnce && !channelCsrfChanged) {
+        channelCsrfChanged = true;
+        return jsonResponse({ error: { code: "invalid_csrf_token", message: "CSRF 令牌无效" } }, 403, { "x-request-id": "req_csrf_create" });
+      }
       const body = JSON.parse(String(init.body));
       providerChannels = [...providerChannels, { id: "channel-new", projectName: body.projectName, name: body.name, provider: body.provider, config: body.config, status: "active", secretHint: "new****cret", lastTestStatus: undefined, lastTestLatencyMs: undefined }];
       return jsonResponse({ channel: providerChannels.at(-1) }, 201);
@@ -662,6 +669,39 @@ describe("内部控制台", () => {
     const createCall = calls.find((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST");
     expect(new Headers(createCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
     expect(JSON.parse(String(createCall?.init?.body))).toMatchObject({ provider, config: {}, secret: "byteplus-test-secret" });
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it.each([false, true])("CSRF过期只读同步且不自动重放，身份变化=%s", async (identityChanged) => {
+    const { calls } = installFetch({ role: "super_admin", channelCreateCsrfOnce: true, channelCreateIdentityChange: identityChanged });
+    const user = await login();
+    await screen.findByRole("heading", { name: "供应商渠道" });
+    await user.click(screen.getByRole("button", { name: "创建渠道" }));
+    const dialog = screen.getByRole("dialog", { name: "创建供应商渠道" });
+    await user.type(within(dialog).getByLabelText("渠道名称"), "ModelTop渠道");
+    await user.selectOptions(within(dialog).getByLabelText("供应商"), "modeltop");
+    await user.type(within(dialog).getByLabelText(/^供应商 API Key/), "modeltop-test-secret");
+    await user.type(within(dialog).getByLabelText("超级管理员当前密码"), "correct-password");
+    await user.type(within(dialog).getByLabelText("TOTP 动态验证码"), "123456");
+    await user.click(within(dialog).getByRole("button", { name: "加密保存渠道" }));
+    const writes = () => calls.filter((call) => call.path === "/api/internal/provider/channels" && call.init?.method === "POST");
+    if (identityChanged) {
+      await screen.findByText("安全校验已失效或登录身份已变化，请重新登录后再操作");
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("密码")).toHaveValue("");
+    } else {
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("安全校验已更新");
+      expect(within(dialog).getByRole("alert")).toHaveTextContent("req_csrf_create");
+      expect(writes()).toHaveLength(1);
+      expect(within(dialog).getByLabelText("TOTP 动态验证码")).toHaveValue("");
+      await user.type(within(dialog).getByLabelText("TOTP 动态验证码"), "654321");
+      await user.click(within(dialog).getByRole("button", { name: "加密保存渠道" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(writes()).toHaveLength(2);
+      expect(new Headers(writes()[1].init?.headers).get("x-csrf-token")).toBe("csrf-updated");
+    }
+    expect(writes()).toHaveLength(identityChanged ? 1 : 2);
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });
