@@ -84,6 +84,20 @@ class AdminTotpRotationConfirm(ApiModel):
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 
+class AdminLoginPolicyUpdate(ApiModel):
+    login_totp_bypass: bool
+    current_password: SecretStr = Field(min_length=1, max_length=128)
+    totp_code: SecretStr = Field(min_length=6, max_length=6)
+
+    @field_validator("totp_code")
+    @classmethod
+    def validate_totp_code(cls, value: SecretStr) -> SecretStr:
+        code = value.get_secret_value()
+        if not code.isascii() or not code.isdigit():
+            raise ValueError("请输入6位数字动态验证码")
+        return value
+
+
 class AdminSecurityAlertAck(ApiModel):
     alert_id: int = Field(ge=1)
 

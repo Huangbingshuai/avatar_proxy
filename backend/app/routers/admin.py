@@ -5,6 +5,7 @@ from ..backup import RESTORE_CONFIRMATION
 from ..errors import ApiError
 from ..schemas import (
     AdminLogin,
+    AdminLoginPolicyUpdate,
     AdminDatabaseRestore,
     AdminPasswordChange,
     AdminSecurityAlertAck,
@@ -188,6 +189,21 @@ def revoke_session(
 @router.get("/admin/users")
 def list_admin_users(request: Request, principal: AdminDependency) -> dict:
     return {"users": request.app.state.admin_auth.list_users(principal)}
+
+
+@router.get("/admin/security/login-policy")
+def get_login_policy(request: Request, principal: AdminDependency) -> dict:
+    return {"policy": request.app.state.admin_auth.login_policy(principal)}
+
+
+@router.put("/admin/security/login-policy")
+def update_login_policy(payload: AdminLoginPolicyUpdate, request: Request, principal: AdminDependency) -> dict:
+    return request.app.state.admin_auth.update_login_policy(
+        principal, login_totp_bypass=payload.login_totp_bypass,
+        current_password=payload.current_password.get_secret_value(),
+        totp_code=payload.totp_code.get_secret_value(),
+        source_ip=_request_ip(request), user_agent=_user_agent(request),
+    )
 
 
 @router.get("/admin/audits")

@@ -5,6 +5,14 @@ afterEach(() => vi.unstubAllGlobals());
 const user = { id: "owner", role: "super_admin", mfaVerified: true, mustChangePassword: false } as AdminUser;
 
 describe("管理请求安全错误与只读CSRF恢复", () => {
+  it("仅对已绑定且开启免TOTP登录的同一超级管理员允许恢复CSRF，不伪造MFA状态", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ user: { ...user, mfaVerified: false, totpEnabled: true, loginTotpBypass: true }, csrfToken: "csrf-password-only" })));
+    vi.stubGlobal("fetch", fetch);
+    await expect(refreshAdminCsrf(user)).resolves.toBe("csrf-password-only");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ user: { ...user, mfaVerified: false, totpEnabled: false, loginTotpBypass: true }, csrfToken: "must-not-use" }))));
+    await expect(refreshAdminCsrf(user)).rejects.toMatchObject({ code: "invalid_admin_session" });
+  });
+
   it("保留错误码和请求编号且照常发送Session/CSRF", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "invalid_csrf_token", message: "CSRF 令牌无效" } }), { status: 403, headers: { "x-request-id": "req_csrf_test" } }));
     vi.stubGlobal("fetch", fetch);

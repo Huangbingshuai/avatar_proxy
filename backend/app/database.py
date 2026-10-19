@@ -315,6 +315,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
     totp_pending_expires_at INTEGER,
     totp_enabled_at TEXT,
     totp_last_timecode INTEGER,
+    login_totp_bypass INTEGER NOT NULL DEFAULT 0 CHECK(login_totp_bypass IN (0,1)),
     created_by_id TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -962,6 +963,7 @@ class Database:
                 "totp_pending_expires_at": "INTEGER",
                 "totp_enabled_at": "TEXT",
                 "totp_last_timecode": "INTEGER",
+                "login_totp_bypass": "INTEGER NOT NULL DEFAULT 0 CHECK(login_totp_bypass IN (0,1))",
             }.items():
                 if column not in user_columns:
                     connection.execute(f"ALTER TABLE admin_users ADD COLUMN {column} {definition}")

@@ -6,6 +6,7 @@ export type AdminUser = {
   status: "active" | "disabled";
   mustChangePassword: boolean;
   totpEnabled?: boolean;
+  loginTotpBypass?: boolean;
   mfaSetupRequired?: boolean;
   mfaVerified?: boolean;
   createdAt: string;
@@ -100,7 +101,7 @@ export async function refreshAdminCsrf(expectedUser: AdminUser | null) {
   }
   const user = data.user as AdminUser | undefined;
   if (!user || user.id !== expectedUser.id || user.role !== expectedUser.role || user.mustChangePassword ||
-      (user.role === "super_admin" && !user.mfaVerified) || typeof data.csrfToken !== "string" || !data.csrfToken) {
+      (user.role === "super_admin" && !user.mfaVerified && !(user.loginTotpBypass && user.totpEnabled)) || typeof data.csrfToken !== "string" || !data.csrfToken) {
     throw new AdminApiError("登录身份或安全状态已变化，请重新登录", 401, "invalid_admin_session");
   }
   return data.csrfToken;
@@ -112,6 +113,7 @@ export function isSessionError(error: unknown) {
     "invalid_admin_session",
     "admin_session_expired",
     "admin_user_disabled",
+    "admin_login_state_changed",
   ]).has(error.code);
 }
 

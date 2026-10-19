@@ -296,6 +296,19 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .diskState { padding: 7px 10px; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; color: #2d6c54; background: #e5f3eb; font-size: 9px; font-weight: 900; white-space: nowrap; }
 .diskState.warning { color: #7a5c1c; background: #fff3cf; }
 .diskState.critical, .diskState.emergency, .diskState.probe_failed { color: #a43f33; background: #fff0ec; }
+.loginPolicyPanel { flex-wrap: wrap; }
+.loginPolicyPanel.passwordOnly { border-color: #ebcfad; background: #fffcf7; }
+.totpSecurityAction .policyWarning { color: #a86b24; background: #fff0d6; }
+.loginPolicyPanel .totpSecurityAction { flex-wrap: wrap; justify-content: flex-end; }
+.loginPolicyFeedback { width: 100%; margin: 0; display: flex; align-items: center; gap: 10px; }
+.loginPolicyFeedback button { margin-left: auto; }
+.loginPolicyNotice { display: flex; gap: 10px; padding: 14px; border: 1px solid #ecd7bc; border-radius: 16px; background: #fff9ee; color: #936026; }
+.loginPolicyNotice > svg { flex-shrink: 0; margin-top: 2px; }
+.loginPolicyNotice b { font-size: 13px; }
+.loginPolicyNotice p { margin: 7px 0 0; font-size: 12px; line-height: 1.8; }
+.loginPolicyModal .loginPolicyConfirm { display: flex; align-items: flex-start; gap: 9px; padding: 12px; border-radius: 12px; background: #faf6f1; font-size: 12px; line-height: 1.8; }
+.loginPolicyConfirm input { width: 16px; height: 16px; padding: 0; flex: 0 0 16px; margin-top: 3px; accent-color: var(--coral); }
+@media (max-width: 700px) { .loginPolicyPanel .totpSecurityAction { width: 100%; justify-content: flex-start; }.loginPolicyModal .passwordActions { flex-wrap: wrap; } }
 .diskState.disabled { color: #68736c; background: #eeefeb; }
 .diskOverview { padding: 17px 20px; display: grid; grid-template-columns: 1.55fr .7fr 1fr .8fr; align-items: center; gap: 12px; border-top: 1px solid #efeee9; background: #fffdfa; }
 .diskOverview > div { min-width: 0; padding: 11px 12px; border-radius: 13px; background: #f6f5ef; }

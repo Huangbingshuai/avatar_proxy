@@ -15,6 +15,7 @@ type MockData = {
   role?: "super_admin" | "admin";
   totpRequired?: boolean;
   mfaSetupRequired?: boolean;
+  loginTotpBypass?: boolean;
   expireOnPath?: string;
   backupCreatedAt?: string | null;
   monitorPercent?: number;
@@ -28,6 +29,7 @@ function jsonResponse(body: unknown, status = 200, headers: Record<string, strin
 }
 
 function installFetch(data: MockData = {}) {
+  let loginPolicyBypass = Boolean(data.loginTotpBypass);
   let channelCsrfChanged = false;
   const projects = data.projects ?? [
     { name: "customer_a", displayName: "客户 A", description: "", keyCount: 1, activeKeyCount: 1, activeAssetCount: 0 },
@@ -39,7 +41,7 @@ function installFetch(data: MockData = {}) {
   ];
   const events = data.events ?? [{ id: 7, projectName: "customer_a", scopeType: "project", metric: "read_qpm", threshold: 90, limitValue: 100, usedValue: 90, acknowledged: false, createdAt: "2026-08-13 00:00:00" }];
   const audits = data.audits ?? [{ id: 8, sourceIp: "10.0.0.8", action: "quota.project.update", targetType: "project", targetId: "customer_a", createdAt: "2026-08-13 00:00:00" }];
-  const currentUser = { id: "admin-1", username: "owner", displayName: "系统管理员", role: data.role ?? "admin", status: "active", mustChangePassword: Boolean(data.mustChangePassword), totpEnabled: data.role === "super_admin" && !data.mfaSetupRequired, mfaSetupRequired: Boolean(data.mfaSetupRequired), mfaVerified: data.role !== "super_admin" || !data.mfaSetupRequired, createdAt: "2026-08-10 00:00:00", lastLoginAt: "2026-08-19 08:00:00", lastLoginIp: "127.0.0.1" };
+  const currentUser = { id: "admin-1", username: "owner", displayName: "系统管理员", role: data.role ?? "admin", status: "active", mustChangePassword: Boolean(data.mustChangePassword), totpEnabled: data.role === "super_admin" && !data.mfaSetupRequired, mfaSetupRequired: Boolean(data.mfaSetupRequired), mfaVerified: !data.loginTotpBypass && (data.role !== "super_admin" || !data.mfaSetupRequired), loginTotpBypass: Boolean(data.loginTotpBypass), createdAt: "2026-08-10 00:00:00", lastLoginAt: "2026-08-19 08:00:00", lastLoginIp: "127.0.0.1" };
   let users = [currentUser, { id: "admin-2", username: "operator", displayName: "运营管理员", role: "admin", status: "active", mustChangePassword: false, createdAt: "2026-08-11 00:00:00", lastLoginAt: "2026-08-18 08:00:00", lastLoginIp: "10.0.0.8" }];
   const sessions = [
     { id: "session-current", current: true, createdAt: 1787107200, lastSeenAt: 1787107800, absoluteExpiresAt: 1787150400, sourceIp: "127.0.0.1", userAgent: "Windows Chrome" },
@@ -72,7 +74,7 @@ function installFetch(data: MockData = {}) {
       if (data.loginError) return jsonResponse({ error: { message: data.loginError.message, code: data.loginError.code } }, data.loginError.status, data.loginError.retryAfter ? { "retry-after": String(data.loginError.retryAfter) } : {});
       const body = JSON.parse(String(init?.body));
       if (body.username !== "owner" || body.password !== "correct-password") return jsonResponse({ error: { message: "用户名或密码错误", code: "invalid_admin_credentials" } }, 401);
-      if (data.totpRequired && !body.totpCode && !body.recoveryCode) return jsonResponse({ error: { message: "请输入动态验证码", code: "admin_totp_required" } }, 401);
+      if (data.totpRequired && !data.loginTotpBypass && !body.totpCode && !body.recoveryCode) return jsonResponse({ error: { message: "请输入动态验证码", code: "admin_totp_required" } }, 401);
       authenticated = true;
       return jsonResponse({ user: currentUser, csrfToken: "csrf-test", session: sessions[0] });
     }
@@ -90,6 +92,10 @@ function installFetch(data: MockData = {}) {
     if (url.pathname === "/api/internal/auth/totp/confirm") return jsonResponse({ enabled: true, mfaVerified: true, recoveryCodes: ["AAAA-BBBB-CCCC-DDDD", "EEEE-FFFF-GGGG-HHHH"] });
     if (url.pathname === "/api/internal/auth/totp/rotate/setup") return jsonResponse({ secret: "NEWSECRETFORROTATION", qrCodeDataUrl: "data:image/png;base64,BBBB", expiresAt: 1_800_000_600 });
     if (url.pathname === "/api/internal/auth/totp/rotate/confirm") return jsonResponse({ enabled: true, mfaVerified: true, recoveryCodes: ["NEW1-AAAA-BBBB-CCCC", "NEW2-DDDD-EEEE-FFFF"], otherSessionsRevoked: 1 });
+    if (url.pathname === "/api/internal/admin/security/login-policy") {
+      if (init?.method === "PUT") { const body = JSON.parse(String(init.body)); loginPolicyBypass = body.loginTotpBypass; return jsonResponse({ policy: { loginTotpBypass: loginPolicyBypass, totpEnabled: true }, user: { ...currentUser, loginTotpBypass: loginPolicyBypass, mfaVerified: true }, otherSessionsRevoked: 1 }); }
+      return jsonResponse({ policy: { loginTotpBypass: loginPolicyBypass, totpEnabled: true } });
+    }
     if (!passwordChanged) return jsonResponse({ error: { message: "请先修改初始密码", code: "password_change_required" } }, 403);
     if (url.pathname === "/api/internal/auth/logout") { authenticated = false; return jsonResponse({ loggedOut: true }); }
     if (url.pathname === "/api/internal/admin/users") {
@@ -333,6 +339,26 @@ describe("内部控制台", () => {
     expect(JSON.parse(String(loginCalls.at(-1)?.init?.body))).toMatchObject({ totpCode: "123456" });
     expect(screen.queryByRole("button", { name: "项目" })).not.toBeInTheDocument();
     expect(await screen.findByText("超级管理员账号已登录")).toBeInTheDocument();
+  });
+
+  it("已开启免TOTP的超级管理员可直接登录并在安全面板恢复验证", async () => {
+    const { calls } = installFetch({ role: "super_admin", totpRequired: true, loginTotpBypass: true });
+    const user = await login();
+    expect(await screen.findByRole("heading", { name: "超级管理员控制中心" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "超级管理员二次验证" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(await screen.findByRole("button", { name: "恢复TOTP登录" }));
+    const dialog = screen.getByRole("dialog", { name: "恢复TOTP登录" });
+    await user.type(within(dialog).getByLabelText("登录安全设置验证密码"), "correct-password");
+    await user.type(within(dialog).getByLabelText("登录安全设置动态验证码"), "654321");
+    await user.click(within(dialog).getByLabelText("确认修改登录验证方式"));
+    await user.click(within(dialog).getByRole("button", { name: "确认恢复TOTP登录" }));
+    expect(await screen.findByRole("button", { name: "开启免TOTP登录" })).toBeInTheDocument();
+    const saved = calls.find((call) => call.path.endsWith("/security/login-policy") && call.init?.method === "PUT");
+    expect(JSON.parse(String(saved?.init?.body))).toEqual({ loginTotpBypass: false, currentPassword: "correct-password", totpCode: "654321" });
+    expect(new Headers(saved?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
   });
 
   it("未绑定TOTP的超级管理员必须保存恢复码后才能进入", async () => {

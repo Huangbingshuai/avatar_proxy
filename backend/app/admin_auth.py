@@ -35,6 +35,7 @@ class AdminPrincipal:
     must_change_password: bool
     mfa_verified: bool
     totp_enabled: bool
+    login_totp_bypass: bool = False
 
 
 def _sha256(value: str) -> str:
@@ -133,6 +134,7 @@ class AdminAuthService:
             "lastLoginIp": row["last_login_ip"],
             "passwordChangedAt": row["password_changed_at"],
             "totpEnabled": bool(row["totp_enabled_at"]),
+            "loginTotpBypass": row["role"] == "super_admin" and bool(row["login_totp_bypass"]),
             "mfaSetupRequired": row["role"] == "super_admin" and not bool(row["totp_enabled_at"]),
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
@@ -406,7 +408,7 @@ class AdminAuthService:
         accepted_timecode: int | None = None
         recovery_code_id: str | None = None
         if row["role"] == "super_admin" and row["totp_enabled_at"]:
-            if not totp_code and not recovery_code:
+            if not totp_code and not recovery_code and not row["login_totp_bypass"]:
                 raise ApiError("请输入验证器动态验证码或恢复码", 401, "admin_totp_required")
             if recovery_code:
                 normalized_recovery = recovery_code.strip().upper()
@@ -424,7 +426,7 @@ class AdminAuthService:
                 if accepted is not None:
                     accepted_timecode = accepted
                     mfa_verified = True
-            if not mfa_verified:
+            if not mfa_verified and (totp_code or recovery_code):
                 self._record_login_failure(
                     row["id"],
                     username.strip(),
@@ -448,6 +450,11 @@ class AdminAuthService:
                 )
             if current["locked_until"] is not None and int(current["locked_until"]) > now:
                 self._raise_locked(int(current["locked_until"]), now)
+            if any(current[key] != row[key] for key in (
+                "password_hash", "role", "must_change_password", "totp_secret_encrypted",
+                "totp_enabled_at", "login_totp_bypass",
+            )):
+                raise ApiError("账号安全设置已变化，请重新登录", 401, "admin_login_state_changed")
             if accepted_timecode is not None:
                 previous = current["totp_last_timecode"]
                 if previous is not None and accepted_timecode <= int(previous):
@@ -498,7 +505,8 @@ class AdminAuthService:
                 action="admin.auth.login",
                 target_type="admin_session",
                 target_id=session_id,
-                after={"result": "success"},
+                after={"result": "success", "loginTotpBypass": bool(current["login_totp_bypass"])
+                       and current["role"] == "super_admin" and not mfa_verified},
                 connection=connection,
             )
             if current["role"] == "super_admin":
@@ -532,7 +540,7 @@ class AdminAuthService:
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT s.*,u.username,u.display_name,u.role,u.status,u.must_change_password,u.totp_enabled_at "
+                "SELECT s.*,u.username,u.display_name,u.role,u.status,u.must_change_password,u.totp_enabled_at,u.login_totp_bypass "
                 "FROM admin_sessions s JOIN admin_users u ON u.id=s.admin_user_id "
                 "WHERE s.token_hash=?",
                 (_sha256(token),),
@@ -566,6 +574,7 @@ class AdminAuthService:
             must_change_password=bool(row["must_change_password"]),
             mfa_verified=bool(row["mfa_verified"]),
             totp_enabled=bool(row["totp_enabled_at"]),
+            login_totp_bypass=row["role"] == "super_admin" and bool(row["login_totp_bypass"]),
         )
 
     @staticmethod
@@ -578,6 +587,7 @@ class AdminAuthService:
             "status": "active",
             "mustChangePassword": principal.must_change_password,
             "totpEnabled": principal.totp_enabled,
+            "loginTotpBypass": principal.login_totp_bypass,
             "mfaSetupRequired": principal.role == "super_admin" and not principal.totp_enabled,
             "mfaVerified": principal.mfa_verified,
         }
@@ -702,6 +712,63 @@ class AdminAuthService:
                 "UPDATE admin_users SET totp_last_timecode=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                 (accepted, actor.id),
             )
+
+    def login_policy(self, actor: AdminPrincipal) -> dict[str, bool]:
+        self.require_super_admin(actor)
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT login_totp_bypass,totp_enabled_at FROM admin_users WHERE id=?", (actor.id,),
+            ).fetchone()
+        if row is None:
+            raise ApiError("管理员不存在", 404, "admin_user_not_found")
+        return {"loginTotpBypass": bool(row["login_totp_bypass"]), "totpEnabled": bool(row["totp_enabled_at"])}
+
+    def update_login_policy(
+        self, actor: AdminPrincipal, *, login_totp_bypass: bool, current_password: str,
+        totp_code: str, source_ip: str | None, user_agent: str | None,
+    ) -> dict[str, Any]:
+        self.require_super_admin(actor)
+        action = "admin.auth.login_policy.update"
+        with self.database.connect() as connection:
+            proof = connection.execute("SELECT * FROM admin_users WHERE id=?", (actor.id,)).fetchone()
+        self.verify_reauthentication(actor, current_password, source_ip, user_agent, action)
+        self.verify_sensitive_totp(actor, totp_code, source_ip, user_agent, action)
+        now = int(self.clock())
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM admin_users WHERE id=?", (actor.id,)).fetchone()
+            session = connection.execute("SELECT * FROM admin_sessions WHERE id=? AND admin_user_id=?",
+                                         (actor.session_id, actor.id)).fetchone()
+            # Reauthentication must not survive a concurrent password/TOTP
+            # rotation, account change or session revocation.
+            if (row is None or proof is None or row["status"] != "active" or row["role"] != "super_admin"
+                    or row["must_change_password"] or not row["totp_enabled_at"]
+                    or any(row[key] != proof[key] for key in ("password_hash", "totp_secret_encrypted", "totp_enabled_at"))
+                    or session is None or session["revoked_at"] is not None
+                    or now >= session["absolute_expires_at"]
+                    or now - session["last_seen_at"] >= self.settings.admin_session_idle_seconds):
+                raise ApiError("账号安全设置或会话已变化，请重新登录后操作", 401, "admin_login_state_changed")
+            connection.execute("UPDATE admin_users SET login_totp_bypass=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                               (int(login_totp_bypass), actor.id))
+            # This session just supplied a fresh TOTP. Never claim that a
+            # password-only login itself was MFA-verified.
+            connection.execute("UPDATE admin_sessions SET mfa_verified=1 WHERE id=?", (actor.session_id,))
+            revoked = connection.execute(
+                "UPDATE admin_sessions SET revoked_at=?,revoke_reason='login_policy_changed' "
+                "WHERE admin_user_id=? AND id<>? AND revoked_at IS NULL",
+                (now, actor.id, actor.session_id),
+            ).rowcount
+            self._audit(actor=actor.username, actor_id=actor.id, source_ip=source_ip, user_agent=user_agent,
+                action=action, target_type="admin_user", target_id=actor.id,
+                before={"loginTotpBypass": bool(row["login_totp_bypass"])},
+                after={"loginTotpBypass": login_totp_bypass, "otherSessionsRevoked": revoked}, connection=connection)
+            self._alert(event_type="super_admin_login_policy_changed", severity="critical",
+                message="超级管理员已开启免TOTP登录" if login_totp_bypass else "超级管理员已恢复TOTP登录",
+                actor=actor.username, actor_id=actor.id, source_ip=source_ip, target_type="admin_user", target_id=actor.id,
+                details={"loginTotpBypass": login_totp_bypass}, connection=connection)
+            updated = connection.execute("SELECT * FROM admin_users WHERE id=?", (actor.id,)).fetchone()
+        return {"policy": {"loginTotpBypass": login_totp_bypass, "totpEnabled": True},
+                "user": self._user_payload(updated) | {"mfaVerified": True}, "otherSessionsRevoked": revoked}
 
     def begin_totp_setup(self, actor: AdminPrincipal, source_ip: str | None, user_agent: str | None) -> dict[str, str]:
         self.require_super_admin(actor)
@@ -1262,7 +1329,7 @@ class AdminAuthService:
             connection.execute(
                 "UPDATE admin_users SET totp_secret_encrypted=NULL,totp_pending_secret_encrypted=NULL,"
                 "totp_pending_session_id=NULL,totp_pending_expires_at=NULL,totp_enabled_at=NULL,"
-                "totp_last_timecode=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "totp_last_timecode=NULL,login_totp_bypass=0,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                 (row["id"],),
             )
             connection.execute("DELETE FROM admin_recovery_codes WHERE admin_user_id=?", (row["id"],))

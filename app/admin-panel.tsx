@@ -1,12 +1,13 @@
 "use client";
 
-import { Activity, ArchiveRestore, CheckCircle2, Clipboard, DatabaseBackup, FileCheck2, HardDrive, KeyRound, LoaderCircle, Plus, RefreshCw, Save, ScanLine, ShieldAlert, ShieldCheck, Smartphone, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import { Activity, ArchiveRestore, CheckCircle2, Clipboard, DatabaseBackup, FileCheck2, HardDrive, KeyRound, LoaderCircle, Plus, RefreshCw, Save, ShieldAlert, ShieldCheck, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { AdminApi, AdminSession, AdminUser } from "./admin-api";
 import GlobalModelRatesPanel from "./global-model-rates-panel";
 import ProviderChannelsPanel from "./provider-channels-panel";
 import MonitorEmailSettingsForm, { type MonitorEmailSettings } from "./monitor-email-settings";
+import AdminLoginPolicy from "./admin-login-policy";
 
 type AdminAudit = {
   id: number;
@@ -146,7 +147,7 @@ function diskLevelLabel(level?: DiskSample["level"] | null) {
   return "正常";
 }
 
-export default function AdminPanel({ currentUser, adminApi, onRestored }: { currentUser: AdminUser; adminApi: AdminApi; onRestored: (message: string) => void }) {
+export default function AdminPanel({ currentUser, adminApi, onRestored, onUserChanged }: { currentUser: AdminUser; adminApi: AdminApi; onRestored: (message: string) => void; onUserChanged?: (user: AdminUser) => void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [audits, setAudits] = useState<AdminAudit[]>([]);
@@ -549,10 +550,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
       </article>)}
     </section>}
 
-    <section className="panel adminSection totpSecurityPanel">
-      <div className="totpSecurityIdentity"><span><Smartphone size={20} /></span><div><small>SUPER ADMIN MFA</small><h3>TOTP验证器</h3><p>当前验证器已启用。更换时旧验证器会持续有效，直到新验证码确认成功。</p></div></div>
-      <div className="totpSecurityAction"><span><ShieldCheck size={14} />保护中</span><button className="secondary" onClick={() => { setError(""); setTotpRotationStage("verify"); }} disabled={Boolean(busyId)}><ScanLine size={15} />更换验证器</button></div>
-    </section>
+    <AdminLoginPolicy adminApi={adminApi} onRotate={() => { setError(""); setTotpRotationStage("verify"); }} onUserChanged={onUserChanged} blocked={Boolean(busyId) || totpRotationStage !== null} />
 
     <section className={`panel adminSection diskMonitorPanel ${diskVisualState}`}>
       <div className="panelHead diskMonitorHead"><div><h3><HardDrive size={18} />磁盘空间监控</h3><p>每分钟自动采样；达到阈值后由后端自动发送邮件，不依赖管理员登录。</p></div><span className={`diskState ${diskVisualState}`}><Activity size={14} />{monitorStatus?.health === "disabled" ? "已停用" : monitorStatus?.health === "probe_failed" ? "探测异常" : diskLevelLabel(diskSample?.level)}</span></div>

@@ -52,7 +52,8 @@ def require_admin(
 ) -> AdminPrincipal:
     if principal.must_change_password:
         raise ApiError("首次登录必须先修改密码", 403, "password_change_required")
-    if principal.role == "super_admin" and not principal.mfa_verified:
+    if (principal.role == "super_admin" and not principal.mfa_verified
+            and not (principal.login_totp_bypass and principal.totp_enabled)):
         code = "totp_setup_required" if not principal.totp_enabled else "admin_totp_required"
         message = "超级管理员必须先绑定TOTP二次验证" if not principal.totp_enabled else "超级管理员TOTP验证未完成"
         raise ApiError(message, 403, code)
