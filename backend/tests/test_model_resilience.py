@@ -19,21 +19,31 @@ def setup_image(client):
     return ApiPrincipal(key_id, "relay_project"), {"Authorization": "Bearer " + key, "Idempotency-Key": "one-image"}
 
 
-def test_slow_generation_ignores_legacy_30_seconds_and_caches(tmp_path):
+@pytest.mark.parametrize("provider,alias,size", [
+    ("modeltop", "gpt-image-2", "1024x1024"),
+    ("volcengine_ark", "doubao-seedream-5.0-pro", "1K"),
+    ("byteplus_modelark", "dola-seedream-5.0-pro", "1K"),
+    ("maxmodel", "gpt-image-2", "1024x1024"),
+])
+def test_slow_generation_ignores_legacy_30_seconds_and_caches(tmp_path, provider, alias, size):
     calls = []
     with relay_client(tmp_path, upstream_timeout_seconds=30) as client:
-        _, headers = setup_image(client)
+        _, key, _ = provision(client, provider=provider, alias=alias, upstream_model="ignored")
+        headers = {"Authorization": "Bearer " + key, "Idempotency-Key": "one-slow-image"}
+        payload = {"model":alias, "prompt":"a circle", "n":1, "size":size}
         def handler(request):
             calls.append(request)
+            assert json.loads(request.content)["size"] == size
             timeout = request.extensions["timeout"]
             assert timeout == {"connect": 10.0, "read": 1800.0, "write": 120.0, "pool": 10.0}
             # Simulate a provider that cannot finish inside the old 30s window.
             if timeout["read"] <= 30:
                 raise httpx.ReadTimeout("slow generation", request=request)
-            return httpx.Response(200, json=OUTPUT)
+            envelope = {"code":200, "data":OUTPUT} if provider=="maxmodel" else OUTPUT
+            return httpx.Response(200, json=envelope)
         client.app.state.provider_relay.transport = httpx.MockTransport(handler)
-        first = client.post("/v1/images/generations", json=IMAGE, headers=headers)
-        second = client.post("/v1/images/generations", json=IMAGE, headers=headers)
+        first = client.post("/v1/images/generations", json=payload, headers=headers)
+        second = client.post("/v1/images/generations", json=payload, headers=headers)
         assert first.status_code == second.status_code == 200
         assert first.json() == second.json()
         assert len(calls) == 1

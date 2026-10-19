@@ -38,6 +38,8 @@ services:
         VITE_VIDEO_MODELS: ${VITE_VIDEO_MODELS:-doubao-seedance-2.5|Doubao-Seedance-2.5,doubao-seedance-2.0|Doubao-Seedance-2.0,doubao-seedance-2.0-fast|Doubao-Seedance-2.0-Fast,doubao-seedance-2.0-mini|Doubao-Seedance-2.0-Mini,doubao-seedance-1.0-pro|Doubao-Seedance-1.0-Pro,doubao-seedance-1.0-pro-fast|Doubao-Seedance-1.0-Pro-Fast}
     ports:
       - "8088:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
     depends_on:
       api:
