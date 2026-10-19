@@ -78,7 +78,6 @@ class AdminTotpConfirm(ApiModel):
 
 class AdminTotpRotationStart(ApiModel):
     current_password: str = Field(min_length=1, max_length=128)
-    current_totp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 
 class AdminTotpRotationConfirm(ApiModel):

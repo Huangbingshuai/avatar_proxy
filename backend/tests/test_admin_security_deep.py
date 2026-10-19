@@ -137,14 +137,24 @@ def test_super_admin_can_rotate_totp_and_old_credentials_stop_working(tmp_path: 
         started = client.post(
             "/api/internal/auth/totp/rotate/setup",
             headers=headers,
-            json={
-                "currentPassword": CHANGED_PASSWORD,
-                "currentTotpCode": pyotp.TOTP(old_secret).at(BASE_TIME + 30),
-            },
+            json={"currentPassword": CHANGED_PASSWORD},
         )
         assert started.status_code == 200, started.text
         new_secret = started.json()["secret"]
         assert new_secret != old_secret
+        with app.state.database.connect() as connection:
+            pending = connection.execute("SELECT * FROM admin_users WHERE id=?", (user["id"],)).fetchone()
+        assert app.state.admin_auth._decrypt_secret(pending["totp_secret_encrypted"]) == old_secret
+        assert pending["totp_last_timecode"] == BASE_TIME // 30
+        new_code = pyotp.TOTP(new_secret).at(BASE_TIME + 30)
+        wrong_code = "000000" if new_code != "000000" else "111111"
+        invalid_confirm = client.post(
+            "/api/internal/auth/totp/rotate/confirm",
+            headers=headers,
+            json={"code": wrong_code},
+        )
+        assert invalid_confirm.status_code == 422
+        assert invalid_confirm.json()["error"]["code"] == "invalid_new_admin_totp"
         confirmed = client.post(
             "/api/internal/auth/totp/rotate/confirm",
             headers=headers,
@@ -218,7 +228,7 @@ def test_super_admin_can_rotate_totp_and_old_credentials_stop_working(tmp_path: 
         assert new_login.status_code == 200
 
 
-def test_totp_rotation_requires_old_credentials_and_expires_without_replacing_secret(tmp_path: Path) -> None:
+def test_totp_rotation_requires_password_and_csrf_and_expires_without_replacing_secret(tmp_path: Path) -> None:
     app = create_app(build_settings(tmp_path / "admin.db"))
     with TestClient(app) as client:
         session, old_secret, _ = enroll_super(client, app)
@@ -227,18 +237,16 @@ def test_totp_rotation_requires_old_credentials_and_expires_without_replacing_se
         wrong_password = client.post(
             "/api/internal/auth/totp/rotate/setup",
             headers=headers,
-            json={
-                "currentPassword": "wrong-password",
-                "currentTotpCode": pyotp.TOTP(old_secret).at(BASE_TIME + 30),
-            },
+            json={"currentPassword": "wrong-password"},
         )
         assert wrong_password.status_code == 401
-        wrong_totp = client.post(
+        assert wrong_password.json()["error"]["code"] == "admin_reauthentication_failed"
+        missing_csrf = client.post(
             "/api/internal/auth/totp/rotate/setup",
-            headers=headers,
-            json={"currentPassword": CHANGED_PASSWORD, "currentTotpCode": "000000"},
+            json={"currentPassword": CHANGED_PASSWORD},
         )
-        assert wrong_totp.status_code == 401
+        assert missing_csrf.status_code == 403
+        assert missing_csrf.json()["error"]["code"] == "invalid_csrf_token"
         with app.state.database.connect() as connection:
             unchanged = connection.execute("SELECT * FROM admin_users WHERE username='owner'").fetchone()
         assert unchanged["totp_pending_secret_encrypted"] is None
@@ -246,11 +254,9 @@ def test_totp_rotation_requires_old_credentials_and_expires_without_replacing_se
         started = client.post(
             "/api/internal/auth/totp/rotate/setup",
             headers=headers,
-            json={
-                "currentPassword": CHANGED_PASSWORD,
-                "currentTotpCode": pyotp.TOTP(old_secret).at(BASE_TIME + 30),
-            },
+            json={"currentPassword": CHANGED_PASSWORD},
         )
+        assert started.status_code == 200, started.text
         new_secret = started.json()["secret"]
         with app.state.database.connect() as connection:
             pending = connection.execute("SELECT * FROM admin_users WHERE username='owner'").fetchone()
@@ -285,6 +291,48 @@ def test_totp_rotation_requires_old_credentials_and_expires_without_replacing_se
         assert user["totp_pending_secret_encrypted"] is None
         assert user["totp_pending_session_id"] is None
         assert user["totp_pending_expires_at"] is None
+
+
+def test_enrolled_super_admin_changes_password_without_new_totp_and_revokes_sessions(tmp_path: Path) -> None:
+    app = create_app(build_settings(tmp_path / "admin.db"))
+    new_password = "Updated-admin-password!2026"
+    with TestClient(app) as client:
+        session, secret, _ = enroll_super(client, app)
+        headers = {"X-CSRF-Token": session["csrfToken"]}
+        wrong = client.post(
+            "/api/internal/auth/change-password",
+            headers=headers,
+            json={"currentPassword": "wrong-password", "newPassword": new_password},
+        )
+        assert wrong.status_code == 401
+        assert wrong.json()["error"]["code"] == "invalid_current_password"
+        assert client.get("/api/internal/auth/me").status_code == 200
+        changed = client.post(
+            "/api/internal/auth/change-password",
+            headers=headers,
+            json={"currentPassword": CHANGED_PASSWORD, "newPassword": new_password},
+        )
+        assert changed.status_code == 200
+        assert changed.json() == {"changed": True, "requiresLogin": True}
+        assert client.get("/api/internal/auth/me").status_code == 401
+        with app.state.database.connect() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM admin_sessions WHERE revoked_at IS NULL"
+            ).fetchone()[0] == 0
+        requires_totp = client.post(
+            "/api/internal/auth/login", json={"username": "owner", "password": new_password}
+        )
+        assert requires_totp.status_code == 401
+        assert requires_totp.json()["error"]["code"] == "admin_totp_required"
+        app.state.admin_auth.clock = lambda: BASE_TIME + 30
+        login = client.post(
+            "/api/internal/auth/login",
+            json={
+                "username": "owner", "password": new_password,
+                "totpCode": pyotp.TOTP(secret).at(BASE_TIME + 30),
+            },
+        )
+        assert login.status_code == 200
 
 
 def test_super_admin_is_security_only_sensitive_actions_reauthenticate_and_alert(tmp_path: Path) -> None:

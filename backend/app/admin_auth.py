@@ -832,16 +832,12 @@ class AdminAuthService:
         self,
         actor: AdminPrincipal,
         current_password: str,
-        current_totp_code: str,
         source_ip: str | None,
         user_agent: str | None,
     ) -> dict[str, Any]:
         self.require_super_admin(actor)
         self.verify_reauthentication(
             actor, current_password, source_ip, user_agent, "admin.auth.totp_rotate"
-        )
-        self.verify_sensitive_totp(
-            actor, current_totp_code, source_ip, user_agent, "admin.auth.totp_rotate"
         )
         now = int(self.clock())
         expires_at = now + TOTP_ROTATION_TTL_SECONDS
@@ -906,7 +902,7 @@ class AdminAuthService:
         if not row["totp_enabled_at"]:
             raise ApiError("超级管理员尚未启用TOTP二次验证", 409, "admin_totp_not_enabled")
         if not row["totp_pending_secret_encrypted"]:
-            raise ApiError("请先验证旧验证器并开始更换", 409, "admin_totp_rotation_not_started")
+            raise ApiError("请先验证当前密码并开始更换", 409, "admin_totp_rotation_not_started")
         if row["totp_pending_session_id"] != actor.session_id:
             raise ApiError("请在发起更换的登录会话中继续操作", 409, "admin_totp_rotation_session_mismatch")
         expires_at = int(row["totp_pending_expires_at"] or 0)

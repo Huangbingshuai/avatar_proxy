@@ -169,7 +169,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
   const [sensitiveAction, setSensitiveAction] = useState<SensitiveAction | null>(null);
   const [reauthPassword, setReauthPassword] = useState("");
   const [totpRotationStage, setTotpRotationStage] = useState<TotpRotationStage>(null);
-  const [totpRotationForm, setTotpRotationForm] = useState({ currentPassword: "", currentTotpCode: "", newTotpCode: "" });
+  const [totpRotationForm, setTotpRotationForm] = useState({ currentPassword: "", newTotpCode: "" });
   const [totpRotationSetup, setTotpRotationSetup] = useState<TotpRotationSetup | null>(null);
   const [totpRecoveryCodes, setTotpRecoveryCodes] = useState<string[]>([]);
   const [totpRecoverySaved, setTotpRecoverySaved] = useState(false);
@@ -427,7 +427,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
 
   function closeTotpRotation() {
     setTotpRotationStage(null);
-    setTotpRotationForm({ currentPassword: "", currentTotpCode: "", newTotpCode: "" });
+    setTotpRotationForm({ currentPassword: "", newTotpCode: "" });
     setTotpRotationSetup(null);
     setTotpRecoveryCodes([]);
     setTotpRecoverySaved(false);
@@ -443,14 +443,13 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
         method: "POST",
         body: JSON.stringify({
           currentPassword: totpRotationForm.currentPassword,
-          currentTotpCode: totpRotationForm.currentTotpCode,
         }),
       });
       setTotpRotationSetup(data as unknown as TotpRotationSetup);
-      setTotpRotationForm({ currentPassword: "", currentTotpCode: "", newTotpCode: "" });
+      setTotpRotationForm({ currentPassword: "", newTotpCode: "" });
       setTotpRotationStage("scan");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "旧验证器身份校验失败");
+      setError(caught instanceof Error ? caught.message : "当前密码校验失败");
     } finally {
       setBusyId("");
     }
@@ -468,7 +467,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
       });
       setTotpRecoveryCodes((data.recoveryCodes ?? []) as string[]);
       setTotpRotationSetup(null);
-      setTotpRotationForm({ currentPassword: "", currentTotpCode: "", newTotpCode: "" });
+      setTotpRotationForm({ currentPassword: "", newTotpCode: "" });
       setTotpRotationStage("recovery");
       await loadSecurityData();
     } catch (caught) {
@@ -677,10 +676,9 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
     {totpRotationStage && <div className="modalBackdrop"><section className="modal totpRotationModal" role="dialog" aria-modal="true" aria-labelledby="totp-rotation-title">
       <header><div><p className="securityEyebrow">TOTP安全换绑</p><h2 id="totp-rotation-title">{totpRotationStage === "verify" ? "验证当前身份" : totpRotationStage === "scan" ? "扫描新的二维码" : "保存新的恢复码"}</h2></div>{totpRotationStage !== "recovery" && <button onClick={closeTotpRotation} disabled={Boolean(busyId)} aria-label="关闭"><X size={18} /></button>}</header>
       {totpRotationStage === "verify" && <form className="stackForm" onSubmit={beginTotpRotation}>
-        <div className="totpRotationNotice"><ShieldAlert size={19} /><p>先验证当前密码和旧验证器。生成新二维码不会立即停用旧验证器，关闭窗口也不会影响登录。</p></div>
+        <div className="totpRotationNotice"><ShieldAlert size={19} /><p>输入当前密码后即可生成新二维码。扫描后输入新验证器的验证码完成更换，确认前旧验证器仍然有效。</p></div>
         <label>超级管理员当前密码<input type="password" autoComplete="current-password" required value={totpRotationForm.currentPassword} onChange={(event) => setTotpRotationForm({ ...totpRotationForm, currentPassword: event.target.value })} /></label>
-        <label>当前验证器动态验证码<input aria-label="当前验证器动态验证码" type="text" inputMode="numeric" autoComplete="one-time-code" required minLength={6} maxLength={6} pattern="\d{6}" value={totpRotationForm.currentTotpCode} onChange={(event) => setTotpRotationForm({ ...totpRotationForm, currentTotpCode: event.target.value.replace(/\D/g, "").slice(0, 6) })} /><small>必须使用一组尚未提交过的6位验证码。</small></label>
-        <div className="passwordActions"><button type="button" className="secondary" onClick={closeTotpRotation}>取消</button><button className="primary" disabled={busyId === "totp-rotate-setup" || !totpRotationForm.currentPassword || totpRotationForm.currentTotpCode.length !== 6}>{busyId === "totp-rotate-setup" ? <><LoaderCircle size={15} className="spin" />正在验证</> : "验证并生成新二维码"}</button></div>
+        <div className="passwordActions"><button type="button" className="secondary" onClick={closeTotpRotation}>取消</button><button className="primary" disabled={busyId === "totp-rotate-setup" || !totpRotationForm.currentPassword}>{busyId === "totp-rotate-setup" ? <><LoaderCircle size={15} className="spin" />正在验证</> : "验证并生成新二维码"}</button></div>
       </form>}
       {totpRotationStage === "scan" && totpRotationSetup && <form className="stackForm totpRotationScan" onSubmit={confirmTotpRotation}>
         <div className="totpRotationSteps"><span className="done">1</span><i /><span>2</span><i /><span>3</span></div>

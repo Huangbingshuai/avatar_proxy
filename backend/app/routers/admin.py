@@ -146,7 +146,6 @@ def setup_totp_rotation(
     return request.app.state.admin_auth.begin_totp_rotation(
         principal,
         payload.current_password,
-        payload.current_totp_code,
         _request_ip(request),
         _user_agent(request),
     )

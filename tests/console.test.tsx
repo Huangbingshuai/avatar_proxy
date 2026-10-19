@@ -345,14 +345,16 @@ describe("内部控制台", () => {
     expect(await screen.findByRole("heading", { name: "超级管理员控制中心" })).toBeInTheDocument();
   });
 
-  it("超级管理员可以在前端安全更换TOTP验证器", async () => {
+  it("超级管理员仅用当前密码发起换绑，再验证新TOTP完成更换", async () => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
     await user.click(screen.getByRole("button", { name: "安全管理" }));
     await user.click(await screen.findByRole("button", { name: "更换验证器" }));
     expect(screen.getByRole("heading", { name: "验证当前身份" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("当前验证器动态验证码")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "验证并生成新二维码" })).toBeDisabled();
     await user.type(screen.getByLabelText("超级管理员当前密码"), "correct-password");
-    await user.type(screen.getByLabelText("当前验证器动态验证码"), "123456");
+    expect(screen.getByRole("button", { name: "验证并生成新二维码" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "验证并生成新二维码" }));
     expect(await screen.findByRole("heading", { name: "扫描新的二维码" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "新的TOTP绑定二维码" })).toBeInTheDocument();
@@ -367,10 +369,25 @@ describe("内部控制台", () => {
 
     const start = calls.find((call) => call.path === "/api/internal/auth/totp/rotate/setup");
     const confirm = calls.find((call) => call.path === "/api/internal/auth/totp/rotate/confirm");
-    expect(JSON.parse(String(start?.init?.body))).toEqual({ currentPassword: "correct-password", currentTotpCode: "123456" });
+    expect(JSON.parse(String(start?.init?.body))).toEqual({ currentPassword: "correct-password" });
     expect(JSON.parse(String(confirm?.init?.body))).toEqual({ code: "654321" });
     expect(new Headers(start?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
     expect(new Headers(confirm?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+  });
+
+  it("已绑定TOTP的超级管理员修改密码只需当前密码", async () => {
+    const { calls } = installFetch({ role: "super_admin" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "修改密码" }));
+    expect(screen.queryByLabelText(/动态验证码/)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("当前密码"), "correct-password");
+    await user.type(screen.getByLabelText(/^新密码/), "New-password-123!");
+    await user.type(screen.getByLabelText("确认新密码"), "New-password-123!");
+    await user.click(screen.getByRole("button", { name: "保存新密码" }));
+    expect(await screen.findByRole("heading", { name: "登录内部控制台" })).toBeInTheDocument();
+    const call = calls.find((item) => item.path === "/api/internal/auth/change-password");
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ currentPassword: "correct-password", newPassword: "New-password-123!" });
+    expect(new Headers(call?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
   });
 
   it("超级管理员可以按厂商、类型、状态和名称筛选全局模型价目", async () => {
