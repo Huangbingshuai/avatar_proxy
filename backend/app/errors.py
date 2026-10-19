@@ -25,6 +25,12 @@ class ApiError(Exception):
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, error: RequestValidationError):
+        if request.url.path == "/api/internal/admin/system-monitor/email/settings":
+            # Validation errors must never echo SMTP or administrator passwords.
+            return JSONResponse(status_code=422, content={"detail": [
+                {"loc": item["loc"], "msg": item["msg"], "type": item["type"]}
+                for item in error.errors()
+            ]})
         if not request.url.path.startswith("/v1/"):
             return await request_validation_exception_handler(request, error)
         first = error.errors()[0] if error.errors() else {}

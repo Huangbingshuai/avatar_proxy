@@ -391,6 +391,12 @@ CREATE TABLE IF NOT EXISTS system_monitor_settings (
     updated_by TEXT,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS system_monitor_email_settings (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    config_ciphertext TEXT NOT NULL,
+    source TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS disk_usage_samples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path TEXT NOT NULL,

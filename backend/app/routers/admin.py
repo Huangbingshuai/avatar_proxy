@@ -10,6 +10,7 @@ from ..schemas import (
     AdminSecurityAlertAck,
     AdminSensitiveAction,
     AdminSystemMonitorSettingsUpdate,
+    AdminMonitorEmailSettingsUpdate,
     AdminTotpConfirm,
     AdminTotpRotationConfirm,
     AdminTotpRotationStart,
@@ -257,6 +258,23 @@ def update_system_monitor_settings(
             user_agent=_user_agent(request),
         )
     }
+
+
+@router.put("/admin/system-monitor/email/settings")
+def update_system_monitor_email_settings(
+    payload: AdminMonitorEmailSettingsUpdate,
+    request: Request,
+    principal: AdminDependency,
+) -> dict:
+    request.app.state.admin_auth.require_super_admin(principal)
+    request.app.state.admin_auth.verify_reauthentication(
+        principal, payload.current_password.get_secret_value(), _request_ip(request),
+        _user_agent(request), "admin.system_monitor.email.settings.update",
+    )
+    return {"email": request.app.state.system_monitor.mail_settings.update(
+        payload, actor_id=principal.id, actor=principal.username,
+        source_ip=_request_ip(request), user_agent=_user_agent(request),
+    )}
 
 
 @router.post("/admin/system-monitor/email/test")

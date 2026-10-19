@@ -46,7 +46,10 @@ function installFetch(data: MockData = {}) {
     { id: "session-old", current: false, createdAt: 1787020800, lastSeenAt: 1787024400, absoluteExpiresAt: 1787110800, sourceIp: "10.0.0.8", userAgent: "Macintosh Safari" },
   ];
   const backupItem = { id: "20260819-080000-000001", databaseFile: "avatar_proxy-20260819-080000-000001.db", auditFile: "admin_audit-20260819-080000-000001.jsonl", databaseBytes: 2048, auditBytes: 1024, createdAt: data.backupCreatedAt ?? "2026-08-19T08:00:00Z", valid: true, counts: { projects: 2, apiKeys: 2, adminUsers: 2, adminAudits: 19 } };
-  const monitorSettings = { enabled: true, configuredEnabled: true, runtimeEnabled: true, path: "C:\\data", warningPercent: 80, criticalPercent: 90, emergencyPercent: 95, recoveryPercent: 75, sampleIntervalSeconds: 60, persistIntervalSeconds: 300, retentionDays: 30, emailConfigured: true, emailRecipientCount: 2 };
+  const monitorEmail = { enabled: true, configured: true, recipients: ["ops@example.test", "owner@example.test"], source: "legacy_env", activeAccountId: "mail_legacy",
+    accounts: [{ id: "mail_legacy", provider: "custom", host: "smtp.example.test", port: 465, username: "alerts@example.test", fromEmail: "alerts@example.test", security: "ssl", timeoutSeconds: 10, passwordConfigured: true }],
+    providers: [{ id: "qq", label: "QQ 邮箱", host: "smtp.qq.com", domains: ["qq.com", "foxmail.com"], helpUrl: "https://service.mail.qq.com/" }, { id: "163", label: "网易 163", host: "smtp.163.com", domains: ["163.com"], helpUrl: "https://help.mail.126.com/" }] };
+  const monitorSettings = { enabled: true, configuredEnabled: true, runtimeEnabled: true, path: "C:\\data", warningPercent: 80, criticalPercent: 90, emergencyPercent: 95, recoveryPercent: 75, sampleIntervalSeconds: 60, persistIntervalSeconds: 300, retentionDays: 30, emailConfigured: true, emailRecipientCount: 2, email: monitorEmail };
   const monitorSample = { path: "C:\\data", totalBytes: 160 * 1024 ** 3, usedBytes: 109.4 * 1024 ** 3, availableBytes: 50.6 * 1024 ** 3, reservedBytes: 0, usedPercent: data.monitorPercent ?? 68.4, level: "normal", sampledAt: 1_787_107_800 };
   let providerChannels: Array<{
     id: string; projectName: string; name: string; provider: string;
@@ -104,6 +107,8 @@ function installFetch(data: MockData = {}) {
     if (url.pathname === "/api/internal/admin/backups/run") return jsonResponse({ enabled: true, intervalSeconds: 86400, retention: 30, directory: "data/backups", lastRun: { status: "success", completedAt: "2026-08-19 08:10:00", databaseBytes: 2048, auditBytes: 1024 } });
     if (url.pathname === "/api/internal/admin/system-monitor/status") return jsonResponse({ health: "ok", sample: monitorSample, activeIncidentId: null, recoveryStreak: 0, probeFailureStreak: 0, probeAlertActive: false, lastSampledAt: monitorSample.sampledAt, lastError: null, pendingEmailDeliveries: 0, settings: monitorSettings });
     if (url.pathname === "/api/internal/admin/system-monitor/settings" && init?.method === "PUT") { const body = JSON.parse(String(init.body)); return jsonResponse({ settings: { ...monitorSettings, ...body, currentPassword: undefined } }); }
+    if (url.pathname === "/api/internal/admin/system-monitor/email/settings" && init?.method === "PUT") { const body = JSON.parse(String(init.body)); return jsonResponse({ email: { ...monitorEmail, ...body, accounts: body.accounts.map((item: Record<string, unknown>) => ({ ...item, password: undefined, passwordConfigured: true })), currentPassword: undefined, source: "panel" } }); }
+    if (url.pathname === "/api/internal/admin/system-monitor/email/test") return jsonResponse({ sent: true });
     if (url.pathname === "/api/internal/provider/projects") return jsonResponse({ projects: projects.map((project) => ({ name: project.name, displayName: project.displayName })) });
     if (url.pathname === "/api/internal/provider/channels" && init?.method === "POST") {
       if (data.channelCreateCsrfOnce && !channelCsrfChanged) {
@@ -439,6 +444,35 @@ describe("内部控制台", () => {
     expect(JSON.parse(String(settingsCall?.init?.body))).toMatchObject({ warningPercent: 82, currentPassword: "correct-password" });
     expect(new Headers(settingsCall?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
 
+  });
+
+  it("迁移后的邮件参数可在面板编辑，授权码不回显且保存和测试均需验证密码", async () => {
+    const { calls } = installFetch({ role: "super_admin" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(await screen.findByRole("button", { name: "编辑 alerts@example.test" }));
+    expect(screen.getByLabelText("SMTP服务器")).toHaveValue("smtp.example.test");
+    expect(screen.getByLabelText("SMTP授权码")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "取消编辑邮箱" }));
+    expect(screen.getByText("原有邮箱已保留，授权码无需重新填写。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存邮件设置" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "移除收件邮箱 ops@example.test" }));
+    await user.click(screen.getByRole("button", { name: "移除收件邮箱 owner@example.test" }));
+    await user.click(screen.getByLabelText("添加收件邮箱"));
+    await user.paste("new@example.test;owner@example.test");
+    await user.type(screen.getByLabelText("邮件配置验证密码"), "correct-password");
+    expect(screen.getByRole("button", { name: "发送测试邮件" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "保存邮件设置" }));
+    expect(await screen.findByText("邮件设置已保存，后台告警立即使用新配置。")).toBeInTheDocument();
+    const saved = calls.find((call) => call.path === "/api/internal/admin/system-monitor/email/settings");
+    expect(JSON.parse(String(saved?.init?.body))).toMatchObject({ recipients: ["new@example.test", "owner@example.test"], currentPassword: "correct-password" });
+    expect(JSON.parse(String(saved?.init?.body))).not.toHaveProperty("password");
+    expect(new Headers(saved?.init?.headers).get("x-csrf-token")).toBe("csrf-test");
+    expect(screen.getByLabelText("邮件配置验证密码")).toHaveValue("");
+    await user.type(screen.getByLabelText("邮件配置验证密码"), "correct-password");
+    await user.click(screen.getByRole("button", { name: "发送测试邮件" }));
+    expect(await screen.findByText("测试邮件已发送，请检查收件箱。")).toBeInTheDocument();
+    expect(screen.getByLabelText("邮件配置验证密码")).toHaveValue("");
   });
 
   it("切换项目并展示用量和审计", async () => {

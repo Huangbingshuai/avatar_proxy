@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 PROJECT_NAME_PATTERN = r"^[A-Za-z0-9._-]+$"
@@ -111,6 +111,35 @@ class AdminSystemMonitorSettingsUpdate(ApiModel):
         ):
             raise ValueError("恢复、预警、严重和紧急阈值必须依次递增")
         return self
+
+
+class AdminMonitorEmailAccount(ApiModel):
+    id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
+    provider: Literal["qq", "163", "126", "yeah", "custom"] = "custom"
+    host: str = Field(default="", max_length=253)
+    port: int = Field(default=465, ge=1, le=65535)
+    username: str = Field(default="", max_length=320)
+    password: SecretStr | None = Field(default=None, max_length=4096)
+    clear_password: bool = False
+    from_email: str = Field(default="", max_length=320)
+    security: Literal["ssl", "starttls"] = "ssl"
+    timeout_seconds: float = Field(default=10, gt=0, le=30)
+
+
+class AdminMonitorEmailSettingsUpdate(ApiModel):
+    enabled: bool
+    accounts: list[AdminMonitorEmailAccount] | None = Field(default=None, max_length=10)
+    active_account_id: str | None = Field(default=None, max_length=80)
+    host: str = Field(default="", max_length=253)
+    port: int = Field(default=465, ge=1, le=65535)
+    username: str = Field(default="", max_length=320)
+    password: SecretStr | None = Field(default=None, max_length=4096)
+    clear_password: bool = False
+    from_email: str = Field(default="", max_length=320)
+    recipients: list[str] = Field(default_factory=list, max_length=50)
+    security: Literal["ssl", "starttls"] = "ssl"
+    timeout_seconds: float = Field(default=10, gt=0, le=30)
+    current_password: SecretStr = Field(min_length=1, max_length=128)
 
 
 class BillingRateUpdate(ApiModel):

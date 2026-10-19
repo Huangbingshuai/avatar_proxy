@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     system_monitor_sample_interval_seconds: int = Field(default=60, ge=10, le=3600)
     system_monitor_persist_interval_seconds: int = Field(default=5 * 60, ge=60, le=24 * 60 * 60)
     system_monitor_retention_days: int = Field(default=30, ge=1, le=365)
+    # Legacy import only. After the first migration, the encrypted panel settings win.
     smtp_host: str = ""
     smtp_port: int = Field(default=465, ge=1, le=65535)
     smtp_username: str = ""

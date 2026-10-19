@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import type { AdminApi, AdminSession, AdminUser } from "./admin-api";
 import GlobalModelRatesPanel from "./global-model-rates-panel";
 import ProviderChannelsPanel from "./provider-channels-panel";
+import MonitorEmailSettingsForm, { type MonitorEmailSettings } from "./monitor-email-settings";
 
 type AdminAudit = {
   id: number;
@@ -69,6 +70,7 @@ type DiskSample = {
 };
 
 type DiskMonitorSettings = {
+  email?: MonitorEmailSettings;
   enabled: boolean;
   configuredEnabled: boolean;
   runtimeEnabled: boolean;
@@ -563,17 +565,19 @@ export default function AdminPanel({ currentUser, adminApi, onRestored }: { curr
       {monitorStatus?.lastError && <div className="diskProbeError"><ShieldAlert size={15} />{monitorStatus.lastError} · 连续失败 {monitorStatus.probeFailureStreak} 次</div>}
       <div className="diskMonitorBody">
         <form className="diskSettingsCard" onSubmit={saveMonitorSettings}>
-          <div className="diskSubhead"><div><b>阈值配置</b><small>修改配置需要再次验证超级管理员密码。</small></div><label className="monitorSwitch"><input type="checkbox" checked={monitorForm.enabled} onChange={(event) => setMonitorForm({ ...monitorForm, enabled: event.target.checked })} /><span>{monitorForm.enabled ? "启用" : "停用"}</span></label></div>
+          <div className="diskSubhead"><div className="monitorRuleHeading"><span className="monitorSectionNumber">01</span><div><b>告警规则</b><small>达到阈值通知，恢复后自动解除。</small></div></div><label className="monitorSwitch"><input aria-label="启用磁盘监控" type="checkbox" checked={monitorForm.enabled} onChange={(event) => setMonitorForm({ ...monitorForm, enabled: event.target.checked })} /><span>{monitorForm.enabled ? "启用" : "停用"}</span></label></div>
           <div className="diskThresholdFields">
             <label>恢复线 %<input aria-label="恢复线" type="number" min="0" max="98" step="0.1" required value={monitorForm.recoveryPercent} onChange={(event) => setMonitorForm({ ...monitorForm, recoveryPercent: event.target.value })} /></label>
             <label>预警 %<input aria-label="预警阈值" type="number" min="1" max="99" step="0.1" required value={monitorForm.warningPercent} onChange={(event) => setMonitorForm({ ...monitorForm, warningPercent: event.target.value })} /></label>
             <label>严重 %<input aria-label="严重阈值" type="number" min="1" max="99" step="0.1" required value={monitorForm.criticalPercent} onChange={(event) => setMonitorForm({ ...monitorForm, criticalPercent: event.target.value })} /></label>
             <label>紧急 %<input aria-label="紧急阈值" type="number" min="1" max="100" step="0.1" required value={monitorForm.emergencyPercent} onChange={(event) => setMonitorForm({ ...monitorForm, emergencyPercent: event.target.value })} /></label>
           </div>
-          <label>保存配置前验证密码<input aria-label="磁盘监控配置密码" type="password" autoComplete="current-password" required value={monitorForm.currentPassword} onChange={(event) => setMonitorForm({ ...monitorForm, currentPassword: event.target.value })} /></label>
-          <button className="primary wide" disabled={busyId === "monitor-settings" || !monitorForm.currentPassword}>{busyId === "monitor-settings" ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}保存监控配置</button>
+          <p className="monitorRuleHint">同一等级不重复通知；等级升级或恢复时另行提醒。后台每分钟自动检查。</p>
+          <label>超级管理员密码<input aria-label="磁盘监控配置密码" type="password" autoComplete="current-password" placeholder="保存规则前验证" required value={monitorForm.currentPassword} onChange={(event) => setMonitorForm({ ...monitorForm, currentPassword: event.target.value })} /></label>
+          <button className="secondary" disabled={busyId === "monitor-settings" || !monitorForm.currentPassword}>{busyId === "monitor-settings" ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}保存监控配置</button>
           {monitorMessage && <div className="monitorSuccess"><CheckCircle2 size={14} />{monitorMessage}</div>}
         </form>
+        <MonitorEmailSettingsForm email={monitorStatus?.settings.email} loading={loading} adminApi={adminApi} onSaved={(email) => setMonitorStatus((value) => value ? { ...value, settings: { ...value.settings, email, emailConfigured: email.configured, emailRecipientCount: email.recipients.length } } : value)} />
       </div>
     </section>
 

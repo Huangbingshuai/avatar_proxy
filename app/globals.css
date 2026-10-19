@@ -323,6 +323,90 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .diskSettingsCard input { width: 100%; padding: 9px 10px; border: 1px solid #dddcd5; border-radius: 9px; outline: none; background: #fff; color: #313a35; font-size: 10px; }
 .diskSettingsCard input:focus { border-color: #ef927f; box-shadow: 0 0 0 3px rgba(240,112,91,.1); }
 .monitorSuccess { padding: 9px 11px; display: flex; align-items: center; gap: 7px; border-radius: 10px; color: #2e6c53; background: #e5f4eb; font-size: 9px; }
+.diskMonitorPanel .diskOverview { padding: 22px 24px; gap: 16px; background: #fff; }
+.diskMonitorPanel .diskOverview > div { padding: 16px; border-radius: 16px; }
+.diskMonitorPanel .diskOverview small { font-size: 11px; }
+.diskMonitorPanel .diskOverview b { font-size: 16px; }
+.diskMonitorPanel .diskMonitorBody { display: grid; grid-template-columns: minmax(260px, .65fr) minmax(0, 1.65fr); }
+.diskMonitorBody > .diskSettingsCard { align-content: start; padding: 24px; gap: 20px; background: #fcfaf7; border: 0; }
+.diskMonitorBody .diskThresholdFields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.diskMonitorBody .diskSettingsCard label { font-size: 12px; }
+.diskMonitorBody .diskSettingsCard input { padding: 11px 12px !important; border-radius: 12px; font-size: 13px; }
+.diskMonitorBody .diskSettingsCard input[type=checkbox] { padding: 0 !important; }
+.monitorRuleHeading, .monitorMailHeading > div { display: flex; align-items: center; gap: 10px; }
+.monitorSectionNumber { display: grid; flex-shrink: 0; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: #f7ece5; color: #ad604b; font-size: 11px; font-weight: 800; }
+.monitorRuleHeading b { font-size: 14px; }
+.monitorRuleHeading small { line-height: 1.6; font-size: 10px; }
+.monitorRuleHint { margin: 0; padding: 12px 14px; border: 1px solid #eee6dd; border-radius: 14px; color: #82756b; font-size: 11px; line-height: 1.8; background: #fffdfa; }
+.monitorMailWorkspace { min-width: 0; border-left: 1px solid #eee6dd; padding: 24px; display: flex; flex-direction: column; gap: 20px; background: #fff; }
+.monitorMailWorkspace fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.monitorMailHeading, .mailSectionTitle, .mailEditorHead, .mailEditorActions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.monitorMailHeading h4 { margin: 0; color: #35473e; font-size: 15px; }
+.monitorMailHeading p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+.monitorMailHeading .monitorSwitch { flex-shrink: 0; white-space: nowrap; }
+.monitorMigration { display: flex; align-items: center; gap: 8px; border-radius: 12px; padding: 10px 12px; color: #42755b; background: #f0f8f3; font-size: 11px; }
+.monitorMailContent { display: flex; flex-direction: column; gap: 14px; }
+.mailSectionTitle b { display: block; color: #3d4b44; font-size: 13px; }
+.mailSectionTitle small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.mailSectionTitle .secondary { flex-shrink: 0; min-height: 34px; font-size: 11px; }
+.mailAccounts { display: grid; gap: 10px; }
+.mailAccount { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border: 1px solid #e9e6e1; border-radius: 16px; background: #fff; }
+.mailAccount.selected { border-color: #edb29f; background: #fff9f5; box-shadow: 0 0 0 1px #fff4ee; }
+.mailAccount > label { display: flex; align-items: center; flex: 1; gap: 10px; min-width: 0; cursor: pointer; }
+.mailAccount input[type=radio] { accent-color: var(--coral); flex: 0 0 16px; width: 16px; height: 16px; padding: 0; margin: 0; }
+.mailProviderIcon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 12px; color: #897669; background: #f2eee8; }
+.mailProviderIcon.provider-qq { color: #397da3; background: #eaf5fb; }
+.mailProviderIcon.provider-163, .mailProviderIcon.provider-126, .mailProviderIcon.provider-yeah { color: #c46d5a; background: #ffede6; }
+.mailAccountIdentity { min-width: 0; flex: 1; }
+.mailAccountIdentity b, .mailAccountIdentity small { display: block; overflow-wrap: anywhere; }
+.mailAccountIdentity b { color: #3b4841; font-size: 12px; }
+.mailAccountIdentity small { margin-top: 5px; color: #99857a; font-size: 10px; }
+.mailAccount > div { display: flex; flex-shrink: 0; gap: 4px; }
+.mailIconAction { display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: #8c827a; width: 30px; height: 30px; cursor: pointer; }
+.mailIconAction:hover { background: #f4ebe4; color: #a75a43; }
+.mailIconAction.danger:hover { color: #cf4e3a; background: #ffece6; }
+.mailAccountEditor { padding: 16px; border: 1px solid #efdbcf; border-radius: 18px; background: #fffaf6; display: flex; flex-direction: column; gap: 16px; }
+.mailEditorHead b { color: #6c4f43; font-size: 13px; }
+.mailProviderPicker { display: flex; flex-wrap: wrap; gap: 7px; }
+.mailProviderPicker button { display: flex; align-items: center; gap: 5px; padding: 8px 11px; border: 1px solid #eaded6; border-radius: 11px; color: #84746b; background: #fff; font: inherit; font-size: 11px; cursor: pointer; }
+.mailProviderPicker button.active { color: #b45d44; border-color: #e6a48d; background: #fff0e8; }
+.mailEditorFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.mailEditorFields label, .mailSaveBar label { display: grid; gap: 7px; color: #776a61; font-size: 11px; font-weight: 700; }
+.monitorMailWorkspace input:not([type=checkbox]):not([type=radio]), .monitorMailWorkspace select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid #e5dcd3; border-radius: 12px; color: #39483f; background: #fff; font-family: inherit; font-size: 12px; outline: none; }
+.monitorMailWorkspace input:focus, .monitorMailWorkspace select:focus { border-color: #e99e85; box-shadow: 0 0 0 3px #fff0e7; }
+.monitorMailWorkspace input[type=checkbox] { accent-color: var(--coral); }
+.mailSetupHint { display: flex; align-items: flex-start; gap: 7px; color: #91785e; font-size: 10px; line-height: 1.8; }
+.mailSetupHint svg { flex-shrink: 0; margin-top: 2px; }
+.mailSetupHint a { color: #ac604b; white-space: nowrap; }
+.mailAdvanced summary { cursor: pointer; color: #8b6956; font-size: 11px; }
+.mailAdvanced .mailEditorFields { margin-top: 14px; }
+.mailClearCredential { display: flex !important; align-items: center; gap: 7px; }
+.mailClearCredential input { width: 16px; height: 16px; padding: 0; flex: 0 0 16px; }
+.mailEditorActions { border-top: 1px solid #efe4dc; padding-top: 12px; }
+.mailEditorActions > span { color: #a08b7b; font-size: 10px; }
+.mailCount { padding: 4px 8px; border-radius: 8px; color: #97806e; background: #f7f2ec; font-size: 10px; white-space: nowrap; }
+.mailRecipientBox { border: 1px solid #e8e1da; border-radius: 16px; padding: 12px; }
+.mailRecipientChips { display: flex; flex-wrap: wrap; gap: 8px; }
+.mailRecipientChips > span { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 7px 8px; border-radius: 9px; background: #f2f6f3; color: #526f5d; font-size: 11px; overflow-wrap: anywhere; }
+.mailRecipientChips button { display: grid; flex-shrink: 0; place-items: center; padding: 2px; border: 0; border-radius: 4px; color: #809587; background: transparent; cursor: pointer; }
+.mailRecipientInput { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.mailRecipientInput input { border: 0 !important; background: #fcfbf8 !important; }
+.mailRecipientInput button { flex-shrink: 0; min-height: 34px; }
+.mailTextAction { align-self: flex-start; border: 0; padding: 0; color: #a87659; background: transparent; font-size: 10px; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.mailSaveBar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-top: 6px; padding-top: 18px; border-top: 1px solid #eee6de; }
+.mailSaveBar > div:first-child { flex: 1; max-width: 280px; min-width: 0; }
+.mailSaveBar small { display: flex; align-items: center; gap: 5px; margin-top: 8px; color: #9d8d7e; font-size: 9px; }
+.mailSaveActions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.mailSaveActions > span { color: #a68b75; font-size: 10px; }
+.mailSaveActions > div { display: flex; gap: 8px; }
+.mailSaveActions button { padding: 10px 12px; min-height: 38px; font-size: 11px; }
+.monitorMailEmpty { display: grid; justify-items: center; gap: 8px; border: 1px dashed #e6d9cd; border-radius: 16px; padding: 26px 14px; color: #ac9783; font-size: 12px; }
+.monitorMailEmpty p { margin: 0; font-size: 11px; }
+.monitorMailWorkspace button:disabled { opacity: .5; cursor: not-allowed; }
+.monitorMailWorkspace .formError { font-size: 12px; }
+.monitorMailWorkspace .monitorSuccess { font-size: 11px; }
+@media (max-width: 1200px) { .diskMonitorPanel .diskMonitorBody { grid-template-columns: minmax(0, 1fr); }.monitorMailWorkspace { border-left: 0; border-top: 1px solid #eee6dd; }.diskMonitorBody .diskThresholdFields { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 650px) { .diskMonitorPanel .diskOverview { padding: 16px; gap: 10px; }.diskMonitorBody > .diskSettingsCard, .monitorMailWorkspace { padding: 18px 16px; }.diskMonitorBody .diskThresholdFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.mailEditorFields { grid-template-columns: minmax(0, 1fr); }.mailSaveBar { align-items: stretch; flex-direction: column; }.mailSaveBar > div:first-child { max-width: none; }.mailSaveActions { align-items: stretch; }.mailSaveActions > div { flex-wrap: wrap; }.mailSaveActions button { flex: 1; }.mailSetupHint { flex-wrap: wrap; }.mailAccount { padding: 10px; }.mailProviderIcon { display: none; } }
 .backupSummary { padding: 16px 20px; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; border-top: 1px solid #efeee9; }
 .backupSummary > div { padding: 12px; border-radius: 12px; background: #f6f5ef; }
 .backupSummary small, .backupSummary b { display: block; }

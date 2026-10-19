@@ -16,6 +16,7 @@ from .config import Settings
 from .database import Database
 from .errors import ApiError
 from .maintenance import MaintenanceGate
+from .mail_settings import MailSettingsStore
 
 
 LEVELS = ("warning", "critical", "emergency")
@@ -44,6 +45,7 @@ class DiskMonitor:
     ) -> None:
         self.database = database
         self.settings = settings
+        self.mail_settings = MailSettingsStore(database, settings)
         self.path = settings.effective_system_monitor_path.resolve()
         self.clock = clock or time.time
         self.statvfs = statvfs or self._platform_disk_stats
@@ -70,18 +72,7 @@ class DiskMonitor:
 
     @property
     def email_configured(self) -> bool:
-        username = self.settings.smtp_username.strip()
-        password = self.settings.smtp_password
-        password_configured = bool(password and password.get_secret_value().strip())
-        authentication_valid = bool(username) == password_configured
-        recipients = self.settings.alert_email_recipient_list
-        return bool(
-            self.settings.smtp_host.strip()
-            and self._valid_email_address(self.settings.smtp_from_email.strip())
-            and recipients
-            and all(self._valid_email_address(address) for address in recipients)
-            and authentication_valid
-        )
+        return self.mail_settings.load().configured
 
     @staticmethod
     def _valid_email_address(value: str) -> bool:
@@ -117,7 +108,8 @@ class DiskMonitor:
             "persistIntervalSeconds": self.settings.system_monitor_persist_interval_seconds,
             "retentionDays": self.settings.system_monitor_retention_days,
             "emailConfigured": self.email_configured,
-            "emailRecipientCount": len(self.settings.alert_email_recipient_list),
+            "emailRecipientCount": len(self.mail_settings.load().recipients),
+            "email": self.mail_settings.public(),
             "updatedBy": row["updated_by"],
             "updatedAt": row["updated_at"],
         }
@@ -491,10 +483,11 @@ class DiskMonitor:
             )
 
     def _send_email_sync(self, subject: str, body: str) -> None:
-        if not self.email_configured:
+        config = self.mail_settings.load()
+        if not config.configured:
             raise ApiError("SMTP邮件告警尚未完整配置", 409, "alert_email_not_configured")
-        recipients = [parseaddr(value)[1] for value in self.settings.alert_email_recipient_list]
-        sender = parseaddr(self.settings.smtp_from_email.strip())[1]
+        recipients = config.recipients
+        sender = config.from_email
         message = EmailMessage()
         message["Subject"] = subject[:200]
         message["From"] = sender
@@ -502,27 +495,27 @@ class DiskMonitor:
         message.set_content(body)
         context = ssl.create_default_context()
         try:
-            if self.settings.smtp_security == "ssl":
+            if config.security == "ssl":
                 client = smtplib.SMTP_SSL(
-                    self.settings.smtp_host.strip(),
-                    self.settings.smtp_port,
-                    timeout=self.settings.smtp_timeout_seconds,
+                    config.host,
+                    config.port,
+                    timeout=config.timeout_seconds,
                     context=context,
                 )
             else:
                 client = smtplib.SMTP(
-                    self.settings.smtp_host.strip(),
-                    self.settings.smtp_port,
-                    timeout=self.settings.smtp_timeout_seconds,
+                    config.host,
+                    config.port,
+                    timeout=config.timeout_seconds,
                 )
             with client:
-                if self.settings.smtp_security == "starttls":
+                if config.security == "starttls":
                     client.ehlo()
                     client.starttls(context=context)
                     client.ehlo()
-                username = self.settings.smtp_username.strip()
-                password = self.settings.smtp_password
-                if username and password:
+                username = config.username
+                password = config.password
+                if username and password.get_secret_value():
                     client.login(username, password.get_secret_value())
                 refused = client.send_message(message, from_addr=sender, to_addrs=recipients)
                 if refused:

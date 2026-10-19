@@ -437,7 +437,9 @@ def test_smtp_message_uses_tls_authentication_and_expected_recipients(
         alert_email_recipients="ops@example.test; owner@example.test",
         smtp_security=security,
     )
-    monitor = DiskMonitor(Database(settings.database_path), settings)
+    database = Database(settings.database_path)
+    database.initialize()
+    monitor = DiskMonitor(database, settings)
     monitor._send_email_sync("[Star Proxy] 测试", "测试正文")
 
     assert events["host"] == "smtp.example.test"

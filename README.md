@@ -182,7 +182,7 @@ Authorization: Bearer vap_live_xxx
 - 默认阈值为预警 80%、严重 90%、紧急 95%、恢复线 75%，可由超级管理员在控制台修改。
 - 告警升级会去重；磁盘恢复到恢复线以下后发送恢复邮件。
 - 邮件失败会按 1 分钟、5 分钟、15 分钟重试，邮件队列与发送状态保存在 SQLite 中。
-- SMTP 授权码只从服务端环境变量读取，不写入数据库、日志或管理接口响应。
+- SMTP服务器、发件人和收件人在磁盘监控面板设置；配置整体加密落库，授权码不回显、不进入日志或审计。
 - 磁盘邮件只用于磁盘容量告警，不与管理员登录等安全事件混用。
 
 ### HTTPS 网关与漫剧支付回调
@@ -292,7 +292,15 @@ npm run dev
 
 ## SMTP 磁盘告警配置
 
-以下变量只配置在 `backend/.env` 或生产服务端 Secret 中：
+超级管理员进入“安全管理 → 磁盘空间监控 → 邮件通知”：
+
+1. 添加发件邮箱，选择QQ、网易163、126或Yeah，只填写邮箱地址和邮箱服务商的SMTP授权码（不是登录密码）。服务器、端口465和TLS由后端固定匹配；企业或其他邮箱选择“其他邮箱”填写自定义SMTP参数。
+2. 可保存最多10套发件账号，选择一套用于告警；不自动轮换或多账号重复发送。同一组收件人可混合添加最多50个不同邮箱，用回车或粘贴批量添加，无需收件人的授权码。
+3. 开启“邮件通知”，填写当前超级管理员密码并保存，后台立即生效。列表编辑、删除和切换仅是草稿，保存前不会改变后台配置。测试邮件只使用已保存的配置，未保存时禁止测试。
+
+原有单邮箱配置自动成为第一套发件账号，授权码不需要重新填写；授权码不回显，编辑时留空保留原值，更换服务器或登录账号必须重新填写。所有配置仍是系统级磁盘告警设置，不按登录管理员分别发送；停止通知不删除已保存账号。QQ、网易邮箱需先开启SMTP并获取授权码，详见[QQ帮助](https://service.mail.qq.com/detail/0/75)、[网易帮助](https://help.mail.126.com/)。
+
+以下变量只控制采样行为，仍保留在服务端配置中：
 
 ```dotenv
 SYSTEM_MONITOR_ENABLED=true
@@ -301,17 +309,11 @@ SYSTEM_MONITOR_SAMPLE_INTERVAL_SECONDS=60
 SYSTEM_MONITOR_PERSIST_INTERVAL_SECONDS=300
 SYSTEM_MONITOR_RETENTION_DAYS=30
 
-SMTP_HOST=smtp.example.com
-SMTP_PORT=465
-SMTP_USERNAME=monitor@example.com
-SMTP_PASSWORD=邮箱授权码
-SMTP_FROM_EMAIL=monitor@example.com
-ALERT_EMAIL_RECIPIENTS=ops@example.com,owner@example.com
-SMTP_SECURITY=ssl
-SMTP_TIMEOUT_SECONDS=10
 ```
 
-`SMTP_SECURITY` 支持 `ssl`（通常端口 465）和 `starttls`（通常端口 587）。收件人可使用逗号或分号分隔。不要把真实邮箱授权码写入 `.env.example`、README、Git、日志或截图。
+现有SMTP环境变量仅用于首次自动迁移，已保存的面板配置优先。先备份旧环境文件，再在backend目录运行 `uv run python -m scripts.migrate_monitor_email --env-file .env --remove-legacy`，命令验证迁移后的配置可解密且与原值一致，再只移除旧的8项邮件变量；不会发送邮件或输出任何配置原文。
+
+配置密文保存在SQLite的 `system_monitor_email_settings` 表中，独立加密主密钥为数据库同目录的 `smtp_settings.key`（Linux权限0600）。请将该文件单独安全备份，恢复数据库时一并恢复；丢失主密钥时不会重新生成并覆盖旧配置。
 
 ## 测试与质量检查
 
