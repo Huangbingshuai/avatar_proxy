@@ -155,6 +155,8 @@ export default function ConsolePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [loadedLists, setLoadedLists] = useState({ projects: false, keys: false });
+  const loadVersion = useRef(0);
   const [quotaEvents, setQuotaEvents] = useState<QuotaEvent[]>([]);
   const [quotaAudits, setQuotaAudits] = useState<QuotaAudit[]>([]);
   const [secret, setSecret] = useState("");
@@ -172,11 +174,13 @@ export default function ConsolePage() {
     : baseTabs, [currentUser?.role]);
 
   const clearSession = useCallback((message = "") => {
+    loadVersion.current += 1;
     setCurrentUser(null);
     setCsrfToken("");
     setProjects([]);
     setApiKeys([]);
     setOverview(null);
+    setLoadedLists({ projects: false, keys: false });
     setQuotaEvents([]);
     setQuotaAudits([]);
     setSecret("");
@@ -220,27 +224,33 @@ export default function ConsolePage() {
     }
     setLoading(true);
     setError("");
-    try {
-      const [projectData, keyData, overviewData, eventData, auditData] = await Promise.all([
-        adminApi("/api/internal/project/list"),
-        adminApi("/api/internal/apikey/list"),
-        adminApi("/api/internal/overview"),
-        adminApi("/api/internal/quota/events?limit=100"),
-        adminApi("/api/internal/quota/audits?limit=100"),
-      ]);
-      setProjects(projectData.projects as Project[]);
-      setApiKeys(keyData.apiKeys as ApiKey[]);
-      setOverview(overviewData as unknown as Overview);
-      setQuotaEvents(eventData.events as QuotaEvent[]);
-      setQuotaAudits(auditData.audits as QuotaAudit[]);
-    } catch (caught) {
-      if (!isSessionError(caught) && !isPasswordChangeRequired(caught)) setError(caught instanceof Error ? caught.message : "控制台加载失败");
-    } finally {
+    const version = ++loadVersion.current;
+    const failures: string[] = [];
+    const load = async (path: string, apply: (data: Record<string, unknown>) => void) => {
+      try {
+        const data = await adminApi(path);
+        if (version === loadVersion.current) apply(data);
+      } catch (caught) {
+        if (version === loadVersion.current && !isSessionError(caught) && !isPasswordChangeRequired(caught)) {
+          failures.push(caught instanceof Error ? caught.message : "控制台加载失败");
+          setError([...new Set(failures)].join("；"));
+        }
+      }
+    };
+    await Promise.all([
+      load("/api/internal/project/list", (data) => { setProjects(data.projects as Project[]); setLoadedLists((value) => ({ ...value, projects: true })); }),
+      load("/api/internal/apikey/list", (data) => { setApiKeys(data.apiKeys as ApiKey[]); setLoadedLists((value) => ({ ...value, keys: true })); }),
+      load("/api/internal/overview", (data) => setOverview(data as unknown as Overview)),
+      load("/api/internal/quota/events?limit=100", (data) => setQuotaEvents(data.events as QuotaEvent[])),
+      load("/api/internal/quota/audits?limit=100", (data) => setQuotaAudits(data.audits as QuotaAudit[])),
+    ]);
+    if (version === loadVersion.current) {
       setLoading(false);
     }
   }, [adminApi, currentUser?.role]);
 
   const applyAuthenticatedUser = useCallback((user: AdminUser) => {
+    loadVersion.current += 1;
     setCurrentUser(user);
     if (user.role === "super_admin") setTab("admins");
     else setTab("overview");
@@ -496,11 +506,11 @@ export default function ConsolePage() {
           </div>
         </header>
 
-        {error && authStatus === "authenticated" && <div className="errorBanner"><Ban size={17} />{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
+        {error && authStatus === "authenticated" && <div className="errorBanner" role="alert"><Ban size={17} />{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
 
         {currentUser?.role !== "super_admin" && tab === "overview" && <OverviewPanel overview={overview} onOpenIntegration={() => setTab("integration")} />}
-        {currentUser?.role !== "super_admin" && tab === "projects" && <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} />}
-        {currentUser?.role !== "super_admin" && tab === "keys" && <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} />}
+        {currentUser?.role !== "super_admin" && tab === "projects" && (loadedLists.projects ? <ProjectsPanel projects={projects} onCreate={() => { setProjectCreateError(""); setError(""); setShowProjectForm(true); }} onDelete={setProjectToDelete} /> : <div className="content" role="status">{loading ? "正在加载项目列表…" : "项目列表加载失败，请点击右上角刷新重试。"}</div>)}
+        {currentUser?.role !== "super_admin" && tab === "keys" && (loadedLists.keys && loadedLists.projects ? <KeysPanel apiKeys={apiKeys} projects={projects} onCreate={() => { setKeyForm((current) => ({ ...current, projectName: current.projectName || projects[0]?.name || "" })); setShowKeyForm(true); }} onDisable={disableKey} onEnable={enableKey} onDelete={deleteKey} onBind={bindProject} /> : <div className="content" role="status">{loading ? "正在加载API Key列表…" : "API Key列表加载失败，请点击右上角刷新重试。"}</div>)}
         {currentUser?.role !== "super_admin" && tab === "logs" && <ApiCallLogsPanel projects={projects} apiKeys={apiKeys} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "models" && <ModelRelayPanel projects={projects} apiKeys={apiKeys} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "prices" && <ModelPriceTable adminApi={adminApi} />}
@@ -622,19 +632,19 @@ function OverviewPanel({ overview, onOpenIntegration }: { overview: Overview | n
       </aside>
     </section>
     <div className="statGrid">
-      <Stat label="项目" value={overview?.stats.projects ?? 0} note="映射火山 ProjectName" />
-      <Stat label="有效 API Keys" value={overview?.stats.activeKeys ?? 0} note="仅保存 SHA-256 哈希" />
-      <Stat label="累计请求" value={overview?.stats.requestsTotal ?? 0} note="全部公网业务请求" />
-      <Stat label="累计异常" value={overview?.stats.errorsTotal ?? 0} note="全部失败业务请求" warn={Boolean(overview?.stats.errorsTotal)} />
+      <Stat label="项目" value={overview?.stats.projects} note="映射火山 ProjectName" />
+      <Stat label="有效 API Keys" value={overview?.stats.activeKeys} note="仅保存 SHA-256 哈希" />
+      <Stat label="累计请求" value={overview?.stats.requestsTotal} note="全部公网业务请求" />
+      <Stat label="累计异常" value={overview?.stats.errorsTotal} note="全部失败业务请求" warn={Boolean(overview?.stats.errorsTotal)} />
     </div>
     <div className="statGrid riskStats">
-      <Stat label="累计素材" value={overview?.stats.assetsTotal ?? 0} note="全部项目素材" />
-      <Stat label="累计上传" value={overview?.stats.uploadsTotal ?? 0} note={bytesLabel(overview?.stats.uploadBytesTotal ?? 0)} />
-      <Stat label="模型调用次数" value={overview?.stats.modelCalls ?? 0} note="成功结算的模型用量" />
-      <Stat label="Token 消耗" value={overview?.stats.tokenUsage ?? 0} note="供应商实际返回值" />
+      <Stat label="累计素材" value={overview?.stats.assetsTotal} note="全部项目素材" />
+      <Stat label="累计上传" value={overview?.stats.uploadsTotal} note={overview ? bytesLabel(overview.stats.uploadBytesTotal) : "等待统计数据"} />
+      <Stat label="模型调用次数" value={overview?.stats.modelCalls} note="成功结算的模型用量" />
+      <Stat label="Token 消耗" value={overview?.stats.tokenUsage} note="供应商实际返回值" />
     </div>
     <section className="panel"><div className="panelHead"><div><h3>最近请求</h3><p>展示最近业务请求；完整脱敏参数和返回摘要请前往“调用日志”。</p></div></div>
-      <div className="dataTable recentTable"><div className="tableRow tableHead"><span>接口</span><span>API Key</span><span>项目</span><span>状态</span><span>耗时</span><span>时间</span></div>{overview?.recent.length ? overview.recent.map((row, index) => <div className="tableRow" key={`${row.createdAt}-${index}`}><span className="mono">{row.method ? `${row.method} ` : ""}{row.routeTemplate || row.path || row.action}</span><span>{row.apiKeyName || row.apiKeyPrefix || "-"}</span><span>{row.projectName}</span><span><i className={`httpStatus ${row.statusCode < 400 ? "ok" : "bad"}`}>{row.statusCode}</i></span><span>{row.durationMs} ms</span><span>{formatTime(row.createdAt)}</span></div>) : <div className="emptyRow">暂无调用记录</div>}</div>
+      <div className="dataTable recentTable"><div className="tableRow tableHead"><span>接口</span><span>API Key</span><span>项目</span><span>状态</span><span>耗时</span><span>时间</span></div>{overview?.recent.length ? overview.recent.map((row, index) => <div className="tableRow" key={`${row.createdAt}-${index}`}><span className="mono">{row.method ? `${row.method} ` : ""}{row.routeTemplate || row.path || row.action}</span><span>{row.apiKeyName || row.apiKeyPrefix || "-"}</span><span>{row.projectName}</span><span><i className={`httpStatus ${row.statusCode < 400 ? "ok" : "bad"}`}>{row.statusCode}</i></span><span>{row.durationMs} ms</span><span>{formatTime(row.createdAt)}</span></div>) : <div className="emptyRow">{overview ? "暂无调用记录" : "正在加载最近请求…"}</div>}</div>
     </section>
   </div>;
 }
@@ -809,8 +819,8 @@ function IntegrationPanel() {
   </section>;
 }
 
-function Stat({ label, value, note, warn }: { label: string; value: number; note: string; warn?: boolean }) {
-  return <article className="stat"><div><span>{label}</span><Activity size={17} className={warn ? "warn" : ""} /></div><strong>{value.toLocaleString()}</strong><small>{note}</small></article>;
+function Stat({ label, value, note, warn }: { label: string; value?: number; note: string; warn?: boolean }) {
+  return <article className="stat" aria-busy={value === undefined}><div><span>{label}</span><Activity size={17} className={warn ? "warn" : ""} /></div><strong aria-label={value === undefined ? `${label}等待加载` : undefined}>{value === undefined ? "—" : value.toLocaleString()}</strong><small>{note}</small></article>;
 }
 
 function Empty({ text }: { text: string }) {

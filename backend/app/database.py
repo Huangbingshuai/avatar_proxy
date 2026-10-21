@@ -1795,6 +1795,9 @@ class Database:
                     ((SELECT COALESCE(SUM(total_tokens),0) FROM inference_usage WHERE status='succeeded') +
                      (SELECT COALESCE(SUM(total_tokens),0) FROM video_usage)) AS tokenUsage
             """).fetchone()
+            # Read the newest rowids directly. The log_type-leading filter index
+            # sorts every matching row (including large payload pages) before
+            # LIMIT, which can stall the whole console on a large log database.
             recent = connection.execute("""
                 SELECT r.action,r.method,r.path,r.route_template AS routeTemplate,
                     r.project_name AS projectName,r.api_key_id AS apiKeyId,
@@ -1802,7 +1805,7 @@ class Database:
                     COALESCE(k.key_prefix,'') AS apiKeyPrefix,
                     r.status_code AS statusCode,r.duration_ms AS durationMs,
                     r.created_at AS createdAt
-                FROM request_logs r LEFT JOIN api_keys k ON k.id=r.api_key_id
+                FROM request_logs r NOT INDEXED LEFT JOIN api_keys k ON k.id=r.api_key_id
                 WHERE r.log_type IN ('http','http_legacy') ORDER BY r.id DESC LIMIT 8
             """).fetchall()
         return {"stats": dict(stats), "recent": [dict(row) for row in recent]}

@@ -1,417 +1,308 @@
-# Star Proxy
+# Star Proxy · 星辰平台
 
-Star Proxy 是一个面向 ToB 客户的多供应商 AI 模型中转与火山素材管理系统。系统用我方签发的业务 API Key 隔离客户项目，统一提供文本、图片、视频、向量和音频能力，并配套内部管理控制台、客户工具前端和独立 FastAPI 服务。
+**面向 ToB 客户的多供应商 AI 网关、火山素材管理与内部运营控制台。**
 
-## 系统组成
+客户只使用平台签发的业务 API Key，即可调用已开通的文本、图片、视频、向量和音频接口。平台统一管理客户项目、上游渠道、访问密钥、额度、真实用量与月度账单，供应商凭证始终留在服务端。
+
+[界面预览](#界面预览) · [核心能力](#核心能力) · [快速开始](#快速开始) · [客户接入](#客户接入) · [安全与运维](#安全与运维) · [生产部署](#生产部署) · [文档导航](#文档导航)
+
+> 本页描述当前源码能力，不代表每个生产项目均已开通全部模型。可用模型及能力以业务 Key 查询 `/v1/models` 的结果为准。客户工具与控制台独立部署，关闭客户工具不影响 API。
+
+![普通管理员概览](docs/screenshots/overview.jpg)
+
+## 为什么使用 Star Proxy
+
+- **一套客户 Key**：客户无需获取上游凭证，通过统一地址调用所属项目已开通的模型。
+- **项目级隔离**：一个项目可签发多枚业务 Key，上游渠道按客户项目加密保存。
+- **运营有据可查**：按 Key 查询调用日志，按项目控制额度、核对账单；未知用量不会被当作零成本。
+- **分工清晰**：超级管理员管理安全、渠道和全局价目；普通管理员处理项目及日常业务。
+- **素材完整闭环**：图片、视频、音频支持上传、登记、轮询、删除与失败清理。
+
+技术栈：**Vinext / React / TypeScript · FastAPI / Python · SQLite · TOS · Docker Compose / Nginx**。
+
+## 界面预览
+
+以下 **16张截图**来自当前控制台真实组件的本地演示环境，使用虚构测试数据。账号、项目、邮箱、IP、价格和用量均不是生产数据或报价；掩码不是可用凭证。点击图片可查看大图。
+
+### 普通管理员：业务运营
+
+上方概览展示累计统计；初次加载使用占位符，不把未返回的数据显示为 0。
+
+| 项目隔离 | 业务 API Keys |
+|---|---|
+| [![项目列表](docs/screenshots/projects.jpg)](docs/screenshots/projects.jpg) | [![业务密钥管理](docs/screenshots/api-keys.jpg)](docs/screenshots/api-keys.jpg) |
+| 绑定真实ProjectName，区分显示名称与标识。 | 一项目多Key，支持绑定、启停及注销。 |
+
+| 项目模型 | 模型价格 |
+|---|---|
+| [![模型与渠道绑定](docs/screenshots/project-models.jpg)](docs/screenshots/project-models.jpg) | [![只读模型价目](docs/screenshots/model-prices.jpg)](docs/screenshots/model-prices.jpg) |
+| 为项目选择可用渠道、启用模型，查看任务与用量。 | 按厂商、类型、状态、名称和账期筛选价格。 |
+
+| 计费账单 | 额度与用量 |
+|---|---|
+| [![项目计费和月度账单](docs/screenshots/billing.jpg)](docs/screenshots/billing.jpg) | [![项目总额度与Key子额度](docs/screenshots/quotas.jpg)](docs/screenshots/quotas.jpg) |
+| 月度结算比例、调整、确认、支付登记与导出。 | 限额、事件和TOS待清理对象；空值表示不限额。 |
+
+| 调用日志 | 客户文档 |
+|---|---|
+| [![逐Key调用日志](docs/screenshots/call-logs.jpg)](docs/screenshots/call-logs.jpg) | [![内嵌接口文档](docs/screenshots/api-docs.jpg)](docs/screenshots/api-docs.jpg) |
+| 先项目后Key，查看脱敏请求与返回，导出近30天明细。 | 按供应商和模型分类，支持独立阅读、搜索和下载HTML。 |
+
+### 超级管理员：七个独立目录
+
+安全功能不再堆在一个长页面；各菜单按需读取自身数据，切换页面不会自动保存草稿。
+
+| 安全管理 | 管理员账号 |
+|---|---|
+| [![TOTP和登录会话](docs/screenshots/admin-security.jpg)](docs/screenshots/admin-security.jpg) | [![管理员账号管理](docs/screenshots/admin-users.jpg)](docs/screenshots/admin-users.jpg) |
+| TOTP换绑、登录策略、告警和会话撤销。 | 创建普通管理员，交付一次性密码，管理账号状态。 |
+
+| 供应商渠道 | 全局模型价目 |
+|---|---|
+| [![供应商渠道](docs/screenshots/provider-channels.jpg)](docs/screenshots/provider-channels.jpg) | [![全局价目维护](docs/screenshots/global-rates.jpg)](docs/screenshots/global-rates.jpg) |
+| 项目级凭证加密、名称修改、测试、轮换与启停。 | 按账期维护价格档位，区分未定价与零元。 |
+
+| 磁盘与邮件 | 备份与恢复 |
+|---|---|
+| [![磁盘规则与多邮箱配置](docs/screenshots/disk-email.jpg)](docs/screenshots/disk-email.jpg) | [![SQLite备份与恢复](docs/screenshots/backups.jpg)](docs/screenshots/backups.jpg) |
+| QQ、163等预设，多套发件账号与多个收件人。 | 自动备份、完整性校验、回滚点与安全确认。 |
+
+<details>
+<summary>安全审计截图</summary>
+
+![管理员安全审计](docs/screenshots/admin-audits.jpg)
+
+记录登录、账号变更和敏感操作，用于追溯，不向普通管理员开放。
+
+</details>
+
+截图来源及隐私规范见 [截图说明](docs/screenshots/README.md)。
+
+## 核心能力
+
+| 模块 | 能力 | 边界 |
+|---|---|---|
+| 客户与Key | 火山ProjectName校验、项目隔离、多Key、启停和子额度 | Bearer Key与管理员Session不能互相替代 |
+| 模型中转 | 火山方舟、BytePlus ModelArk、豆包语音、阿里百炼、MiniMax、MaxModel、ModelTop等适配 | 默认关闭；未绑定可用渠道的模型不可调用 |
+| 多模态API | Chat、Responses、图片、异步视频、向量、语音合成/识别和音频生成 | 按模型能力选接口，不是全模型全协议兼容 |
+| 素材 | 图片/视频/音频、URL登记、素材组、TOS中转及清理 | 上传与登记分两步，assetId不代表已可用 |
+| 风控 | QPM、写并发、每日上传量、素材数、存储及项目/Key额度 | 查询QPM超量告警，写QPM可拒绝；空额度默认不限额 |
+| 账单 | 真实成功用量、月度价格、结算比例、调整、确认、CSV与打印 | 不是充值钱包，支付登记不是支付交易，账单不是发票 |
+| 运维 | TOTP、角色分离、审计、会话、备份、磁盘告警与邮件重试 | 单实例SQLite，不宣称共享SQLite多实例安全 |
+
+### 渠道与任务
+
+- 同一项目模型使用一个活动渠道，不提供权重路由或自动故障切换。
+- 凭证使用独立主密钥加密；客户不能覆盖供应商、渠道、Base URL、项目或真实上游模型ID。
+- 异步任务固定提交时的渠道、凭证版本及模型，轮换凭证不破坏旧任务查询。
+- 图片和视频支持 `Idempotency-Key`：同Key同请求复用结果，同幂等键不同请求体返回 `409`。
+- 图片和视频结果透传供应商URL，不自动转存TOS，调用方应及时保存。
+
+### 素材与用量
+
+素材支持 `Image / Video / Audio`，按真实内容校验，不只信任扩展名或MIME。`uploadId`登记检查项目、Key、URL、类型和消费状态。素材需轮询至 `Active` 再用于生成；`asset://` 不应假定可跨供应商复用。
+
+计费默认关闭，只归集本地真实成功用量。缺少用量或单价时保留“待计价”，不会按0元结算。金额采用整数微元和十进制运算；确认后冻结明细，迟到用量进入下一开放账期。详见 [账单接口](backend/ADMIN_BILLING_API.md)。
+
+## 系统架构
 
 ```text
-内部管理员
-  └─ 管理控制台（根目录，Vinext + React）
-       └─ 同源 /api/internal/* ──> FastAPI
-            ├─ 管理员、Session、TOTP 与审计
-            ├─ 项目、业务 API Key 与额度
-            ├─ 逐 Key 业务调用日志与全量概览
-            ├─ 项目计费、模型价目与月度账单
-            ├─ SQLite 备份、校验与恢复
-            └─ 磁盘监控与阈值配置
+内部管理员 ─> 管理控制台 ─ Session + CSRF ─┐
+客户程序   ────────────── Bearer业务Key ──┼─> HTTPS网关 ─> FastAPI
+可选客户工具 ──────────── Bearer业务Key ──┘                  ├─ 项目 / Key / 额度 / 日志
+                                                         ├─ 渠道 / 模型 / 任务 / 计费
+                                                         ├─ 火山素材库 / TOS
+                                                         └─ SQLite / 备份 / 磁盘告警
 
-客户浏览器
-  └─ user-portal/（React + Vite）
-       └─ Bearer vap_live_* ─────> FastAPI
-
-客户程序
-  └─ Bearer vap_live_* ─────────> FastAPI
-       ├─ AK/SK ──> 火山素材库与 IAM 项目校验
-       ├─ AK/SK ──> TOS 文件中转
-       └─ 项目加密供应商渠道 ──> 火山方舟与语音 / 阿里百炼 / MiniMax / MaxModel / OpenAI
-
-微信支付平台
-  └─ POST /minidrama/payments/callbacks/wechat
-       └─ HTTPS 网关透明转发 ──> LocalMiniDrama
-            └─ 验签、解密、订单幂等与到账处理
+微信支付 ─ POST /minidrama/payments/callbacks/wechat
+         └─ 网关透明代理 ─> LocalMiniDrama（验签、解密与订单）
 ```
 
-三个运行单元彼此独立：
+| 运行单元 | 位置 | 职责 |
+|---|---|---|
+| 内部控制台 | `app/` | 超管和普通管理员的独立工作台 |
+| 后端API | `backend/` | 接口、管理认证、数据和后台维护 |
+| 可选客户工具 | `user-portal/` | 使用业务Key的素材、视频和模型调试界面 |
+| HTTPS网关 | `deploy/volcengine/` | TLS、同源代理和外部支付回调转发 |
 
-- `app/`：内部管理控制台。
-- `backend/`：FastAPI 公网业务与内部管理服务。
-- `user-portal/`：客户使用业务 Key 的视频与素材工具。
+客户可以直接用API批量接入，不需要打开客户工具。内部控制台用于管理，不能把管理员Cookie交给客户调用业务接口。
 
-控制台不会把管理员密码、Session、CSRF、火山 AK/SK 或 Ark API Key 写入浏览器持久存储。客户只获得我方签发的 `vap_live_...` 业务 Key。
+## 快速开始
 
-## 当前功能
+### 1. 环境准备
 
-### 客户与业务接口
+- Node.js `>=22.13.0`，npm。
+- Python `>=3.11`，推荐使用 `uv`；后端容器使用Python 3.12。
+- `ffprobe`和`ffmpeg`：音视频校验及相关测试所需，后端Docker镜像已安装FFmpeg。
+- 按使用范围准备火山AK/SK、TOS及供应商服务权限。
 
-- 火山 `ProjectName` 对应的本地项目隔离；创建项目时调用 IAM `GetProject` 校验真实存在性。
-- 一个项目可签发多枚业务 API Key，Key 可独立禁用并绑定子额度。
-- 项目额度、Key 子额度、QPM、写并发、每日上传量、素材总量和 TOS 存储量控制；未配置额度时默认不限额，不影响旧客户。
-- 图片、视频和音频上传校验、TOS 中转、素材组管理及素材生命周期账本。
-- Seedance 视频任务创建、状态查询与取消；客户工具只在当前浏览器保存任务索引。
-- 使用业务 Key 通过火山兼容任务接口中转 Seedance 视频生成，并按任务归属隔离查询与取消。
-- 统一 `429` 限流协议、额度事件、审计与失败清理。
-- 可选的模型中转：使用同一枚 `vap_live_*` 调用文本、图片、多模态向量、音频和统一异步视频接口；按项目路由到火山方舟、BytePlus ModelArk（海外）、豆包语音、阿里百炼、MiniMax、MaxModel 或 OpenAI 渠道。
-- 项目复用加密供应商渠道并统一启用模型；项目下所有有效业务 Key 自动共享项目模型权限。
-- 普通管理员通过独立的只读“模型价格”页面查看超级管理员配置的完整税前价目；客户可通过 `/v1/pricing` 查询当前项目可用模型的全局价和项目折扣后参考价。
-- 对外文本模型包含 DeepSeek V4 Flash/Pro、GLM 5.2、Doubao Seed 2.1/2.0、Evolving、Character、2.0 Code 和 Translation；图片覆盖 Doubao Seedream 4.0、4.5、5.0、5.0 Lite、5.0 Pro，以及经 MaxModel 转发的 `gpt-image-2`；视频覆盖 6 个 Doubao Seedance 模型、阿里百炼 `wan3.0-video` 和 MiniMax `minimax-h3`；另提供 Doubao 多模态向量、TTS、ASR 和 Seed Audio。已停服、没有公开适配接口或当前渠道不可用的模型不开放新调用。模型与所选渠道在服务端固定映射到上游模型ID；管理员选择项目渠道，不手动改写模型ID。
+以下本地命令使用PowerShell。已有配置时不要重复复制覆盖；完整字段见 [后端配置样例](backend/.env.example)。
 
-模型中转调用方可直接使用 [模型中转接口文档](backend/MODEL_RELAY_API.md)；素材库及完整客户接口、字段和错误码以 [backend/CLIENT_API.md](backend/CLIENT_API.md) 为准。模型目录的固定映射、接入门槛和验收记录见 [火山方舟模型目录维护文档](backend/VOLCENGINE_MODEL_CATALOG.md)。
-
-### BytePlus ModelArk 海外渠道
-
-本地代码新增独立供应商 `byteplus_modelark`，限定接入 Dreamina Seedance 2.5、2.0、2.0 Fast、2.0 Mini，以及 Dola Seedream 5.0 Pro、Lite、Flash，共 7 个模型。国内模型和海外模型使用独立别名、凭证、渠道及价目。2026-10-14 已通过 `test_hb` 项目的业务 Key 完成七个模型的本地真实付费基础调用验收（3 张图片、4 段 4 秒/480p 视频），随后于同日部署到生产环境：重建 `api` 与控制台镜像，网关、客户门户和微信支付回调链路未重启。生产目前尚未录入 BytePlus 渠道凭证，也没有项目绑定海外模型，因此这些模型暂不可调用，价格与目录为预置状态；本节不代表所有参考素材组合均已验收。
-
-超级管理员在“供应商渠道”选择“BytePlus ModelArk（海外）”，选择瑞池客户项目，录入 BytePlus `ap-southeast-1` 区域的 API Key，并按现有规则输入密码和 TOTP。海外项目权限由 BytePlus Key 自身控制，无需在渠道表单重复填写项目名。普通管理员再到“项目模型”选择该渠道并启用所需模型；现有业务 Key 自动获得项目模型权限。客户工具的“模型测试”页通过 `/v1/models` 自动发现这些模型。
-
-海外渠道固定请求 `https://ark.ap-southeast.bytepluses.com/api/v3`。视频复用 `/api/v3/contents/generations/tasks`，图片复用 `/v1/images/generations`；任务及用量保留原渠道和凭证版本，日志和近 30 天导出继续覆盖这两个入口。渠道“测试”不会生成视频或图片，真实模型权限须通过实际请求验收。
-
-海外价目按官方美元公示价折算为全局人民币售价：`1 USD = 6.705025 CNY`（2026-10-14 冻结汇率），不叠加加价，也不复用国内价格。视频以真实输出 Token、分辨率和是否含视频参考输入计量；Pro 图片根据实际输出像素档位及首张后的参考图数量计量，Lite/Flash 按成功图片数计量。缺少价格或计量维度时保留为待计价。配置、模型映射与验收说明见 [BytePlus 海外渠道接入说明](backend/BYTEPLUS_MODELARK.md)。
-
-### ModelTop 中转渠道
-
-新增独立供应商 `modeltop`，固定请求 `https://modeltop.ai`，复用渠道凭证加密、超级管理员密码/TOTP再认证和项目隔离。支持3个同步GPT生图型号及8个Seedance视频型号（标准/`filter-off`），模型不加渠道前缀。同一模型只展示一行，通过所选渠道决定上游ID、能力和计价；不覆盖已有绑定、价目或历史任务。
-
-新增价目使用 **ModelTop 自身市场详情**，按2026-10-15汇率快照 `1 USD = 6.706494 CNY` 一次性折算；不是原厂价复制或每日浮动价。GPT按细分Token、视频按真实输出Token和分辨率/视频参考档位计费。缺价格或用量仍待计价。初始化幂等，不覆盖后续超管改价。
-
-配置、价格来源与边界见 [ModelTop 接入说明](backend/MODELTOP_RELAY.md)，客户请求见 [CLIENT_API.md](backend/CLIENT_API.md)。2026-10-15 经用户授权，已通过本地 `test_hb` 业务Key完成11/11最小参数真实付费验收：3张低质量图片、8段4秒/480p无音频视频，最终结果与真实用量均已核对，本地价目计费合计14.067275元。同日已部署API与控制台；本地Key、渠道绑定和测试数据不会随代码发布到线上，生产仍需由管理员配置ModelTop渠道并为项目开通。
-
-## 客户 API 快速接入
-
-模型长请求使用独立的连接/响应等待设置，不再受旧 `UPSTREAM_TIMEOUT_SECONDS=30` 限制：同步生成默认读等待1800秒，连接10秒，流式空闲300秒。两层Nginx模型代理读等待3660秒并关闭代理重试，生图代理在客户断开后继续等待后端。客户端也需配置长等待；这不是无限等待或供应商成功保证。
-
-生图通过幂等键保护后台执行：断线后使用原业务Key、原请求体与原 `Idempotency-Key` 可取回缓存结果，不能换键自动重试。未知结果和重启中断会保留待核对用量，缺失用量不算零；已启用计费的项目出现未知用量时阻止账单确认。单实例后台生图默认最多16个，满载在供应商调用前返回503。配置见 `backend/.env.example`，客户错误与恢复契约见 [客户安全重试文档](backend/docs/client-api/errors.md#幂等与断线恢复)。
-
-所有客户接口使用同一套业务 Key 鉴权：
-
-```http
-Authorization: Bearer vap_live_xxx
-```
-
-接入方应先请求 `GET /v1/models`，只使用响应中返回的模型 `id`，再按能力选择接口：
-
-| 能力 | 接口 |
-|---|---|
-| 当前项目模型价格 | `GET /v1/pricing`，可用 `?model=模型名称` 过滤 |
-| 文本对话 | `POST /v1/chat/completions`、`POST /v1/responses` |
-| 图片生成与改图 | `POST /v1/images/generations` |
-| 文本/多模态向量 | `POST /v1/embeddings`、`POST /v1/embeddings/multimodal` |
-| 语音合成、录音识别、音频生成 | `/v1/audio/*` |
-| 异步视频创建、查询、取消 | `/api/v3/contents/generations/tasks*` |
-| 火山素材上传与素材组管理 | `/api/asset*`、`/api/asset-group*` |
-
-对外别名是 Star Proxy 的稳定契约，真实上游模型 ID 由服务端维护。Doubao 产品统一使用 `doubao-` 前缀，例如 `doubao-seedream-5.0` 和 `doubao-seedance-2.0`；旧 `seedream-*`、`seedance-*` 短别名不再兼容。图片和视频创建建议携带 `Idempotency-Key`，避免调用方超时重试造成重复任务与重复费用。
-
-### 管理员安全
-
-- 系统只允许通过 CLI 初始化一个 `super_admin`；控制台创建的账号固定为普通 `admin`。
-- 普通管理员负责项目、业务 API Key、额度、项目计费和日常业务；超级管理员负责账号安全、供应商凭证与全局模型价目。
-- 超级管理员侧栏分为“安全管理、管理员账号、供应商渠道、全局模型价目、磁盘与邮件、备份与恢复、安全审计”七个独立入口；安全管理仅保留TOTP、登录告警及会话。各目录按需加载自身数据，切换目录不提交配置，并清除离开页面的未保存草稿及敏感输入；现有权限、再认证和后台监控规则不变。
-- 密码使用 Argon2id 哈希；管理登录使用 HttpOnly Session Cookie 和 CSRF 双重校验。
-- 控制台遇到CSRF不一致时只读重新校验会话：同一账号更新令牌后提示手动重新提交，身份或安全状态变化则要求重新登录，绝不自动重放写操作。供应商创建错误在弹窗内展示错误码和请求编号；网络超时须先刷新列表确认是否已创建，避免重复保存。
-- 超级管理员强制绑定 TOTP，并获得仅展示一次的一组恢复码。
-- “安全管理 → TOTP验证器”提供当前超级管理员专用的“开启免TOTP登录”开关，默认关闭。修改需要当前密码、尚未使用的 TOTP 验证码与风险确认；开启后仍须账号密码登录，不删除验证器或恢复码，也不取消敏感操作原有验证。切换会撤销其他会话，保留已再次验证的当前会话；可随时恢复TOTP登录。CLI 重置验证器会同时关闭免TOTP登录。
-- 已登录的超级管理员可在控制台仅验证当前密码后自助更换验证器，再输入新验证器验证码完成绑定；修改密码也只需验证当前密码。
-- 删除、启停管理员、重置密码、备份、恢复和监控阈值修改等敏感操作要求再次输入超级管理员密码。
-- 禁用账号、修改或重置密码、TOTP 换绑后，相关旧 Session 会立即失效。
-- 管理员操作、登录和安全事件写入审计；旧 `X-Admin-Token`/共享控制台令牌不再具备权限。
-- 超级管理员负责创建、测试、轮换、禁用和删除供应商渠道；这些凭证操作需要密码与 TOTP 再认证。
-- 普通管理员负责项目模型绑定以及中转用量和任务查询，不能读取供应商凭证原文。
-
-### 业务调用日志与全量概览
-
-- 控制台概览按数据库现有全部历史统计累计请求、累计异常、素材、上传量、成功模型调用次数和供应商实际返回的 Token 总量，不再只展示 24 小时或当日窗口。
-- 每个能够识别到业务 API Key 的 `/api/*`、`/v1/*` 请求写入一条调用日志，包含 Key 名称与掩码、项目、HTTP 方法、接口模板、模型别名、状态码、成功状态、耗时、返回字节数、请求 ID、来源 IP 和 User-Agent。
-- 普通管理员可在“调用日志”中先选择项目、再选择具体业务 Key；选中后立即加载并每 5 秒自动刷新，可展开查看完整文本请求参数与完整 JSON/SSE 返回结果。管理接口为 `GET /api/internal/call-logs`。
-- 选择具体业务 Key 后，可通过 `GET /api/internal/call-logs/export.csv?apiKeyId=...` 流式导出该 Key 近 30 天的全部调用日志；CSV 使用 UTF-8 BOM，并包含接口、模型、结果、耗时、完整请求参数和完整返回结果。
-- 日志不会保存 `Authorization`、完整业务 Key、供应商凭证、密码、Cookie、签名、幂等键原文、带签名的 URL 查询参数、文件正文、Data URI、Base64 或音视频/图片二进制；这些敏感或媒体字段会替换为脱敏标记或体积元数据，其余 JSON 与 SSE 文本不截断。
-- 调用明细固定滚动保留近 30 天，不提供延长配置；过期明细清理后，全量请求与异常累计计数仍会保留。未知 Key 无法安全归属到客户，因此只返回鉴权错误，不进入逐 Key 日志。
-- 已产生调用日志的 Key 删除时会不可逆注销并保留 Key 墓碑；存在调用历史的项目不允许物理删除，历史日志、用量和账单归属不会被级联删除。
-
-### 多供应商模型中转
-
-- 默认 `MULTI_PROVIDER_ENABLED=false`，迁移后没有任何默认模型绑定，素材接口行为保持不变；视频生成仅通过启用后的中转渠道提供。
-- 启用时使用独立 Fernet 主密钥；未显式配置 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 时，系统会在 SQLite 同目录自动创建并复用 `provider_credentials.key`，SQLite 仍只保存凭证密文和尾号掩码。
-- 固定使用供应商官方 HTTPS 域名，客户请求不能指定供应商、渠道、项目、Base URL 或真实上游模型 ID。
-- `gpt-image-2` 使用项目级 MaxModel 渠道：超级管理员只需录入 MaxModel API Key，系统固定请求 `https://aiapi.maxmaas.com/v1/images/generations`；原有 `image2.0` 别名会迁移为 `gpt-image-2`，旧 OpenAI 绑定会被清除，防止旧凭证被发送到新上游。
-- `/v1/models` 只返回当前业务 Key 所属项目已启用且渠道可用的模型；`/v1/pricing` 在相同项目隔离规则下返回税前价目并支持模型名称过滤；支持 Chat Completions、Responses、图片与多模态向量接口，以及豆包语音合成、异步录音识别和音频生成。
-- Seedance 视频使用与火山方舟、漫剧调用格式一致的 `/api/v3/contents/generations/tasks` 异步任务接口；任务提交后固定渠道、凭证版本和上游模型，轮换不会破坏旧任务查询。
-- 图片和视频支持 `Idempotency-Key`；相同键与相同请求复用结果，不同请求体返回 `409`。
-- 只记录供应商真实返回的 Token、图片数和视频秒数，未知字段保持为空；第一阶段不做余额或金额扣费。
-- 图片和视频结果 URL 由供应商提供，系统不自动转存 TOS，客户应在供应商链接有效期内下载。
-
-### 项目计费与月度账单
-
-- 普通管理员可以按项目逐个启用计费；存量和新建项目默认关闭，启用可选择本月补算或下月生效。
-- 全局模型价目由超级管理员统一维护并按月份版本化，全部项目共用，项目只能配置是否计费和结算折扣，不能覆盖模型单价。
-- 火山官方价目初始化自 2026-09-04 版价格文档：文本支持输入、缓存输入、输出及上下文阶梯价；图片支持张数与像素档位；Seedance 2.x 按上游返回的 `completion_tokens`、分辨率及是否有视频输入计价，不再把火山视频误按秒计费。
-- 海外官方价目初始化自 2026-10-14 版 BytePlus 价格文档，按冻结汇率 `1 USD = 6.705025 CNY` 折算成人民币写入同一张全局价目表，账本不混用两种货币；美元原价保留在代码中便于复核。
-- 计费只归集系统记录的真实成功用量。缺少真实用量、模型映射或单价时显示为“待计价”，不会按零元处理；只有明确配置零元单价才表示免费。
-- 金额固定为人民币税前口径，数据库使用整数微元和十进制运算；项目折扣按基点保存，避免浮点金额误差。
-- 当前自然月显示实时预估，不能提前确认；历史草稿确认后金额和明细冻结，可登记一次全额支付及凭证备注。
-- 已确认账期收到迟到用量时，不改写历史账单，而是在下一开放账期生成可追溯的系统调整项。
-- 账单详情支持 UTF-8 BOM CSV 导出和浏览器打印；该账单是内部对账凭证，不是法定发票，也不包含在线支付或充值余额。
-- 全局价目修改要求超级管理员重新验证当前密码；项目计费、调整、确认和支付登记要求普通管理员重新验证当前密码，全部写入不含密码的审计日志。
-
-#### Seedance 中转验证基线
-
-截至 2026-09-03，使用业务 Key、素材库 `asset://` 图片以及最低分辨率完成了真实异步链路验证。以下别名由服务端固定映射，客户不能覆盖真实 Model ID：
-
-| 对外别名 | 火山 Model ID | 最小验证规格 | 本地实测 |
-|---|---|---:|---|
-| `doubao-seedance-2.5` | `doubao-seedance-2-5-260628` | 4 秒 / 480p | 成功 |
-| `doubao-seedance-2.0` | `doubao-seedance-2-0-260128` | 4 秒 / 480p | 成功 |
-| `doubao-seedance-2.0-fast` | `doubao-seedance-2-0-fast-260128` | 4 秒 / 480p | 成功 |
-| `doubao-seedance-2.0-mini` | `doubao-seedance-2-0-mini-260615` | 4 秒 / 480p | 成功 |
-| `doubao-seedance-1.0-pro` | `doubao-seedance-1-0-pro-250528` | 2 秒 / 480p | 成功 |
-| `doubao-seedance-1.0-pro-fast` | `doubao-seedance-1-0-pro-fast-251015` | 2 秒 / 480p | 成功 |
-
-表中视频模型均已通过真实 `asset://` 素材完成生成验证。视频创建响应只返回中转站任务 ID；查询响应返回模型别名、状态及火山结果，不暴露渠道 ID、凭证版本、真实上游 Model ID 或内部请求哈希。
-
-### 备份与恢复
-
-- SQLite 与管理员审计 JSONL 默认每天生成一次一致性快照，默认保留最近 30 组。
-- 备份落盘前执行 SQLite 完整性检查。
-- 超级管理员可在控制台校验并恢复服务器生成的备份；恢复前自动建立回滚点。
-- 恢复期间系统进入维护状态，成功后撤销全部管理员 Session。
-- 若未显式设置 `ADMIN_TOTP_ENCRYPTION_KEY`，必须同时备份数据库目录中的 `admin_totp.key`，否则恢复后无法解密已绑定的 TOTP。
-
-当前恢复流程面向单进程、单实例 SQLite 部署。多实例环境必须先统一停写，并迁移到共享数据库方案。
-
-### 磁盘监控与邮件告警
-
-- 后端启动后独立运行磁盘采样任务，不依赖管理员登录或打开控制台。
-- 默认每 60 秒采样、每 5 分钟持久化一次；默认监控 `DATABASE_PATH` 所在目录。
-- 默认阈值为预警 80%、严重 90%、紧急 95%、恢复线 75%，可由超级管理员在控制台修改。
-- 告警升级会去重；磁盘恢复到恢复线以下后发送恢复邮件。
-- 邮件失败会按 1 分钟、5 分钟、15 分钟重试，邮件队列与发送状态保存在 SQLite 中。
-- SMTP服务器、发件人和收件人在磁盘监控面板设置；配置整体加密落库，授权码不回显、不进入日志或审计。
-- 磁盘邮件只用于磁盘容量告警，不与管理员登录等安全事件混用。
-
-### HTTPS 网关与漫剧支付回调
-
-- `api.richbest.cn:443` 统一承载控制台、业务 API、健康检查和漫剧微信支付回调入口。
-- 微信通知入口固定为 `POST /minidrama/payments/callbacks/wechat`；非 POST 请求返回 `405`。
-- 网关只负责 TLS 终止、路径改写和透明转发，不要求本系统管理员登录或业务 API Key。
-- 原始正文、微信支付签名头和上游状态码保持不变；网关不验签、不解密、不操作订单。
-- 微信验签、通知解密、订单校验、幂等和到账处理均由 LocalMiniDrama 负责。
-- 网关通过宿主机发布端口访问 LocalMiniDrama，不加入 Lens 内部 Docker 网络，避免扩大数据库和 Redis 的网络暴露面。
-- 回调日志不记录正文、完整签名、OpenID、商户私钥、API v3 密钥或支付证书。
-
-完整配置、验证和回滚步骤见 [漫剧微信支付回调代理说明](deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md)。
-
-## 目录说明
-
-| 路径 | 用途 |
-|---|---|
-| `app/` | 管理控制台页面、管理员 API 客户端、项目/Key/额度、计费账单与安全管理 UI |
-| `backend/app/routers/` | FastAPI 业务与内部管理路由 |
-| `backend/app/database.py` | SQLite 表结构、兼容迁移和数据访问 |
-| `backend/app/call_logging.py` | 业务请求安全脱敏、完整文本内容与逐 Key 调用日志中间件 |
-| `backend/app/admin_auth.py` | 管理员、Session、CSRF、TOTP、角色和审计 |
-| `backend/app/quota.py` | 项目与 Key 额度、原子预占及事件 |
-| `backend/app/storage.py` | TOS 上传、素材账本清理与后台重试 |
-| `backend/app/backup.py` | SQLite/审计备份、校验和恢复 |
-| `backend/app/system_monitor.py` | 磁盘采样、告警状态机和 SMTP 邮件队列 |
-| `backend/app/billing.py` | 真实用量归集、模型计价、月度账单、调整与 CSV 导出 |
-| `backend/tests/` | 后端鉴权、迁移、额度、素材、用量、计费和监控测试 |
-| `tests/` | 控制台单元测试及 SSR/敏感信息检查 |
-| `user-portal/` | 客户视频与素材工具前端 |
-| `deploy/volcengine/` | 火山服务器 Compose、HTTPS 网关、漫剧支付回调代理和安全验收脚本 |
-
-## 环境要求
-
-- Node.js `>=22.13`
-- Python `>=3.11`（容器使用 Python 3.12）
-- `uv`（推荐）或 Python `venv`/`pip`
-- `ffprobe`（处理视频、音频上传时需要；后端 Docker 镜像已安装 FFmpeg）
-
-## 本地启动
-
-如需在本地启用多供应商中转，在 `backend/.env` 设置 `MULTI_PROVIDER_ENABLED=true` 即可。若 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 留空，系统首次使用供应商凭证时会在 SQLite 同目录自动生成 `provider_credentials.key`，以后重启自动加载，无需人工复制密钥。该文件被 Git 忽略且不会进入 SQLite 备份，迁移或恢复服务时必须与数据库分别备份和恢复。生产环境也可以继续通过部署 Secret 显式提供主密钥，环境变量优先于本地密钥文件。
-
-### 1. 后端
+### 2. 启动后端
 
 ```powershell
 cd backend
 Copy-Item .env.example .env
 uv sync --extra test
-uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-至少根据使用范围配置：
+按需求编辑本地配置：
 
-```dotenv
-VOLCENGINE_ACCESS_KEY=xxx
-VOLCENGINE_SECRET_KEY=xxx
-TOS_BUCKET=xxx
-TOS_PUBLIC_BASE_URL=https://assets.example.com
-DATABASE_PATH=./data/avatar_proxy.db
-ADMIN_COOKIE_SECURE=false
-CORS_ORIGINS=http://localhost:3001,http://localhost:3002
-ENABLE_API_DOCS=false
-```
+| 配置 | 用途 |
+|---|---|
+| `DATABASE_PATH` | SQLite持久化位置 |
+| `ADMIN_COOKIE_SECURE` | 本地HTTP设false，生产HTTPS必须true |
+| `VOLCENGINE_ACCESS_KEY / VOLCENGINE_SECRET_KEY` | 素材和真实项目校验，仅服务端使用 |
+| `TOS_*` | 文件中转 |
+| `MULTI_PROVIDER_ENABLED` | 模型中转开关，默认false |
+| `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` | 凭证独立主密钥；留空使用持久化密钥文件 |
 
-本地 HTTP 环境使用 `ADMIN_COOKIE_SECURE=false`；生产 HTTPS 必须设为 `true`。完整配置和说明见 [backend/.env.example](backend/.env.example)。
-
-首次初始化唯一超级管理员：
+首次初始化唯一超级管理员，再启动服务：
 
 ```powershell
 uv run python -m app.admin_cli create --username admin --display-name "系统管理员"
+uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-命令输出的高强度初始密码仅展示一次。首次登录必须修改密码并绑定 TOTP。
+初始密码只显示一次；首次登录需改密并绑定TOTP，不要把密码、二维码或恢复码写入README或Git。
 
-应急命令：
+### 3. 启动内部控制台
 
-```powershell
-uv run python -m app.admin_cli reset-password --username admin
-uv run python -m app.admin_cli reset-totp --username admin
-uv run python -m app.admin_cli generate-totp-key
-```
-
-### 2. 内部管理控制台
+另开终端，在仓库根目录执行：
 
 ```powershell
 Copy-Item .env.example .env.local
-npm install
+npm ci
 npm run dev -- --host 127.0.0.1 --port 3001
 ```
 
-打开 `http://localhost:3001`。Vite 会把相对路径 `/api/*` 代理到 `CONSOLE_API_PROXY_TARGET`，默认是 `http://127.0.0.1:8000`。
+打开 `http://localhost:3001`。管理请求固定访问同源 `/api/internal/*`；开发代理默认指向 `http://127.0.0.1:8000`，可用 `CONSOLE_API_PROXY_TARGET` 调整。`NEXT_PUBLIC_API_BASE_URL` 只是业务接口调试地址，不用于管理员跨域认证。
 
-`NEXT_PUBLIC_API_BASE_URL` 只供业务 API 调试与示例使用。管理员认证始终访问同源 `/api/internal/*`，不能改成跨域管理请求。
+### 4. 接入第一个客户
 
-### 3. 客户工具前端
+1. 在火山创建客户项目，取得真实ProjectName，并开通对应上游权限。
+2. 普通管理员在本系统创建项目，服务端校验该火山项目确实存在。
+3. 超级管理员进入“供应商渠道”，为该客户录入上游凭证。
+4. 普通管理员在“项目模型”选择渠道并启用模型，设置约定额度和可选计费规则。
+5. 生成并安全交付业务Key、API地址和接口文档。项目下现有有效Key共享已开通模型权限。
+6. 客户先查询模型再调用；真实生成会消耗上游额度，必须经过授权。
+
+BytePlus和ModelTop使用各自平台的独立Key，不复用国内方舟Key。映射、权限及计价见 [BytePlus](backend/BYTEPLUS_MODELARK.md)、[ModelTop](backend/MODELTOP_RELAY.md) 和 [方舟目录](backend/VOLCENGINE_MODEL_CATALOG.md)。
+
+<details>
+<summary>可选：启动客户工具</summary>
 
 ```powershell
 cd user-portal
 Copy-Item .env.example .env.local
-npm install
+npm ci
 npm run dev
 ```
 
-默认地址为 `http://localhost:3002`。客户工具只接受 `vap_live_...` 业务 Key，不接受管理员 Cookie 或旧管理令牌。
+默认地址 `http://localhost:3002`，只使用业务Key。详见 [客户工具说明](user-portal/README.md)。生产客户工具当前关闭，不应为更新控制台而重新启用。
 
-## SMTP 磁盘告警配置
+</details>
 
-超级管理员进入“磁盘与邮件 → 邮件通知”：
+## 客户接入
 
-1. 添加发件邮箱，选择QQ、网易163、126或Yeah，只填写邮箱地址和邮箱服务商的SMTP授权码（不是登录密码）。服务器、端口465和TLS由后端固定匹配；企业或其他邮箱选择“其他邮箱”填写自定义SMTP参数。
-2. 可保存最多10套发件账号，选择一套用于告警；不自动轮换或多账号重复发送。同一组收件人可混合添加最多50个不同邮箱，用回车或粘贴批量添加，无需收件人的授权码。
-3. 开启“邮件通知”，填写当前超级管理员密码并保存，后台立即生效。列表编辑、删除和切换仅是草稿，保存前不会改变后台配置。测试邮件只使用已保存的配置，未保存时禁止测试。
+完整契约见 [客户API](backend/CLIENT_API.md) 或 [HTML阅读版](backend/CLIENT_API.html)。以下Bash示例只查询目录和价格，不生成媒体：
 
-原有单邮箱配置自动成为第一套发件账号，授权码不需要重新填写；授权码不回显，编辑时留空保留原值，更换服务器或登录账号必须重新填写。所有配置仍是系统级磁盘告警设置，不按登录管理员分别发送；停止通知不删除已保存账号。QQ、网易邮箱需先开启SMTP并获取授权码，详见[QQ帮助](https://service.mail.qq.com/detail/0/75)、[网易帮助](https://help.mail.126.com/)。
+```bash
+export BASE_URL="https://api.richbest.cn"
+export API_KEY="替换为管理员签发的业务Key"
 
-以下变量只控制采样行为，仍保留在服务端配置中：
-
-```dotenv
-SYSTEM_MONITOR_ENABLED=true
-SYSTEM_MONITOR_PATH=
-SYSTEM_MONITOR_SAMPLE_INTERVAL_SECONDS=60
-SYSTEM_MONITOR_PERSIST_INTERVAL_SECONDS=300
-SYSTEM_MONITOR_RETENTION_DAYS=30
-
+curl "$BASE_URL/api/auth/me" -H "Authorization: Bearer $API_KEY"
+curl "$BASE_URL/v1/models" -H "Authorization: Bearer $API_KEY"
+curl "$BASE_URL/v1/pricing" -H "Authorization: Bearer $API_KEY"
 ```
 
-现有SMTP环境变量仅用于首次自动迁移，已保存的面板配置优先。先备份旧环境文件，再在backend目录运行 `uv run python -m scripts.migrate_monitor_email --env-file .env --remove-legacy`，命令验证迁移后的配置可解密且与原值一致，再只移除旧的8项邮件变量；不会发送邮件或输出任何配置原文。
+| 能力 | 入口 |
+|---|---|
+| 对话 / Responses | `POST /v1/chat/completions`、`POST /v1/responses` |
+| 图片 | `POST /v1/images/generations` |
+| 视频创建、查询、取消 | `/api/v3/contents/generations/tasks*` |
+| 文本与多模态向量 | `/v1/embeddings`、`/v1/embeddings/multimodal` |
+| 语音合成、异步识别、音频生成 | `/v1/audio/*` |
+| 素材上传、登记与管理 | `/api/asset/*`、`/api/asset-group/*` |
 
-配置密文保存在SQLite的 `system_monitor_email_settings` 表中，独立加密主密钥为数据库同目录的 `smtp_settings.key`（Linux权限0600）。请将该文件单独安全备份，恢复数据库时一并恢复；丢失主密钥时不会重新生成并覆盖旧配置。
+使用 `/v1/models` 返回的公开id，不猜测上游Model ID。专用翻译模型不能一律按流式Chat调用。
 
-## 测试与质量检查
+长耗时生成不能套用30秒总超时。断线不代表未执行；图片/视频应保留业务Key、原请求体及原 `Idempotency-Key`，不要换键自动重试。见 [错误与安全重试](backend/docs/client-api/errors.md)。
 
-根目录完整检查：
+## 安全与运维
+
+### 认证与角色
+
+- 管理员使用HttpOnly Session和CSRF；业务接口只接受Bearer业务Key。旧共享管理员令牌不具备权限。
+- 超管由CLI初始化，控制台只能创建普通管理员。禁用、改密、重置和换绑按规则撤销相关会话。
+- 手机先安装可信Authenticator。TOTP确认换绑前旧设备有效；确认后旧验证器和旧恢复码失效，新恢复码只显示一次。
+- 免TOTP登录默认关闭，开启需密码、新动态码及风险确认，不取消敏感操作原有再认证。
+- 登录来源IP用于审计，不是管理员登录白名单。QPM限流不等于完整客户IP白名单。
+- 供应商凭证和SMTP授权码不回显；浏览器不持久化管理Secret。
+
+### 备份、邮件与日志
+
+- SQLite及管理员审计默认每24小时备份，保留30组。恢复前校验、建立回滚点和维护锁；恢复成功撤销全部管理Session。
+- `admin_totp.key`、`provider_credentials.key`、`smtp_settings.key`或对应部署Secret需分别安全备份，数据库快照不能代替主密钥备份。
+- 磁盘采样由后端独立运行；默认预警/严重/紧急80%/90%/95%、恢复线75%，告警去重、升级、恢复和失败重试均由后台执行。
+- “磁盘与邮件”支持QQ、163、126、Yeah及自定义SMTP，最多10套发件账号、其中一套生效，最多50个混合服务收件人。SMTP授权码不是登录密码；原账号编辑留空可保留授权码。
+- 邮箱编辑是草稿，保存后才生效。测试邮件会真实发送；旧配置迁移及密钥保护见 [部署说明](backend/DEPLOYMENT.md#5-控制台连接)。只发送磁盘告警，不发送登录邮件。
+- 调用明细保留近30天；累计请求和异常不随明细过期归零。文本内容经安全脱敏，仍可能含客户业务资料；导出文件按敏感数据保管。
+
+### 控制台加载
+
+项目、Key、概览和额度区域分别处理响应，慢接口不阻止已成功列表显示。退出或重新登录会阻止旧请求回填。最近请求按倒序rowid取8条，避免在大日志表上先排序全部命中记录；不改变累计口径与鉴权。
+
+## 生产部署
+
+配置见 [Compose](deploy/volcengine/compose.yaml)，详细步骤见 [部署说明](backend/DEPLOYMENT.md)。该文件含服务器路径和证书挂载，**不是无需配置的一键通用模板**。
+
+发布顺序：**本地测试 → 一致性备份和密钥保护 → 新Release构建 → 隔离预检 → 只替换变更服务 → 健康与鉴权检查 → 必要时平滑reload网关 → 保留回滚点。**
+
+- HTTPS网关提供控制台、业务API及健康检查；管理端保持同源，生产Cookie必须Secure。
+- 模型中转默认关闭，启用开关不会自动为客户创建渠道或绑定模型。
+- 持久卷覆盖数据库及独立密钥；当前采用单实例SQLite，不能直接共享文件横向扩容。
+- API发布前排空在途生成及后台生图；不能把前端断线当作供应商取消。
+- 只更新控制台时不重建API或客户工具；API更新保留项目、Key、渠道、邮件和历史账单。
+- 微信支付回调只透明代理到LocalMiniDrama，本系统不验签、不解密、不处理订单。回调不能要求控制台登录；见 [回调契约](deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md)。
+
+旧版镜像和切换记录已移至 [历史发布记录](docs/DEPLOYMENT_HISTORY.md)，避免把某天版本误写成永久的生产现状。
+
+## 测试与开发
 
 ```powershell
+# 仓库根目录：后端覆盖率 + 控制台单测/SSR + lint
 npm run test:all
-```
 
-分项执行：
-
-```powershell
-# 控制台单元测试、SSR 与敏感信息检查
+# 分项检查（根目录）
 npm test
 npm run lint
 npm run build
 
-# 后端测试、分支覆盖率且总覆盖率不低于 90%
+# 后端（独立终端）
 cd backend
 uv run --extra test pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=90
-
-# 客户工具前端
-cd user-portal
-npm test
 ```
 
-自动测试必须使用临时 SQLite、模拟 TOS/火山请求和模拟 SMTP，不应调用真实火山服务、真实 Bucket 或真实邮箱。
+客户工具另在 `user-portal` 目录执行 `npm test`。自动测试必须使用临时SQLite、MockTransport、模拟TOS和SMTP，不能访问真实上游或发送真实邮件。覆盖率门槛90%，音视频测试需FFmpeg工具。
 
-## 部署
+文档能力校验前运行 `npm ci --prefix tools/client-docs`。`npm run docs:build`生成HTML及控制台静态文档；`npm run docs:check`检查同步与链接，`npm run docs:test`验证阅读器。详见 [文档工具](tools/client-docs/README.md)。
 
-生产部署、HTTPS、同源代理、持久卷、备份和恢复步骤见 [backend/DEPLOYMENT.md](backend/DEPLOYMENT.md)。
+## 文档导航
 
-当前正式业务地址为 `https://api.richbest.cn`：
+| 我需要… | 文档 |
+|---|---|
+| 客户字段、示例与错误码 | [客户API](backend/CLIENT_API.md) · [HTML](backend/CLIENT_API.html) · [模型中转](backend/MODEL_RELAY_API.md) |
+| 模型映射与验收 | [方舟目录](backend/VOLCENGINE_MODEL_CATALOG.md) · [BytePlus](backend/BYTEPLUS_MODELARK.md) · [ModelTop](backend/MODELTOP_RELAY.md) |
+| 项目计费与账单 | [计费API](backend/ADMIN_BILLING_API.md) |
+| 部署和配置 | [生产部署](backend/DEPLOYMENT.md) · [后端样例](backend/.env.example) |
+| 漫剧及回调对接 | [RichiDrama](backend/RICHIDRAMA_RELAY_ALIGNMENT.md) · [回调网关](deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md) |
+| 额度及设计方案 | [额度与素材账本](backend/RISK_CONTROL_PLAN.md) · [多供应商设计](backend/MULTI_PROVIDER_RELAY_PLAN.md) |
+| 前端及截图维护 | [客户工具](user-portal/README.md) · [截图说明](docs/screenshots/README.md) |
+| 发布历史与开发约定 | [发布记录](docs/DEPLOYMENT_HISTORY.md) · [AGENTS.md](AGENTS.md) |
 
-- 客户程序直接调用该域名下的 `/api/*`；
-- 管理控制台通过同一域名的 `/api/internal/*` 使用同源 Cookie；
-- `/health` 用于健康检查；
-- `POST /minidrama/payments/callbacks/wechat` 透明转发微信支付通知到 LocalMiniDrama；
-- 生产环境应保持 `ENABLE_API_DOCS=false`。
+设计计划只是历史方案，当前行为以代码、测试、示例配置及客户API契约为准。
 
-客户工具前端自 2026-10-15 起关闭，原 `http://101.96.224.33:8088/video/`、
-`/video` 及其静态资源统一返回 `404`。`edge` 保留为 `:8088` 的 API 兼容代理，
-通过只读挂载 `deploy/volcengine/nginx.conf` 持久化入口配置；控制台和 HTTPS API 正常提供服务。
+---
 
-### 当前生产发布基线（2026-10-16）
-
-- 控制台运行提交`047b559`，Release为`/opt/avatar-proxy/releases/20261016-console-csrf-047b559`；API仍运行`778127b`，没有重新构建或重启，数据库没有迁移。
-- 修复供应商渠道创建失败时错误被弹窗遮挡的问题：错误卡在弹窗提交按钮旁展示安全错误、参数问题、网络/超时提示、错误码和请求编号。CSRF不一致时只读校验同一账号并更新令牌，必须手动重试；身份或MFA状态变化则重新登录，不自动重放写请求。
-- 控制台65项单测（串行复跑）、SSR、生产构建、TypeScript和lint通过；lint只有两条既有图片标签提示。涵盖CSRF恢复/身份切换、密码/TOTP错误、真实计时超时、必填校验和重复提交保护。
-- 北京时间10:18:53完成控制台切换，约2.49秒。客户工具与HTTPS网关只做必要的Nginx配置检查和平滑reload，API、`edge`、`api-gateway`的容器ID、镜像和启动时间保持不变；本次不包含工作区其他未提交的网关配置修改。
-- 公网首页及健康检查200，未登录管理接口401且带no-store及请求编号；公网新构建资源已验证包含CSRF恢复与弹窗内错误逻辑。需要强制刷新浏览器加载新版本，再使用最新TOTP重试，实际创建仍须管理员亲自验证密码和验证码。
-- 回滚镜像`avatar-proxy-console:rollback-csrf-20261016`及发布记录保存在`/opt/avatar-proxy/backups/20261016-console-csrf-before-047b559`，前一Release为`20261015-modeltop-relay-778127b`。应用回滚只需恢复旧控制台镜像、按原Compose单独重建`console`并平滑reload网关，不覆盖数据库或密钥。
-
-### 历史生产发布记录（2026-10-15）
-
-- 应用提交 `778127b`，Release 为 `/opt/avatar-proxy/releases/20261015-modeltop-relay-778127b`；后续仅补充发布记录的文档提交不改变运行镜像。
-- 本次仅替换API与控制台；客户工具和HTTPS网关只做必要的Nginx配置检查与平滑reload，没有由本次发布重建，微信支付回调配置不变。
-- 使用原有已验证镜像及未变化的依赖构建增量应用镜像，避免无关运行时升级。API停写窗口约50秒；已有项目、Key、管理员、渠道、凭证、模型绑定及历史记录保持不变，密钥文件和原有价格不变。
-- 一致性SQLite、独立密钥/环境配置及旧镜像已保留，备份目录 `/opt/avatar-proxy/backups/20261015-modeltop-relay-before`；迁移、验证与回滚详见 [ModelTop生产部署记录](backend/MODELTOP_RELAY.md)。
-
-### 历史生产发布记录（2026-09-11）
-
-- 当次生产应用 Release 为 `20260911-call-log-detail-19e0215`，控制台对应代码提交 `19e0215`；2026-10-14的后续发布见 [BytePlus生产部署记录](backend/BYTEPLUS_MODELARK.md)。仅修改文档并推送 Git 不代表生产应用已经再次部署。
-- 本次只重建并替换 `console`，`api`、客户工具 `edge` 与 HTTPS `api-gateway` 容器均未重启，也没有修改其他宿主机业务容器。
-- 数据库和后端仍沿用 `20260911-call-log-export-5512285` 发布；其 SQLite 一致性快照、`admin_totp.key`、`provider_credentials.key`、生产环境配置及旧 API/控制台镜像均已保留，回滚备份位于 `/opt/avatar-proxy/backups/20260911-call-log-export-before-5512285`。
-- 新控制台镜像已先通过隔离容器首页检查；发布后已确认公网首页和 API 健康、受保护接口继续要求鉴权、新构建包含调用详情稳定展示逻辑，且控制台日志无新增异常。
-- 后续同类发布应继续采用“先备份与校验 → 在新 Release 预构建和隔离预检 → 单独替换 API → 健康后替换控制台 → reload 网关 → 回归素材、模型、价格和支付回调”的顺序。仅当前端或后端发生变化时，不应重建无关的 `edge`、`api-gateway` 或其他宿主机业务容器。
-
-支付回调上游只通过服务端部署变量配置：
-
-```dotenv
-PAYMENT_ORIGIN=host.docker.internal:10588
-PAYMENT_ORIGIN_HOST=drama.richbest.cn
-```
-
-这两个变量不是浏览器配置，也不能包含微信商户密钥。LocalMiniDrama 必须自行完成验签、解密和幂等；如果其回调路由仍要求登录，网关能够转发请求，但真实微信通知仍会被上游拒绝。
-
-部署前必须备份并校验 SQLite、确认持久卷和 `admin_totp.key`/`ADMIN_TOTP_ENCRYPTION_KEY`，再运行完整测试。除非收到明确部署指令，否则只在本地修改和验证。
-
-## 相关文档
-
-- [客户 API 接入文档](backend/CLIENT_API.md)（快速开始及分类参考）
-- [独立 HTML 接口文档](backend/CLIENT_API.html)（离线阅读、全文搜索、代码复制；控制台“接入说明”显示同一份内容）
-- [模型中转接口文档](backend/MODEL_RELAY_API.md)
-- [RichiDrama 对接中转站改造说明](backend/RICHIDRAMA_RELAY_ALIGNMENT.md)
-- [管理端计费账单 API 文档](backend/ADMIN_BILLING_API.md)
-- [多供应商模型中转实施与安全边界](backend/MULTI_PROVIDER_RELAY_PLAN.md)
-- [后端生产部署说明](backend/DEPLOYMENT.md)
-- [额度与素材账本设计](backend/RISK_CONTROL_PLAN.md)
-- [客户工具说明](user-portal/README.md)
-- [漫剧微信支付回调代理说明](deploy/volcengine/MINIDRAMA_WECHAT_CALLBACK_PLAN.md)
-- [开发代理协作约定](AGENTS.md)
-
-
-### 客户文档维护
-
-客户契约入口为 `backend/CLIENT_API.md`，详细参考位于 `backend/docs/client-api/`；不要在控制台组件中另外手写请求示例。首次生成前执行 `npm ci --prefix tools/client-docs`，之后使用 `npm run docs:build` 生成独立 `backend/CLIENT_API.html` 和控制台静态文件 `public/docs/client-api.html`。
-
-`npm run docs:check` 校验两份 HTML 与源文档一致并检查所有内置链接；`npm run docs:test` 检查构建与阅读器交互。构建工具依赖仅在文档工具目录，不增加 API 或控制台运行时依赖。控制台部署使用已生成的静态文件，不增加 API 路由、不迁移数据库，也不自动部署独立文档。
+结构调研参考：[New API](https://github.com/QuantumNous/new-api)的截图及能力分区、[One API](https://github.com/songquanpeng/one-api)的部署与使用导航、[Portkey Gateway](https://github.com/Portkey-AI/gateway)的最短接入路径。只借鉴信息组织，不移植其他项目的功能承诺或许可声明。

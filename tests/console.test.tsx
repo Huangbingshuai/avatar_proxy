@@ -227,6 +227,50 @@ describe("内部控制台", () => {
     expect(window.sessionStorage.length).toBe(0);
   });
 
+  it("概览慢请求不阻塞项目和Key，统计加载时不显示假0", async () => {
+    installFetch();
+    const original = globalThis.fetch;
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => { resume = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await original(input, init);
+      if (String(input).endsWith("/overview")) await gate;
+      return response;
+    }));
+    const user = await login();
+    expect(screen.getByLabelText("累计请求等待加载")).toHaveTextContent("—");
+    expect(screen.queryByText("暂无调用记录")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "项目" }));
+    expect(await screen.findByText("客户 A")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "API Keys" }));
+    expect(await screen.findByText("生产 Key")).toBeInTheDocument();
+    resume();
+    await user.click(screen.getByRole("button", { name: "概览" }));
+    expect(await screen.findByText("5,891")).toBeInTheDocument();
+  });
+
+  it("辅助接口失败不丢弃已加载列表，退出后拒绝迟到响应回填", async () => {
+    installFetch();
+    const original = globalThis.fetch;
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => { resume = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/quota/events")) return jsonResponse({ error: { message: "额度事件暂不可用" } }, 503);
+      const response = await original(input, init);
+      if (String(input).endsWith("/overview")) await gate;
+      return response;
+    }));
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "项目" }));
+    expect(await screen.findByText("客户 A")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("额度事件暂不可用");
+    await user.click(screen.getByRole("button", { name: "退出登录" }));
+    await screen.findByRole("heading", { name: "登录内部控制台" });
+    resume();
+    await waitFor(() => expect(screen.queryByText("5,891")).not.toBeInTheDocument());
+    expect(screen.queryByText("客户 A")).not.toBeInTheDocument();
+  });
+
   it("概览展示全量累计指标，并可查看逐 Key 脱敏调用日志", async () => {
     const { calls } = installFetch();
     const user = await login();
