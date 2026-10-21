@@ -424,7 +424,8 @@ describe("内部控制台", () => {
   it("超级管理员可以按厂商、类型、状态和名称筛选全局模型价目", async () => {
     installFetch({ role: "super_admin" });
     const user = await login();
-    const heading = await screen.findByRole("heading", { name: "全局模型价目" });
+    await user.click(screen.getByRole("button", { name: "全局模型价目" }));
+    const heading = await screen.findByRole("heading", { name: "全局模型价目", level: 3 });
     const section = heading.closest("section");
     expect(section).not.toBeNull();
 
@@ -452,7 +453,7 @@ describe("内部控制台", () => {
   it("超级管理员只查看磁盘空间并保存阈值配置", async () => {
     const { calls } = installFetch({ role: "super_admin", monitorPercent: 68.4 });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(screen.getByRole("button", { name: "磁盘与邮件" }));
     expect(await screen.findByRole("heading", { name: /磁盘空间监控/ })).toBeInTheDocument();
     expect(screen.getByText("68.4%")).toBeInTheDocument();
     expect(screen.getByText("C:\\data")).toBeInTheDocument();
@@ -475,7 +476,7 @@ describe("内部控制台", () => {
   it("迁移后的邮件参数可在面板编辑，授权码不回显且保存和测试均需验证密码", async () => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(screen.getByRole("button", { name: "磁盘与邮件" }));
     await user.click(await screen.findByRole("button", { name: "编辑 alerts@example.test" }));
     expect(screen.getByLabelText("SMTP服务器")).toHaveValue("smtp.example.test");
     expect(screen.getByLabelText("SMTP授权码")).toHaveValue("");
@@ -530,19 +531,21 @@ describe("内部控制台", () => {
   it("超级管理员可管理账号和撤销其他会话", async () => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(screen.getByRole("button", { name: "管理员账号" }));
     expect(await screen.findByText("运营管理员")).toBeInTheDocument();
     expect(screen.getByText("10.0.0.8")).toBeInTheDocument();
-    expect(screen.getByText("admin.auth.login")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "重置密码" })[0]).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "撤销" }));
+    await user.click(screen.getByRole("button", { name: "安全审计" }));
+    expect(await screen.findByText("admin.auth.login")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(await screen.findByRole("button", { name: "撤销" }));
     await waitFor(() => expect(calls.some((call) => call.path === "/api/internal/auth/sessions/session-old" && call.init?.method === "DELETE")).toBe(true));
   });
 
   it("服务器备份校验通过后要求密码、TOTP和确认文字才能恢复", async () => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(screen.getByRole("button", { name: "备份与恢复" }));
     expect(await screen.findByText("avatar_proxy-20260819-080000-000001.db", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "恢复" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "校验" }));
@@ -563,7 +566,7 @@ describe("内部控制台", () => {
   it("备份时间带时区偏移时可正常显示", async () => {
     installFetch({ role: "super_admin", backupCreatedAt: "2026-08-19T08:00:00+00:00" });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(screen.getByRole("button", { name: "备份与恢复" }));
     expect(await screen.findByText("avatar_proxy-20260819-080000-000001.db", { exact: false })).toBeInTheDocument();
     expect(screen.queryByText("时间未知")).not.toBeInTheDocument();
   });
@@ -571,7 +574,7 @@ describe("内部控制台", () => {
   it("备份时间异常时显示占位文案而不使页面崩溃", async () => {
     installFetch({ role: "super_admin", backupCreatedAt: "not-a-date" });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(screen.getByRole("button", { name: "备份与恢复" }));
     expect(await screen.findByText("时间未知")).toBeInTheDocument();
     expect(screen.getByText("avatar_proxy-20260819-080000-000001.db", { exact: false })).toBeInTheDocument();
   });
@@ -580,7 +583,7 @@ describe("内部控制台", () => {
     installFetch({ role: "super_admin" });
     const user = await login();
     const writeText = vi.spyOn(navigator.clipboard, "writeText");
-    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(screen.getByRole("button", { name: "管理员账号" }));
     await user.click(await screen.findByRole("button", { name: "创建管理员" }));
     const createDialog = screen.getByRole("dialog", { name: "创建管理员" });
     await user.type(within(createDialog).getByLabelText("用户名"), "operator.new");
@@ -603,7 +606,7 @@ describe("内部控制台", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
-    await user.click(screen.getByRole("button", { name: "安全管理" }));
+    await user.click(screen.getByRole("button", { name: "管理员账号" }));
     const operatorRow = (await screen.findByText("运营管理员")).closest<HTMLElement>(".tableRow")!;
     await user.click(within(operatorRow).getByRole("button", { name: "禁用" }));
     let confirmation = screen.getByRole("dialog", { name: "再次确认超级管理员身份" });
@@ -618,10 +621,85 @@ describe("内部控制台", () => {
     expect(screen.queryByText("运营管理员")).not.toBeInTheDocument();
   });
 
+  it("超级管理员菜单独立展示且只按当前目录加载数据", async () => {
+    const { calls } = installFetch({ role: "super_admin" });
+    const user = await login();
+    const nav = screen.getByRole("navigation", { name: "控制台导航" });
+    const labels = ["安全管理", "管理员账号", "供应商渠道", "全局模型价目", "磁盘与邮件", "备份与恢复", "安全审计"];
+    expect(within(nav).getAllByRole("button").map((button) => button.textContent)).toEqual(labels);
+    await screen.findByText("超级管理员账号已登录");
+    expect(screen.queryByRole("heading", { name: "供应商渠道" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "管理员账号" })).not.toBeInTheDocument();
+    expect(calls.some((call) => /provider\/|backups|system-monitor|admin\/users|admin\/audits/.test(call.path))).toBe(false);
+
+    const pages = [
+      { label: "管理员账号", heading: "管理员账号管理", path: "/api/internal/admin/users" },
+      { label: "供应商渠道", heading: "供应商渠道管理", path: "/api/internal/provider/channels" },
+      { label: "全局模型价目", heading: "全局模型价格管理", path: "/api/internal/billing/rates" },
+      { label: "磁盘与邮件", heading: "磁盘监控与邮件通知", path: "/api/internal/admin/system-monitor/status" },
+      { label: "备份与恢复", heading: "数据备份与恢复", path: "/api/internal/admin/backups/status" },
+      { label: "安全审计", heading: "管理员安全审计记录", path: "/api/internal/admin/audits" },
+    ];
+    for (const page of pages) {
+      const before = calls.length;
+      await user.click(within(nav).getByRole("button", { name: page.label }));
+      expect(await screen.findByRole("heading", { name: page.heading })).toBeInTheDocument();
+      expect(within(nav).getByRole("button", { name: page.label })).toHaveAttribute("aria-current", "page");
+      expect(within(nav).getByRole("button", { name: "安全管理" })).not.toHaveAttribute("aria-current");
+      await waitFor(() => expect(calls.slice(before).some((call) => call.path.startsWith(page.path))).toBe(true));
+      const otherSections = pages.filter((other) => other.label !== page.label);
+      expect(calls.slice(before).some((call) => otherSections.some((other) => call.path.startsWith(other.path)))).toBe(false);
+    }
+    expect(calls.some((call) => call.init?.method && call.init.method !== "GET" && !call.path.endsWith("/login"))).toBe(false);
+  });
+
+  it("离开监控目录清除未保存的密码和草稿，返回后重新读取保存配置", async () => {
+    installFetch({ role: "super_admin" });
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "磁盘与邮件" }));
+    await screen.findByText("68.4%");
+    await user.type(screen.getByLabelText("磁盘监控配置密码"), "temporary-password");
+    await user.clear(screen.getByLabelText("预警阈值"));
+    await user.type(screen.getByLabelText("预警阈值"), "85");
+    await user.click(screen.getByRole("button", { name: "管理员账号" }));
+    expect(screen.queryByLabelText("磁盘监控配置密码")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "磁盘与邮件" }));
+    await screen.findByText("68.4%");
+    expect(screen.getByLabelText("磁盘监控配置密码")).toHaveValue("");
+    expect(screen.getByLabelText("预警阈值")).toHaveValue(80);
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it("独立目录加载失败可重试且不影响其他目录", async () => {
+    installFetch({ role: "super_admin" });
+    const originalFetch = globalThis.fetch;
+    let failMonitor = true;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/system-monitor/status") && failMonitor) {
+        return Promise.resolve(jsonResponse({ error: { message: "磁盘探测暂不可用", code: "monitor_unavailable" } }, 503));
+      }
+      return originalFetch(input, init);
+    }));
+    const user = await login();
+    await user.click(screen.getByRole("button", { name: "磁盘与邮件" }));
+    expect(await screen.findByText("磁盘探测暂不可用")).toHaveAttribute("role", "alert");
+    failMonitor = false;
+    await user.click(screen.getByRole("button", { name: "刷新当前管理页面" }));
+    await screen.findByText("68.4%");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "管理员账号" }));
+    expect(await screen.findByText("运营管理员")).toBeInTheDocument();
+    expect(screen.queryByText("68.4%")).not.toBeInTheDocument();
+  });
+
   it("普通管理员看不到账号管理入口", async () => {
     const { calls } = installFetch({ role: "admin" });
     await login();
     expect(screen.queryByRole("button", { name: "安全管理" })).not.toBeInTheDocument();
+    for (const label of ["管理员账号", "供应商渠道", "全局模型价目", "磁盘与邮件", "备份与恢复", "安全审计"]) {
+      expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
+    }
     expect(screen.getByRole("button", { name: "项目" })).toBeInTheDocument();
     expect(calls.some((call) => call.path === "/api/internal/admin/users")).toBe(false);
   });
@@ -726,7 +804,8 @@ describe("内部控制台", () => {
   it.each(["byteplus_modelark", "modeltop"])("超级管理员创建%s渠道时使用独立Key且无需重复填写项目", async (provider) => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
-    await screen.findByRole("heading", { name: "供应商渠道" });
+    await user.click(screen.getByRole("button", { name: "供应商渠道" }));
+    await screen.findByRole("heading", { name: "供应商渠道", level: 3 });
     await user.click(screen.getByRole("button", { name: "创建渠道" }));
     const dialog = screen.getByRole("dialog", { name: "创建供应商渠道" });
     await user.selectOptions(within(dialog).getByLabelText("供应商"), provider);
@@ -754,7 +833,8 @@ describe("内部控制台", () => {
   it.each([false, true])("CSRF过期只读同步且不自动重放，身份变化=%s", async (identityChanged) => {
     const { calls } = installFetch({ role: "super_admin", channelCreateCsrfOnce: true, channelCreateIdentityChange: identityChanged });
     const user = await login();
-    await screen.findByRole("heading", { name: "供应商渠道" });
+    await user.click(screen.getByRole("button", { name: "供应商渠道" }));
+    await screen.findByRole("heading", { name: "供应商渠道", level: 3 });
     await user.click(screen.getByRole("button", { name: "创建渠道" }));
     const dialog = screen.getByRole("dialog", { name: "创建供应商渠道" });
     await user.type(within(dialog).getByLabelText("渠道名称"), "ModelTop渠道");
@@ -787,7 +867,8 @@ describe("内部控制台", () => {
   it("超级管理员录入供应商凭证时必须再次输入密码和TOTP", async () => {
     const { calls } = installFetch({ role: "super_admin" });
     const user = await login();
-    expect(await screen.findByRole("heading", { name: "供应商渠道" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "供应商渠道" }));
+    expect(await screen.findByRole("heading", { name: "供应商渠道", level: 3 })).toBeInTheDocument();
     expect(screen.getByText("ark****1234")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "改名" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "修改“客户A方舟”名称" }));

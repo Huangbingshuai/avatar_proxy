@@ -25,12 +25,12 @@ import {
   Sparkles,
   Smartphone,
   Trash2,
-  UserRoundCog,
   X,
 } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminPanel from "./admin-panel";
+import { adminSections, isAdminSection, type AdminSection } from "./admin-sections";
 import { AdminApiError, isPasswordChangeRequired, isSessionError, refreshAdminCsrf, requestAdminApi, type AdminApi, type AdminUser } from "./admin-api";
 import ApiCallLogsPanel from "./api-call-logs-panel";
 import BillingPanel from "./billing-panel";
@@ -113,7 +113,7 @@ type QuotaUsage = {
   cleanupObjects: CleanupObject[];
 };
 
-type Tab = "overview" | "projects" | "keys" | "logs" | "models" | "prices" | "billing" | "quotas" | "integration" | "admins";
+type Tab = "overview" | "projects" | "keys" | "logs" | "models" | "prices" | "billing" | "quotas" | "integration" | AdminSection;
 type AuthStatus = "checking" | "anonymous" | "password_change_required" | "totp_required" | "totp_setup_required" | "recovery_codes" | "authenticated";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -168,7 +168,7 @@ export default function ConsolePage() {
   const [deletingProject, setDeletingProject] = useState(false);
 
   const tabs = useMemo(() => currentUser?.role === "super_admin"
-    ? [{ id: "admins" as Tab, label: "安全管理", icon: UserRoundCog }]
+    ? adminSections
     : baseTabs, [currentUser?.role]);
 
   const clearSession = useCallback((message = "") => {
@@ -478,7 +478,7 @@ export default function ConsolePage() {
         <nav aria-label="控制台导航">
           {tabs.map((item) => {
             const Icon = item.icon;
-            return <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}><Icon size={18} />{item.label}</button>;
+            return <button key={item.id} className={tab === item.id ? "active" : ""} aria-current={tab === item.id ? "page" : undefined} onClick={() => setTab(item.id)}><Icon size={18} />{item.label}</button>;
           })}
         </nav>
         <div className="sidebarFoot">
@@ -507,7 +507,7 @@ export default function ConsolePage() {
         {currentUser?.role !== "super_admin" && tab === "billing" && <BillingPanel projects={projects} adminApi={adminApi} />}
         {currentUser?.role !== "super_admin" && tab === "quotas" && <QuotaPanel projects={projects} apiKeys={apiKeys} events={quotaEvents} audits={quotaAudits} adminApi={adminApi} onChanged={() => loadAll()} />}
         {currentUser?.role !== "super_admin" && tab === "integration" && <IntegrationPanel />}
-        {tab === "admins" && currentUser?.role === "super_admin" && <AdminPanel currentUser={currentUser} adminApi={adminApi} onRestored={(message) => clearSession(message)} onUserChanged={setCurrentUser} />}
+        {isAdminSection(tab) && currentUser?.role === "super_admin" && <AdminPanel key={tab} section={tab} currentUser={currentUser} adminApi={adminApi} onRestored={(message) => clearSession(message)} onUserChanged={setCurrentUser} />}
       </section>
 
       {authStatus === "checking" && <div className="modalBackdrop"><div className="unlockCard authChecking"><LoaderCircle size={27} className="spin" /><h2>正在验证会话</h2><p>请稍候，系统正在确认当前管理员身份。</p></div></div>}

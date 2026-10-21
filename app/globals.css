@@ -31,7 +31,7 @@ code, pre, .mono { font-family: var(--font-geist-mono), Consolas, monospace; }
 .brand strong, .brand small { display: block; }
 .brand strong { font-size: 15px; letter-spacing: .2px; }
 .brand small { margin-top: 3px; color: #b8cec6; font-size: 11px; }
-.sidebar nav { margin-top: 26px; display: grid; gap: 7px; }
+.sidebar nav { margin-top: 26px; display: grid; gap: 7px; min-height: 0; overflow-y: auto; }
 .sidebar nav button { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; border-radius: 10px; padding: 12px 14px; background: transparent; color: #c7d9d2; text-align: left; font-size: 14px; }
 .sidebar nav button svg { color: #89aa9f; }
 .sidebar nav button:hover { background: rgba(255,255,255,.08); color: #fff; }
@@ -254,6 +254,7 @@ label > small { color: #8b908a; font-size: 10px; font-weight: 400; line-height: 
 .recoveryConfirm input { width: 16px !important; height: 16px; flex: 0 0 auto; }
 .adminConsole { display: grid; gap: 18px; }
 .adminConsole .pageIntro { margin-bottom: 0; }
+.adminLoading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .panelHeadActions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex: 0 0 auto; }
 .adminInlineError { margin: 0; }
 .securityAlertStack { display: grid; gap: 9px; }

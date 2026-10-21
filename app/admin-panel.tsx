@@ -8,6 +8,7 @@ import GlobalModelRatesPanel from "./global-model-rates-panel";
 import ProviderChannelsPanel from "./provider-channels-panel";
 import MonitorEmailSettingsForm, { type MonitorEmailSettings } from "./monitor-email-settings";
 import AdminLoginPolicy from "./admin-login-policy";
+import { adminSections, type AdminSection } from "./admin-sections";
 
 type AdminAudit = {
   id: number;
@@ -147,7 +148,7 @@ function diskLevelLabel(level?: DiskSample["level"] | null) {
   return "正常";
 }
 
-export default function AdminPanel({ currentUser, adminApi, onRestored, onUserChanged }: { currentUser: AdminUser; adminApi: AdminApi; onRestored: (message: string) => void; onUserChanged?: (user: AdminUser) => void }) {
+export default function AdminPanel({ section, currentUser, adminApi, onRestored, onUserChanged }: { section: AdminSection; currentUser: AdminUser; adminApi: AdminApi; onRestored: (message: string) => void; onUserChanged?: (user: AdminUser) => void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [audits, setAudits] = useState<AdminAudit[]>([]);
@@ -182,24 +183,29 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
     setLoading(true);
     setError("");
     try {
-      const [userData, sessionData, auditData, alertData, backupData, backupListData, monitorData] = await Promise.all([
-        adminApi("/api/internal/admin/users"),
-        adminApi("/api/internal/auth/sessions"),
-        adminApi("/api/internal/admin/audits?limit=100"),
-        adminApi("/api/internal/admin/security-alerts?limit=100"),
-        adminApi("/api/internal/admin/backups/status"),
-        adminApi("/api/internal/admin/backups"),
-        adminApi("/api/internal/admin/system-monitor/status").catch(() => null),
-      ]);
-      setUsers((userData.users ?? []) as AdminUser[]);
-      setSessions((sessionData.sessions ?? []) as AdminSession[]);
-      setAudits((auditData.audits ?? []) as AdminAudit[]);
-      setAlerts((alertData.alerts ?? []) as SecurityAlert[]);
-      setBackup(backupData as unknown as BackupStatus);
-      setBackups((backupListData.backups ?? []) as BackupItem[]);
-      const nextMonitor = monitorData as unknown as DiskMonitorStatus | null;
-      setMonitorStatus(nextMonitor);
-      if (nextMonitor) {
+      if (section === "admin-users") {
+        const data = await adminApi("/api/internal/admin/users");
+        setUsers((data.users ?? []) as AdminUser[]);
+      } else if (section === "admins") {
+        const [sessionData, alertData] = await Promise.all([
+          adminApi("/api/internal/auth/sessions"),
+          adminApi("/api/internal/admin/security-alerts?limit=100"),
+        ]);
+        setSessions((sessionData.sessions ?? []) as AdminSession[]);
+        setAlerts((alertData.alerts ?? []) as SecurityAlert[]);
+      } else if (section === "admin-audits") {
+        const data = await adminApi("/api/internal/admin/audits?limit=100");
+        setAudits((data.audits ?? []) as AdminAudit[]);
+      } else if (section === "admin-backups") {
+        const [status, list] = await Promise.all([
+          adminApi("/api/internal/admin/backups/status"),
+          adminApi("/api/internal/admin/backups"),
+        ]);
+        setBackup(status as unknown as BackupStatus);
+        setBackups((list.backups ?? []) as BackupItem[]);
+      } else if (section === "admin-monitor") {
+        const nextMonitor = await adminApi("/api/internal/admin/system-monitor/status") as unknown as DiskMonitorStatus;
+        setMonitorStatus(nextMonitor);
         setMonitorForm({
           enabled: nextMonitor.settings.configuredEnabled,
           warningPercent: String(nextMonitor.settings.warningPercent),
@@ -214,7 +220,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
     } finally {
       setLoading(false);
     }
-  }, [adminApi]);
+  }, [adminApi, section]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadSecurityData(), 0);
@@ -222,13 +228,14 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
   }, [loadSecurityData]);
 
   useEffect(() => {
+    if (section !== "admin-monitor") return;
     const timer = window.setInterval(() => {
       void adminApi("/api/internal/admin/system-monitor/status")
         .then((data) => setMonitorStatus(data as unknown as DiskMonitorStatus))
         .catch(() => undefined);
     }, 60_000);
     return () => window.clearInterval(timer);
-  }, [adminApi]);
+  }, [adminApi, section]);
 
   async function saveMonitorSettings(event: FormEvent) {
     event.preventDefault();
@@ -535,14 +542,20 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
           ? `${sensitiveAction.user.status === "active" ? "禁用" : "启用"}“${sensitiveAction.user.displayName || sensitiveAction.user.username}”${sensitiveAction.user.status === "active" ? "，并立即撤销其全部会话" : ""}。`
           : "";
 
+  const page = adminSections.find((item) => item.id === section)!;
+  const hasOwnRefresh = section === "admin-channels" || section === "admin-rates";
+
   return <div className="content adminConsole">
-    <div className="pageIntro"><div><h2>超级管理员控制中心</h2><p>统一管理账号安全、供应商凭证与全局模型价格；项目账单及日常业务仍由普通管理员处理。</p></div></div>
+    <div className="pageIntro"><div><h2>{page.title}</h2><p>{page.description}</p></div>{!hasOwnRefresh && <button className="iconButton" onClick={() => void loadSecurityData()} disabled={loading || Boolean(busyId)} aria-label="刷新当前管理页面"><RefreshCw size={16} className={loading ? "spin" : ""} /></button>}</div>
     {error && <div className="errorBanner adminInlineError" role="alert">{error}<button onClick={() => setError("")} aria-label="关闭"><X size={15} /></button></div>}
+    {loading && !hasOwnRefresh && <div className="adminLoading" role="status"><LoaderCircle size={16} className="spin" />正在加载{page.label}…</div>}
 
-    <ProviderChannelsPanel adminApi={adminApi} />
+    {section === "admin-channels" && <ProviderChannelsPanel adminApi={adminApi} />}
 
-    <GlobalModelRatesPanel adminApi={adminApi} />
+    {section === "admin-rates" && <GlobalModelRatesPanel adminApi={adminApi} />}
 
+    {section === "admins" && <>
+    {!loading && !error && openAlerts.length === 0 && <div className="note" role="status"><ShieldCheck size={16} />当前没有未确认安全告警。</div>}
     {openAlerts.length > 0 && <section className="securityAlertStack" aria-label="未确认安全告警">
       {openAlerts.slice(0, 5).map((alert) => <article className={`securityAlert ${alert.severity}`} key={alert.id}>
         <span><ShieldCheck size={18} /></span><div><b>{alert.message}</b><small>{alert.actor} · {alert.sourceIp || "未知IP"} · {formatTime(alert.createdAt)}</small></div>
@@ -551,8 +564,9 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
     </section>}
 
     <AdminLoginPolicy adminApi={adminApi} onRotate={() => { setError(""); setTotpRotationStage("verify"); }} onUserChanged={onUserChanged} blocked={Boolean(busyId) || totpRotationStage !== null} />
+    </>}
 
-    <section className={`panel adminSection diskMonitorPanel ${diskVisualState}`}>
+    {section === "admin-monitor" && <section className={`panel adminSection diskMonitorPanel ${diskVisualState}`}>
       <div className="panelHead diskMonitorHead"><div><h3><HardDrive size={18} />磁盘空间监控</h3><p>每分钟自动采样；达到阈值后由后端自动发送邮件，不依赖管理员登录。</p></div><span className={`diskState ${diskVisualState}`}><Activity size={14} />{monitorStatus?.health === "disabled" ? "已停用" : monitorStatus?.health === "probe_failed" ? "探测异常" : diskLevelLabel(diskSample?.level)}</span></div>
       <div className="diskOverview">
         <div className="diskGauge"><div className="diskGaugeTrack"><i style={{ width: `${diskPercent}%` }} /></div><div><b>{diskSample ? `${diskSample.usedPercent.toFixed(1)}%` : "等待采样"}</b><small>{diskSample ? `${formatBytes(diskSample.usedBytes)} / ${formatBytes(diskSample.totalBytes)}` : monitorStatus?.lastError || "监控服务启动后将显示实时用量"}</small></div></div>
@@ -577,9 +591,9 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
         </form>
         <MonitorEmailSettingsForm email={monitorStatus?.settings.email} loading={loading} adminApi={adminApi} onSaved={(email) => setMonitorStatus((value) => value ? { ...value, settings: { ...value.settings, email, emailConfigured: email.configured, emailRecipientCount: email.recipients.length } } : value)} />
       </div>
-    </section>
+    </section>}
 
-    <section className="panel adminSection backupPanel">
+    {section === "admin-backups" && <section className="panel adminSection backupPanel">
       <div className="panelHead"><div><h3>SQLite与审计自动备份</h3><p>{backup?.enabled ? `每 ${Math.round((backup.intervalSeconds || 86400) / 3600)} 小时自动执行，保留最近 ${backup.retention} 份。` : "自动备份当前已关闭。"}</p></div><button className="secondary" onClick={() => setSensitiveAction({ kind: "backup" })} disabled={Boolean(busyId)}><DatabaseBackup size={15} />立即备份</button></div>
       <div className="backupSummary"><div><small>最近状态</small><b className={backup?.lastRun?.status === "failed" ? "failed" : ""}>{backup?.lastRun?.status === "success" ? "备份成功" : backup?.lastRun?.status === "failed" ? "备份失败" : "尚未执行"}</b></div><div><small>完成时间</small><b>{formatTime(backup?.lastRun?.completedAt)}</b></div><div><small>数据库 / 审计</small><b>{backup?.lastRun?.databaseBytes ? `${Math.ceil(backup.lastRun.databaseBytes / 1024)} KB` : "—"} / {backup?.lastRun?.auditBytes ? `${Math.ceil(backup.lastRun.auditBytes / 1024)} KB` : "—"}</b></div></div>
       {backup?.lastRun?.error && <div className="formError">{backup.lastRun.error}</div>}
@@ -593,9 +607,9 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
         </article>)}
         {!loading && backups.length === 0 && <div className="emptyRow">暂无可恢复的服务器备份，请先执行一次备份。</div>}
       </div>
-    </section>
+    </section>}
 
-    <section className="panel adminSection">
+    {section === "admin-users" && <section className="panel adminSection">
       <div className="panelHead"><div><h3>管理员账号</h3><p>只有超级管理员能访问本页；普通管理员可使用其他业务管理功能。</p></div><div className="panelHeadActions"><button className="iconButton" onClick={() => void loadSecurityData()} disabled={loading} aria-label="刷新管理员安全信息"><RefreshCw size={16} className={loading ? "spin" : ""} /></button><button className="primary" onClick={() => setShowCreate(true)}><Plus size={16} />创建管理员</button></div></div>
       <div className="dataTable adminTable">
         <div className="tableRow tableHead"><span>管理员</span><span>角色</span><span>状态</span><span>最后登录</span><span>来源 IP</span><span>操作</span></div>
@@ -617,9 +631,9 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
         </div>)}
         {!loading && !users.length && <div className="emptyRow">暂无管理员账号</div>}
       </div>
-    </section>
+    </section>}
 
-    <section className="panel adminSection">
+    {section === "admin-audits" && <section className="panel adminSection">
       <div className="panelHead"><div><h3>管理员安全审计</h3><p>记录登录、改密、账号状态和会话撤销；来源 IP 仅用于追溯，不作为访问限制。</p></div></div>
       <div className="auditList">
         {audits.map((audit) => <div className="auditRow" key={audit.id}>
@@ -629,9 +643,9 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
         </div>)}
         {!loading && !audits.length && <div className="emptyRow">暂无管理员安全审计</div>}
       </div>
-    </section>
+    </section>}
 
-    <section className="panel adminSection">
+    {section === "admins" && <section className="panel adminSection">
       <div className="panelHead"><div><h3>我的登录会话</h3><p>发现不熟悉的设备或来源 IP 时，可立即撤销对应会话。</p></div></div>
       <div className="sessionList">
         {sessions.map((session) => <div className="sessionRow" key={session.id}>
@@ -641,7 +655,7 @@ export default function AdminPanel({ currentUser, adminApi, onRestored, onUserCh
         </div>)}
         {!loading && !sessions.length && <div className="emptyRow">暂无有效会话</div>}
       </div>
-    </section>
+    </section>}
 
     {showCreate && <div className="modalBackdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-admin-title">
       <header><h2 id="create-admin-title">创建管理员</h2><button onClick={() => setShowCreate(false)} aria-label="关闭"><X size={18} /></button></header>
