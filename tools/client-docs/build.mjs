@@ -70,6 +70,8 @@ export async function build() {
   const sources = await loadSources();
   const css = await readFile(path.join(here, 'style.css'), 'utf8');
   const js = await readFile(path.join(here, 'reader.js'), 'utf8');
+  const logo = await readFile(path.join(here, 'ruichi-logo.png'));
+  const logoUrl = `data:image/png;base64,${logo.toString('base64')}`;
   const headings = new Map();
   for (const page of sources) {
     const counts = new Map();
@@ -146,14 +148,14 @@ export async function build() {
   }).join('\n');
   const referenceNav = `<details class="nav-folder"><summary>通用协议参考</summary><div>${sources.filter(p => ['text', 'images', 'videos', 'audio', 'embeddings'].includes(p.id)).map(navLink).join('\n')}</div></details>`;
   const nav = intro + '<p class="nav-label">供应商 API</p>' + modelNav + '<p class="nav-label">其他参考</p>' + referenceNav;
-  const sourceHash = createHash('sha256').update(sources.map(p => p.file + '\n' + p.source).join('\n') + css + js).digest('hex');
+  const sourceHash = createHash('sha256').update(sources.map(p => p.file + '\n' + p.source).join('\n') + css + js).update(logo).digest('hex');
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="description" content="星辰平台 API：模型目录、价格、文本、图片、视频、向量、音频与素材接口参考">
 <meta name="source-hash" content="${sourceHash}"><title>星辰平台 · API 接口文档</title><style>${css}</style></head>
 <body><a class="skip-link" href="#main">跳到文档正文</a>
-<header class="topbar"><a class="brand" href="#start"><span class="brand-mark" aria-hidden="true">星</span><span>星辰平台 <small>开发者文档</small></span></a>
+<header class="topbar"><a class="brand" href="#start"><span class="brand-mark"><img src="${logoUrl}" alt="瑞池传媒" width="32" height="48"></span><span>星辰平台 <small>开发者文档</small></span></a>
 <div class="top-actions"><span class="version">文档 6.0</span><button id="print" type="button">打印 / PDF</button><button id="menu" type="button" aria-controls="sidebar" aria-expanded="false">目录</button></div></header>
 <div class="layout"><aside id="sidebar" aria-label="文档目录"><label class="search-label" for="search">搜索文档</label><div class="search-box"><input id="search" type="search" placeholder="模型、接口、参数或错误码" autocomplete="off"><kbd>/</kbd></div>
 <div id="search-status" role="status" aria-live="polite"></div><nav id="search-results" aria-label="搜索结果" hidden></nav><nav id="navigation" aria-label="模型与素材接口">${nav}</nav>

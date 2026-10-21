@@ -44,6 +44,23 @@ test('HTML is deterministic, self-contained, and both delivery copies are curren
   dom.window.close();
 });
 
+test('brand uses the original embedded Ruichi logo without external image requests or cropping', async t => {
+  const window = reader(t);
+  const mark = window.document.querySelector('.brand-mark');
+  const image = mark.querySelector('img');
+  assert.ok(image);
+  assert.equal(mark.textContent, '');
+  assert.equal(image.alt, '瑞池传媒');
+  assert.equal(image.width, 32);
+  assert.equal(image.height, 48);
+  assert.match(image.src, /^data:image\/png;base64,/);
+  const original = await readFile(path.join(root, 'tools/client-docs/ruichi-logo.png'));
+  assert.deepEqual(Buffer.from(image.src.split(',')[1], 'base64'), original);
+  assert.equal(window.getComputedStyle(image).objectFit, 'contain');
+  assert.equal(window.getComputedStyle(mark).backgroundColor, 'rgba(0, 0, 0, 0)');
+  assert.equal(window.document.querySelectorAll('img:not([src^="data:"])').length, 0);
+});
+
 test('supplier then model navigation includes duplicate aliases without a channel isolation layer', t => {
   const window = reader(t);
   const { document } = window;
