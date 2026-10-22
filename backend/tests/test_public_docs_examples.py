@@ -47,6 +47,12 @@ def mock_provider(provider, calls):
         calls.append(request)
         path = request.url.path
         body = json.loads(request.content) if request.content else {}
+        if provider == "vega":
+            if request.headers["X-TC-Action"] == "CreateAigcVideoTask":
+                return httpx.Response(200, json={"Response": {"TaskId": "mock-video", "RequestId": "mock-request"}})
+            return httpx.Response(200, json={"Response": {"Status": "FINISH", "AigcVideoTask": {
+                "Status": "FINISH", "ErrCode": 0, "Output": {"Usage": {"OutputSeconds": 4, "InputSeconds": 0, "InputImageCount": 0},
+                "FileInfos": [{"FileUrl": "https://example.com/video.mp4", "UsageType": ""}]}}}})
         if path.endswith("/tts/unidirectional/sse"):
             audio = base64.b64encode(b"mock-mp3").decode()
             return httpx.Response(200, text=f'data: {{"code":0,"data":"{audio}"}}\n\n')
@@ -211,7 +217,7 @@ def test_generated_python_examples_execute_offline(monkeypatch):
 def test_supplier_documentation_capabilities_match_effective_backend_catalogue():
     source = "import {supplierCatalog} from './tools/client-docs/build.mjs'; console.log(JSON.stringify(supplierCatalog));"
     variants = json.loads(subprocess.check_output(["node", "--input-type=module", "-e", source], cwd=DOCUMENT.parents[1]))
-    assert len(variants) == 48
+    assert len(variants) == 53
     catalog = {row[0]: row for row in BUILTIN_MODEL_CATALOG}
     for variant in variants:
         assert variant["provider"] == (catalog[variant["id"]][2] if variant["primary"] else "modeltop")

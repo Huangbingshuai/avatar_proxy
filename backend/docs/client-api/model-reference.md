@@ -2,6 +2,555 @@
 
 [文档首页](../../CLIENT_API.md) · [模型目录与价格](models.md) · [素材接口](assets.md)
 
+## Vega（腾讯云点播）
+
+### `vega-1.0-lite`
+
+多模态异步视频
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /api/v3/contents/generations/tasks`
+
+`GET /api/v3/contents/generations/tasks/{taskId}`
+
+异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `vega-1.0-lite`，最长 128 个字符 |
+| `content` | 是 | 文本、图片、视频、音频数组，格式见下方说明 |
+| `duration` | 否 | 4～15秒，支持小数；默认4秒，不支持-1 |
+| `resolution` | 否 | 480p、768p、1080p、2k、4k；默认768p |
+| `ratio` | 否 | 21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9 |
+| `generate_audio` | 否 | 布尔值，默认true |
+| `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
+
+#### 创建示例
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-1.0-lite",
+  "content": [
+    {
+      "type": "text",
+      "text": "晨光下的海面，镜头缓慢推进"
+    }
+  ],
+  "duration": 4,
+  "resolution": "768p",
+  "ratio": "16:9",
+  "generate_audio": true
+}'
+```
+
+#### 素材与生成限制
+
+图片最多9张，视频最多3段，音频最多3段，合计最多12个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。
+
+Lite提示词最多7000字符，默认开启提示词优化，支持单独尾帧。
+
+不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见[Vega接口](vega.md)。
+
+#### 创建响应
+
+```json
+{
+  "id": "vid_example"
+}
+```
+
+#### 查询结果
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。
+
+#### 成功结果示例
+
+```json
+{
+  "id": "vid_example",
+  "model": "vega-1.0-lite",
+  "status": "succeeded",
+  "duration": 4,
+  "content": {
+    "video_url": "https://provider.example.com/result.mp4"
+  },
+  "usage": {
+    "vega": {
+      "InputSeconds": 0,
+      "OutputSeconds": 4
+    }
+  }
+}
+```
+
+usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=vega-1.0-lite" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-1.0-lite` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `vega-1.0-pro`
+
+多模态异步视频
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /api/v3/contents/generations/tasks`
+
+`GET /api/v3/contents/generations/tasks/{taskId}`
+
+异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `vega-1.0-pro`，最长 128 个字符 |
+| `content` | 是 | 文本、图片、视频、音频数组，格式见下方说明 |
+| `duration` | 否 | 4～15秒，支持小数；默认4秒，-1表示智能时长 |
+| `resolution` | 否 | 720p、1080p、2k、4k；默认720p |
+| `ratio` | 否 | 21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9 |
+| `generate_audio` | 否 | 布尔值，默认true |
+| `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
+| `seed` | 否 | 整数-1～2147483647 |
+| `return_last_frame` | 否 | 布尔值；通过content.last_frame_url读取 |
+| `output_format` | 否 | mp4或mov |
+
+#### 创建示例
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-1.0-pro",
+  "content": [
+    {
+      "type": "text",
+      "text": "晨光下的海面，镜头缓慢推进"
+    }
+  ],
+  "duration": 4,
+  "resolution": "720p",
+  "ratio": "16:9",
+  "generate_audio": true
+}'
+```
+
+#### 素材与生成限制
+
+图片最多9张，视频最多3段，音频最多3段，合计最多12个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。
+
+Pro默认关闭提示词优化；真人素材须先完成[Vega素材注册流程](vega.md#素材与真人活体流程)。
+
+不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见[Vega接口](vega.md)。
+
+#### 创建响应
+
+```json
+{
+  "id": "vid_example"
+}
+```
+
+#### 查询结果
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。
+
+#### 成功结果示例
+
+```json
+{
+  "id": "vid_example",
+  "model": "vega-1.0-pro",
+  "status": "succeeded",
+  "duration": 4,
+  "content": {
+    "video_url": "https://provider.example.com/result.mp4"
+  },
+  "usage": {
+    "vega": {
+      "InputSeconds": 0,
+      "OutputSeconds": 4
+    }
+  }
+}
+```
+
+usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=vega-1.0-pro" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-1.0-pro` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `vega-1.0-pro-fast`
+
+多模态异步视频
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /api/v3/contents/generations/tasks`
+
+`GET /api/v3/contents/generations/tasks/{taskId}`
+
+异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `vega-1.0-pro-fast`，最长 128 个字符 |
+| `content` | 是 | 文本、图片、视频、音频数组，格式见下方说明 |
+| `duration` | 否 | 4～15秒，支持小数；默认4秒，-1表示智能时长 |
+| `resolution` | 否 | 720p、1080p、2k、4k；默认720p |
+| `ratio` | 否 | 21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9 |
+| `generate_audio` | 否 | 布尔值，默认true |
+| `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
+| `seed` | 否 | 整数-1～2147483647 |
+| `return_last_frame` | 否 | 布尔值；通过content.last_frame_url读取 |
+| `output_format` | 否 | mp4或mov |
+
+#### 创建示例
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-1.0-pro-fast",
+  "content": [
+    {
+      "type": "text",
+      "text": "晨光下的海面，镜头缓慢推进"
+    }
+  ],
+  "duration": 4,
+  "resolution": "720p",
+  "ratio": "16:9",
+  "generate_audio": true
+}'
+```
+
+#### 素材与生成限制
+
+图片最多9张，视频最多3段，音频最多3段，合计最多12个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。
+
+Pro默认关闭提示词优化；真人素材须先完成[Vega素材注册流程](vega.md#素材与真人活体流程)。
+
+不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见[Vega接口](vega.md)。
+
+#### 创建响应
+
+```json
+{
+  "id": "vid_example"
+}
+```
+
+#### 查询结果
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。
+
+#### 成功结果示例
+
+```json
+{
+  "id": "vid_example",
+  "model": "vega-1.0-pro-fast",
+  "status": "succeeded",
+  "duration": 4,
+  "content": {
+    "video_url": "https://provider.example.com/result.mp4"
+  },
+  "usage": {
+    "vega": {
+      "InputSeconds": 0,
+      "OutputSeconds": 4
+    }
+  }
+}
+```
+
+usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=vega-1.0-pro-fast" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-1.0-pro-fast` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `vega-1.0-pro-mini`
+
+多模态异步视频
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /api/v3/contents/generations/tasks`
+
+`GET /api/v3/contents/generations/tasks/{taskId}`
+
+异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `vega-1.0-pro-mini`，最长 128 个字符 |
+| `content` | 是 | 文本、图片、视频、音频数组，格式见下方说明 |
+| `duration` | 否 | 4～15秒，支持小数；默认4秒，-1表示智能时长 |
+| `resolution` | 否 | 720p、1080p、2k、4k；默认720p |
+| `ratio` | 否 | 21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9 |
+| `generate_audio` | 否 | 布尔值，默认true |
+| `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
+| `seed` | 否 | 整数-1～2147483647 |
+| `return_last_frame` | 否 | 布尔值；通过content.last_frame_url读取 |
+| `output_format` | 否 | mp4或mov |
+
+#### 创建示例
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-1.0-pro-mini",
+  "content": [
+    {
+      "type": "text",
+      "text": "晨光下的海面，镜头缓慢推进"
+    }
+  ],
+  "duration": 4,
+  "resolution": "720p",
+  "ratio": "16:9",
+  "generate_audio": true
+}'
+```
+
+#### 素材与生成限制
+
+图片最多9张，视频最多3段，音频最多3段，合计最多12个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。
+
+Pro默认关闭提示词优化；真人素材须先完成[Vega素材注册流程](vega.md#素材与真人活体流程)。
+
+不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见[Vega接口](vega.md)。
+
+#### 创建响应
+
+```json
+{
+  "id": "vid_example"
+}
+```
+
+#### 查询结果
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。
+
+#### 成功结果示例
+
+```json
+{
+  "id": "vid_example",
+  "model": "vega-1.0-pro-mini",
+  "status": "succeeded",
+  "duration": 4,
+  "content": {
+    "video_url": "https://provider.example.com/result.mp4"
+  },
+  "usage": {
+    "vega": {
+      "InputSeconds": 0,
+      "OutputSeconds": 4
+    }
+  }
+}
+```
+
+usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=vega-1.0-pro-mini" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-1.0-pro-mini` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `vega-1.5-pro`
+
+多模态异步视频
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /api/v3/contents/generations/tasks`
+
+`GET /api/v3/contents/generations/tasks/{taskId}`
+
+异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `vega-1.5-pro`，最长 128 个字符 |
+| `content` | 是 | 文本、图片、视频、音频数组，格式见下方说明 |
+| `duration` | 否 | 4～30秒，支持小数；默认4秒，-1表示智能时长 |
+| `resolution` | 否 | 720p、1080p、2k、4k；默认720p |
+| `ratio` | 否 | 21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9 |
+| `generate_audio` | 否 | 布尔值，默认true |
+| `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
+| `seed` | 否 | 整数-1～2147483647 |
+| `return_last_frame` | 否 | 布尔值；通过content.last_frame_url读取 |
+| `output_format` | 否 | mp4或mov |
+
+#### 创建示例
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-1.5-pro",
+  "content": [
+    {
+      "type": "text",
+      "text": "晨光下的海面，镜头缓慢推进"
+    }
+  ],
+  "duration": 4,
+  "resolution": "720p",
+  "ratio": "16:9",
+  "generate_audio": true
+}'
+```
+
+#### 素材与生成限制
+
+图片最多30张，视频最多10段，音频最多10段，合计最多50个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。
+
+Pro默认关闭提示词优化；真人素材须先完成[Vega素材注册流程](vega.md#素材与真人活体流程)。
+
+不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见[Vega接口](vega.md)。
+
+#### 创建响应
+
+```json
+{
+  "id": "vid_example"
+}
+```
+
+#### 查询结果
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。
+
+#### 成功结果示例
+
+```json
+{
+  "id": "vid_example",
+  "model": "vega-1.5-pro",
+  "status": "succeeded",
+  "duration": 4,
+  "content": {
+    "video_url": "https://provider.example.com/result.mp4"
+  },
+  "usage": {
+    "vega": {
+      "InputSeconds": 0,
+      "OutputSeconds": 4
+    }
+  }
+}
+```
+
+usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=vega-1.5-pro" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-1.5-pro` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
 ## 火山引擎
 
 ### `deepseek-v4-flash`

@@ -17,7 +17,7 @@ from .errors import install_error_handlers
 from .maintenance import MaintenanceGate
 from .provider_relay import ProviderRelay
 from .quota import QuotaManager
-from .routers import admin, ark_compat, assets, auth, billing, internal, openai_compat, providers
+from .routers import admin, ark_compat, assets, auth, billing, internal, openai_compat, providers, vega
 from .storage import TosStorage
 from .system_monitor import DiskMonitor
 from .volcengine import VolcengineClient
@@ -136,6 +136,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(assets.router)
     app.include_router(openai_compat.router)
     app.include_router(ark_compat.router)
+    app.include_router(vega.router)
 
     @app.get("/health", tags=["系统"])
     def health() -> dict[str, str | bool]:

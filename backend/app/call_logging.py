@@ -28,6 +28,8 @@ _SENSITIVE_FIELD_FRAGMENTS = (
     "b64_json",
     "image_data",
     "audio_data",
+    "livenesstoken",
+    "h5link",
 )
 _MODEL_CREATE_PATHS = frozenset(
     {

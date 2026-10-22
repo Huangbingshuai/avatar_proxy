@@ -65,6 +65,7 @@ const MODEL_ICON_OVERRIDES: Record<string, ModelIconKey> = {
 };
 
 const PROVIDER_ICON_KEYS: Record<string, ModelIconKey> = {
+  vega: "tencentCloud",
   openai: "openai",
   anthropic: "anthropic",
   google: "gemini",

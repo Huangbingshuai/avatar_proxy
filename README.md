@@ -290,6 +290,17 @@ uv run --extra test pytest --cov=app --cov-branch --cov-report=term-missing --co
 
 ## 文档导航
 
+### Vega 视频渠道（本地接入）
+
+支持 `vega-1.0-lite`、`vega-1.0-pro`、`vega-1.0-pro-fast`、`vega-1.0-pro-mini`、`vega-1.5-pro`，使用腾讯云VOD的TC3-HMAC-SHA256签名，不是普通Bearer上游。
+
+- `.env` 无Vega专属新增项；只需现有 `MULTI_PROVIDER_ENABLED=true`。超级管理员在“供应商渠道”选择Vega，填写国内/国际站、SubAppId、SecretId及SecretKey。两项Secret一起加密；不要重新生成已有的 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 或 `provider_credentials.key`。
+- 普通管理员为项目选择Vega渠道并启用模型，客户使用原业务Key即可。视频复用本站 `/api/v3/contents/generations/tasks`；Pro素材/活体接口为 `/v1/vega/{action}`。素材按项目、Key、渠道隔离，不能引用火山素材ID。
+- 全局价目按所提供刊例价初始化：国内站人民币，国际站美元按2026-10-22汇率快照 `6.689327` 折算人民币。已生效价格可由超级管理员统一调整；未启用项目不会自动计费。参考视频与Lite额外输入图片按真实上游用量结算，缺失数据待计价。
+- 腾讯云需先开通VOD并申请模型权限，默认通常仅1路并发；渠道“测试”不会自动发起付费生成。真实调用验收需单独授权。素材/活体及供应商存储收费不属于视频自动账单。
+
+客户参数和示例见 [Vega视频与素材](backend/docs/client-api/vega.md)，渠道配置、计量与本地验收见 [Vega视频接入说明](backend/VEGA_RELAY.md)。本批视频接入不包含VL和Image。
+
 | 我需要… | 文档 |
 |---|---|
 | 客户字段、示例与错误码 | [客户API](backend/CLIENT_API.md) · [HTML](backend/CLIENT_API.html) · [模型中转](backend/MODEL_RELAY_API.md) |

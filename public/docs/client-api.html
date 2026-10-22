@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="description" content="星辰平台 API：模型目录、价格、文本、图片、视频、向量、音频与素材接口参考">
-<meta name="source-hash" content="45c3ec729534d75bc01cfb4bd6ff575053dc6869272e226b830142e62e216009"><title>星辰平台 · API 接口文档</title><style>:root{color-scheme:light;--ink:#233a34;--muted:#64746e;--line:#ece5dd;--coral:#d94d3e;--warm:#fff8f3;--green:#174f40}
+<meta name="source-hash" content="058acc6ae3b1b99630cd586f1fbccdae1a8b325565550b1e38212da28b0dfc8d"><title>星辰平台 · API 接口文档</title><style>:root{color-scheme:light;--ink:#233a34;--muted:#64746e;--line:#ece5dd;--coral:#d94d3e;--warm:#fff8f3;--green:#174f40}
 /* Keep the supplied portrait logo intact, including its wordmark. */
 .topbar .brand-mark{width:32px;height:48px;flex:0 0 32px;border-radius:0;background:transparent}.brand-mark img{display:block;width:100%;height:100%;object-fit:contain}
 *{box-sizing:border-box}html{scroll-padding-top:94px}body{margin:0;background:#fff;color:var(--ink);font:15px/1.8 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}button,input{font:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,pre:focus-visible,.table-wrap:focus-visible{outline:3px solid #f4a48c;outline-offset:3px}button{border:1px solid var(--line);border-radius:12px;background:white;padding:7px 13px;color:var(--ink);font-size:12px;font-weight:650}button:hover{background:var(--warm)}
@@ -27,7 +27,12 @@ body{font-size:14px;color:#283044}.topbar{height:66px;padding:0 24px;backdrop-fi
 <div id="search-status" role="status" aria-live="polite"></div><nav id="search-results" aria-label="搜索结果" hidden></nav><nav id="navigation" aria-label="模型与素材接口"><a class="page-link" href="#start" data-page="start" title="快速开始"><span>快速开始</span></a>
 <a class="page-link" href="#basics" data-page="basics" title="鉴权与通用约定"><span>鉴权与通用约定</span></a>
 <a class="page-link" href="#models" data-page="models" title="模型目录与价格"><span>模型目录与价格</span></a>
-<a class="page-link" href="#errors" data-page="errors" title="错误与安全重试"><span>错误与安全重试</span></a><p class="nav-label">供应商 API</p><details class="nav-folder supplier-folder" data-supplier="volcengine"><summary>火山引擎<span>27 模型 / 11 素材</span></summary><div><p class="nav-label">模型接口</p><a class="page-link" href="#model-deepseek-v4-flash" data-page="model-deepseek-v4-flash" title="deepseek-v4-flash"><span>deepseek-v4-flash</span><small class="method method-post">POST</small></a>
+<a class="page-link" href="#errors" data-page="errors" title="错误与安全重试"><span>错误与安全重试</span></a><p class="nav-label">供应商 API</p><details class="nav-folder supplier-folder" data-supplier="vega"><summary>Vega（腾讯云点播）<span>5 模型</span></summary><div><a class="page-link" href="#model-vega-1.0-lite" data-page="model-vega-1.0-lite" title="vega-1.0-lite"><span>vega-1.0-lite</span><small class="method method-post">POST</small></a>
+<a class="page-link" href="#model-vega-1.0-pro" data-page="model-vega-1.0-pro" title="vega-1.0-pro"><span>vega-1.0-pro</span><small class="method method-post">POST</small></a>
+<a class="page-link" href="#model-vega-1.0-pro-fast" data-page="model-vega-1.0-pro-fast" title="vega-1.0-pro-fast"><span>vega-1.0-pro-fast</span><small class="method method-post">POST</small></a>
+<a class="page-link" href="#model-vega-1.0-pro-mini" data-page="model-vega-1.0-pro-mini" title="vega-1.0-pro-mini"><span>vega-1.0-pro-mini</span><small class="method method-post">POST</small></a>
+<a class="page-link" href="#model-vega-1.5-pro" data-page="model-vega-1.5-pro" title="vega-1.5-pro"><span>vega-1.5-pro</span><small class="method method-post">POST</small></a></div></details>
+<details class="nav-folder supplier-folder" data-supplier="volcengine"><summary>火山引擎<span>27 模型 / 11 素材</span></summary><div><p class="nav-label">模型接口</p><a class="page-link" href="#model-deepseek-v4-flash" data-page="model-deepseek-v4-flash" title="deepseek-v4-flash"><span>deepseek-v4-flash</span><small class="method method-post">POST</small></a>
 <a class="page-link" href="#model-deepseek-v4-pro" data-page="model-deepseek-v4-pro" title="deepseek-v4-pro"><span>deepseek-v4-pro</span><small class="method method-post">POST</small></a>
 <a class="page-link" href="#model-glm-5.2" data-page="model-glm-5.2" title="glm-5.2"><span>glm-5.2</span><small class="method method-post">POST</small></a>
 <a class="page-link" href="#model-doubao-seedream-5.0-pro" data-page="model-doubao-seedream-5.0-pro" title="doubao-seedream-5.0-pro"><span>doubao-seedream-5.0-pro</span><small class="method method-post">POST</small></a>
@@ -91,10 +96,11 @@ body{font-size:14px;color:#283044}.topbar{height:66px;padding:0 24px;backdrop-fi
 <a class="page-link" href="#audio" data-page="audio" title="语音与音频"><span>语音与音频</span></a></div></details></nav>
 <div class="sidebar-foot"><span class="dot"></span>HTTP API · Bearer Key<br><code>api.richbest.cn</code></div></aside>
 <main id="main" tabindex="-1"><div class="breadcrumb">开发者文档 <span>/</span> <span id="current-page">快速开始</span></div><noscript><p>当前已展示全部文档；启用 JavaScript 后可使用分类导航、搜索和代码复制。</p></noscript><article class="docs-page" id="start" data-kind="reference" data-label="快速开始"><h1 id="start--星辰平台-api-文档">星辰平台 API 文档</h1>
-<p>版本：6.0 · 更新日期：2026-10-16</p>
+<p>版本：6.1 · 更新日期：2026-10-22</p>
 <p>统一调用文本、图片、视频、向量和音频模型，并管理项目素材。正式地址：<code>https://api.richbest.cn</code>。</p>
 <p>你只需要管理员签发的业务 API Key。需要使用哪个模型，请联系管理员为项目开通；项目下现有有效 Key 无需重新签发。可用型号及能力以 <code>/v1/models</code> 为准，人民币税前价目以 <code>/v1/pricing</code> 为准。</p>
 <p><a href="#start">HTML 阅读版</a> · <a href="#models--模型与接口对照表">模型与接口对照表</a> · <a href="#errors">错误与安全重试</a></p>
+<p>新增<a href="#vega">Vega视频与素材</a>：5个视频版本统一使用本站视频创建/查询接口，Pro素材与活体流程使用 <code>POST /v1/vega/{action}</code>。Vega与火山素材ID不能混用；调用方始终只使用业务Key。</p>
 <h2 id="start--快速开始">快速开始</h2>
 <h3 id="start--准备业务-key">准备业务 Key</h3>
 <p>以下 curl 示例使用 Bash，在你自己的服务器执行。不要将 Key 放进浏览器、公开仓库或 URL。</p>
@@ -865,11 +871,22 @@ with urllib.request.urlopen(request, timeout=1900) as response:
 <td><code>GET /api/v3/contents/generations/tasks/{taskId}</code></td>
 <td><a href="#model-dreamina-seedance-2.0-mini-filter-off--dreamina-seedance-20-mini-filter-off">查看接口</a></td>
 </tr>
+<tr>
+<td>创建和查询视频任务必须使用同一枚业务 API Key；支持取消的供应商同样要求使用创建任务时的业务 Key。</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
 </tbody></table></div>
-<p>创建和查询视频任务必须使用同一枚业务 API Key；支持取消的供应商同样要求使用创建任务时的业务 Key。</p>
 <p>模型是否已经对当前项目开放，以 <code>/v1/models</code> 的实时返回结果为准。请求未开通的模型会返回 <code>403 model_not_allowed</code>，请联系管理员确认项目授权和供应商渠道状态。</p>
+<p>| <code>vega-1.0-lite</code> | Vega多模态异步视频 | <code>POST /api/v3/contents/generations/tasks</code> | <code>GET /api/v3/contents/generations/tasks/{taskId}</code> | <a href="#model-vega-1.0-lite--vega-10-lite">查看接口</a> |
+| <code>vega-1.0-pro</code> | Vega多模态异步视频 | <code>POST /api/v3/contents/generations/tasks</code> | <code>GET /api/v3/contents/generations/tasks/{taskId}</code> | <a href="#model-vega-1.0-pro--vega-10-pro">查看接口</a> |
+| <code>vega-1.0-pro-fast</code> | Vega多模态异步视频 | <code>POST /api/v3/contents/generations/tasks</code> | <code>GET /api/v3/contents/generations/tasks/{taskId}</code> | <a href="#model-vega-1.0-pro-fast--vega-10-pro-fast">查看接口</a> |
+| <code>vega-1.0-pro-mini</code> | Vega多模态异步视频 | <code>POST /api/v3/contents/generations/tasks</code> | <code>GET /api/v3/contents/generations/tasks/{taskId}</code> | <a href="#model-vega-1.0-pro-mini--vega-10-pro-mini">查看接口</a> |
+| <code>vega-1.5-pro</code> | Vega多模态异步视频 | <code>POST /api/v3/contents/generations/tasks</code> | <code>GET /api/v3/contents/generations/tasks/{taskId}</code> | <a href="#model-vega-1.5-pro--vega-15-pro">查看接口</a> |</p>
 <p>每个“查看接口”包含该模型的请求、参数、示例与结果；无需先猜测应使用哪类接口。</p>
-<p>左侧按供应商分组，再选择模型。<code>gpt-image-2</code> 同时出现在 MaxModel 和 ModelTop 下；四个标准 <code>dreamina-seedance-*</code> 型号同时出现在 BytePlus 和 ModelTop 下。它们的公开路径及模型别名相同，但数量限制、参数、结果格式或取消能力可能不同，请按当前项目的 <code>provider</code> 阅读。<code>-filter-off</code> 型号只列在 ModelTop 下。</p>
+<p>左侧按供应商分组，再选择模型。<code>gpt-image-2</code> 同时出现在 MaxModel 和 ModelTop 下；四个标准 <code>dreamina-seedance-*</code> 型号同时出现在 BytePlus 和 ModelTop 下。它们的公开路径及模型别名相同，但数量限制、参数、结果格式或取消能力可能不同，请按当前项目的 <code>provider</code> 阅读。<code>-filter-off</code> 型号只列在 ModelTop 下。Vega独立列在“Vega（腾讯云点播）”下。</p>
 <h2 id="models--查询模型价格">查询模型价格</h2>
 <div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/v1/pricing&quot; \
   -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
@@ -2518,6 +2535,304 @@ request = urllib.request.Request(
 with urllib.request.urlopen(request, timeout=1900) as response:
     print(json.loads(response.read()))</code></pre></div>
 <p>响应可能包含临时 <code>url</code> 或音频 Base64。临时 URL 由供应商托管并可能过期，调用方应及时下载；中转站不会自动归档媒体。</p>
+</article>
+<article class="docs-page" id="vega" data-kind="reference" data-label="Vega 视频与素材"><h1 id="vega--vega-视频与素材">Vega 视频与素材</h1>
+<p><a href="#start">文档首页</a> · <a href="#models">模型目录</a> · <a href="#errors">错误与重试</a></p>
+<p>先联系管理员为项目开通模型。调用方只填写星辰平台业务 Key，不传腾讯云凭证、站点、SubAppId、ModelName、ModelVersion或渠道；这些由服务端绑定决定。Vega素材与火山素材是两个独立系统，不能混用素材ID。</p>
+<h2 id="vega--视频模型">视频模型</h2>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>model</th>
+<th>输出时长</th>
+<th>分辨率（小写）</th>
+<th>智能时长</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>vega-1.0-lite</code></td>
+<td>4～15秒</td>
+<td>480p、768p、1080p、2k、4k</td>
+<td>不支持</td>
+</tr>
+<tr>
+<td><code>vega-1.0-pro</code></td>
+<td>4～15秒</td>
+<td>720p、1080p、2k、4k</td>
+<td>duration=-1</td>
+</tr>
+<tr>
+<td><code>vega-1.0-pro-fast</code></td>
+<td>4～15秒</td>
+<td>720p、1080p、2k、4k</td>
+<td>duration=-1</td>
+</tr>
+<tr>
+<td><code>vega-1.0-pro-mini</code></td>
+<td>4～15秒</td>
+<td>720p、1080p、2k、4k</td>
+<td>duration=-1</td>
+</tr>
+<tr>
+<td><code>vega-1.5-pro</code></td>
+<td>4～30秒</td>
+<td>720p、1080p、2k、4k</td>
+<td>duration=-1</td>
+</tr>
+</tbody></table></div>
+<p>使用 <code>POST /api/v3/contents/generations/tasks</code> 创建，<code>GET /api/v3/contents/generations/tasks/{taskId}</code> 查询。请求结构与本站其他视频一致，但能力与附加字段不同。每个模型的完整示例见<a href="#model-deepseek-v4-flash">独立模型参考</a>。Vega不支持取消任务、回调、任意上游Action透传或永久存储；任务固定使用提交时的渠道与密钥版本。</p>
+<h2 id="vega--vega专用参数">Vega专用参数</h2>
+<p>以下选项放在顶层 <code>vega</code> 对象中，服务端负责生成供应商要求的双层JSON字符串，调用方不要手写ExtInfo。</p>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>模型</th>
+<th>值与默认行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>enhance_prompt</code></td>
+<td>全部</td>
+<td>auto、enable、disable；Lite默认enable，Pro默认disable</td>
+</tr>
+<tr>
+<td><code>moderation_mode</code></td>
+<td>全部</td>
+<td>Moderation_L1、Moderation_L2；默认L1</td>
+</tr>
+<tr>
+<td><code>generate_mode</code></td>
+<td>Lite</td>
+<td>Standard、Fast、StandardMovie</td>
+</tr>
+<tr>
+<td><code>video_quality_mode</code></td>
+<td>Lite</td>
+<td>Standard、Fast、SuperFast</td>
+</tr>
+<tr>
+<td><code>task_type</code></td>
+<td>1.5 Pro</td>
+<td>auto、reference、edit、extend；edit需要参考视频、ratio=adaptive和duration=-1；extend需要参考视频和ratio=adaptive</td>
+</tr>
+</tbody></table></div>
+<p>服务端始终请求ReturnVegaUsage=true，不接受客户端关闭真实用量采集。Pro支持顶层 <code>return_last_frame</code>、<code>output_format</code>（mp4/mov）与 <code>seed</code>（整数-1～2147483647）；Lite不支持这三个字段。首尾帧模式遵循输入图片比例；Lite参考模式允许adaptive。</p>
+<h2 id="vega--参考媒体规格">参考媒体规格</h2>
+<p>所有媒体必须是供应商可访问的HTTP(S) URL，或本Key、本渠道注册得到的asset://素材。本站不下载远程媒体做探测，不保证只凭扩展名就能满足真实编码要求；供应商会校验实际文件。</p>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>限制</th>
+<th>Lite</th>
+<th>1.0 Pro / Fast / Mini</th>
+<th>1.5 Pro</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>图片数/视频数/音频数/总文件数</td>
+<td>9/3/3/12</td>
+<td>9/3/3/12</td>
+<td>30/10/10/50</td>
+</tr>
+<tr>
+<td>图片尺寸</td>
+<td>每边256～5760</td>
+<td>每边300～6000，宽高比0.4～2.5</td>
+<td>同1.0 Pro</td>
+</tr>
+<tr>
+<td>图片格式</td>
+<td>jpg/jpeg/png/webp/heic/heif</td>
+<td>jpeg/png/webp/bmp/tiff/gif/heic/heif</td>
+<td>同1.0 Pro</td>
+</tr>
+<tr>
+<td>单图片大小</td>
+<td>≤30MB</td>
+<td>&lt;30MB</td>
+<td>&lt;30MB</td>
+</tr>
+<tr>
+<td>视频时长</td>
+<td>每段2～15秒，总计≤15秒</td>
+<td>每段2～15秒，总计≤15秒</td>
+<td>每段2～30秒；文档未明确总时长上限</td>
+</tr>
+<tr>
+<td>单视频大小</td>
+<td>≤50MB</td>
+<td>≤50MB</td>
+<td>≤200MB</td>
+</tr>
+<tr>
+<td>视频格式</td>
+<td>H.264/H.265；音轨AAC/MP3</td>
+<td>mp4/mov，24～60fps</td>
+<td>mp4/mov，H.264/H.265，音轨AAC/MP3，24～60fps</td>
+</tr>
+<tr>
+<td>视频尺寸</td>
+<td>每边256～5760，宽高比0.4～2.5</td>
+<td>每边300～6000，总像素409600～2086876，480p/720p/1080p</td>
+<td>每边300～6000，总像素409600～8295044，480p～4k</td>
+</tr>
+<tr>
+<td>音频</td>
+<td>wav/mp3，每段2～15秒，总计≤15秒，单个≤15MB</td>
+<td>同Lite</td>
+<td>wav/mp3，每段2～30秒，总计≤30秒，单个≤15MB</td>
+</tr>
+</tbody></table></div>
+<p>所有版本音频都必须搭配图片或视频。首帧、尾帧各最多一张，不能与参考图片/视频/音频混用。Lite提示词最多7000字符。Pro真人素材可能需要下述注册；不要通过伪造IsRealPerson绕过供应商审核。</p>
+<h2 id="vega--素材与真人活体流程">素材与真人活体流程</h2>
+<p>仅Pro系列提供以下接口；统一为 <code>POST /v1/vega/{action}</code>，JSON中必填 <code>model</code>，其余字段沿用下表大小写。未知字段、SubAppId、凭证、回调URL、ExtInfo均拒绝。每个操作都使用业务Bearer Key，并记录调用日志。创建操作必须提供 <code>Idempotency-Key</code>，相同业务Key、相同操作、相同请求只提交一次；结果未确认时禁止换键重试。</p>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>action</th>
+<th>请求字段（除model）</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CreateAigcLivenessValidate</td>
+<td>无</td>
+<td>国内站发起活体认证；返回Response.H5Link和Response.LivenessToken</td>
+</tr>
+<tr>
+<td>DescribeAigcLivenessValidateResult</td>
+<td>LivenessToken</td>
+<td>先在H5Link完成认证；成功返回Status=DONE和GroupId</td>
+</tr>
+<tr>
+<td>CreateAigcMaterial</td>
+<td>FileInfo、AssetType；可选GroupId、AssetName、IsRealPerson、GroupName、GroupDescription</td>
+<td>FileInfo为Type=Url和Url；AssetType为Image/Video/Audio；IsRealPerson是字符串True/False，默认False。非真人省略GroupId则本站生成隔离组；真人必须使用认证返回的GroupId</td>
+</tr>
+<tr>
+<td>DescribeTaskDetail</td>
+<td>TaskId</td>
+<td>使用本站创建素材时返回的id，不是上游Response.TaskId；从Response.CreateAigcMaterialTask读取状态和Output.AssetId</td>
+</tr>
+<tr>
+<td>DescribeAigcMaterial</td>
+<td>AssetId</td>
+<td>查询本Key登记的素材</td>
+</tr>
+<tr>
+<td>ModifyAigcMaterial</td>
+<td>AssetId、AssetName</td>
+<td>修改素材名称</td>
+</tr>
+<tr>
+<td>DeleteAigcMaterial</td>
+<td>AssetId或GroupId，二选一</td>
+<td>删除单素材或整个组；删除组会删除组内全部素材</td>
+</tr>
+<tr>
+<td>ModifyAigcMaterialGroup</td>
+<td>GroupId；可选GroupName、GroupDescription</td>
+<td>修改素材组</td>
+</tr>
+<tr>
+<td>DescribeAigcMaterialGroup</td>
+<td>GroupId</td>
+<td>查询素材组</td>
+</tr>
+<tr>
+<td>DescribeAigcMaterialList</td>
+<td>GroupId；可选AssetType、Limit、Offset</td>
+<td>Limit=1～300，默认10；Offset≥0且为Limit整数倍</td>
+</tr>
+</tbody></table></div>
+<p>素材、组与活体令牌按项目、业务Key、Vega渠道隔离；不支持直接使用腾讯云控制台或其他Key创建的资源ID。素材属于供应商账户，但通过本站创建后才能在本站安全引用。国际站真人素材按供应商说明使用IsRealPerson=False，无需国内站活体接口；国内站真人应先完成活体认证，或由供应商明确开通免活体权限。</p>
+<h3 id="vega--创建非真人素材">创建非真人素材</h3>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/v1/vega/CreateAigcMaterial&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Idempotency-Key: replace-with-unique-material-order&quot; \
+  -d &#39;{&quot;model&quot;:&quot;vega-1.0-pro&quot;,&quot;FileInfo&quot;:{&quot;Type&quot;:&quot;Url&quot;,&quot;Url&quot;:&quot;https://example.com/reference.png&quot;},&quot;AssetType&quot;:&quot;Image&quot;,&quot;AssetName&quot;:&quot;参考角色&quot;,&quot;IsRealPerson&quot;:&quot;False&quot;}&#39;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/v1/vega/CreateAigcMaterial&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;,
+  &quot;Content-Type&quot;: &quot;application/json&quot;,
+  &quot;Idempotency-Key&quot;: &quot;replace-with-unique-material-order&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const body = {
+  &quot;model&quot;: &quot;vega-1.0-pro&quot;,
+  &quot;FileInfo&quot;: {
+    &quot;Type&quot;: &quot;Url&quot;,
+    &quot;Url&quot;: &quot;https://example.com/reference.png&quot;
+  },
+  &quot;AssetType&quot;: &quot;Image&quot;,
+  &quot;AssetName&quot;: &quot;参考角色&quot;,
+  &quot;IsRealPerson&quot;: &quot;False&quot;
+};
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;POST&quot;, headers,
+  body: JSON.stringify(body),
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/v1/vega/CreateAigcMaterial&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;,\&quot;Content-Type\&quot;:\&quot;application/json\&quot;,\&quot;Idempotency-Key\&quot;:\&quot;replace-with-unique-material-order\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+payload = json.loads(&quot;{\&quot;model\&quot;:\&quot;vega-1.0-pro\&quot;,\&quot;FileInfo\&quot;:{\&quot;Type\&quot;:\&quot;Url\&quot;,\&quot;Url\&quot;:\&quot;https://example.com/reference.png\&quot;},\&quot;AssetType\&quot;:\&quot;Image\&quot;,\&quot;AssetName\&quot;:\&quot;参考角色\&quot;,\&quot;IsRealPerson\&quot;:\&quot;False\&quot;}&quot;)
+data = json.dumps(payload, ensure_ascii=False).encode(&quot;utf-8&quot;)
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;POST&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>把示例URL替换为真实可访问的素材地址。创建返回 <code>{&quot;id&quot;:&quot;tsk_...&quot;,&quot;Response&quot;:{&quot;TaskId&quot;:&quot;上游ID&quot;,&quot;RequestId&quot;:&quot;...&quot;}}</code>。</p>
+<h3 id="vega--查询素材创建结果">查询素材创建结果</h3>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/v1/vega/DescribeTaskDetail&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#39;{&quot;model&quot;:&quot;vega-1.0-pro&quot;,&quot;TaskId&quot;:&quot;替换为本站tsk_开头的素材任务id&quot;}&#39;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/v1/vega/DescribeTaskDetail&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;,
+  &quot;Content-Type&quot;: &quot;application/json&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const body = {
+  &quot;model&quot;: &quot;vega-1.0-pro&quot;,
+  &quot;TaskId&quot;: &quot;替换为本站tsk_开头的素材任务id&quot;
+};
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;POST&quot;, headers,
+  body: JSON.stringify(body),
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/v1/vega/DescribeTaskDetail&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;,\&quot;Content-Type\&quot;:\&quot;application/json\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+payload = json.loads(&quot;{\&quot;model\&quot;:\&quot;vega-1.0-pro\&quot;,\&quot;TaskId\&quot;:\&quot;替换为本站tsk_开头的素材任务id\&quot;}&quot;)
+data = json.dumps(payload, ensure_ascii=False).encode(&quot;utf-8&quot;)
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;POST&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p><code>Response.CreateAigcMaterialTask.Status=FINISH</code> 且 <code>ErrCode=0</code> 时，从 <code>Output.AssetId</code> 取素材ID。以 <code>asset://</code> 加该ID作为视频content中相应媒体URL，例如 <code>asset://asset-xxx</code>；不是火山的素材ID。创建/活体返回值包含敏感令牌和认证链接，不要公开分享；日志会脱敏这两项。</p>
+<h2 id="vega--计费用量与价格">计费用量与价格</h2>
+<p><code>GET /v1/pricing?model=vega-1.0-pro</code> 查询当前项目所绑定站点的人民币价格。全局价目包含domestic（国内人民币）与international（国际美元按固定汇率折算）两类维度。2026-10-22国际站折算汇率为1 USD=6.689327 CNY，后续可由超级管理员统一更新价格；不会在每次请求时联网换价。</p>
+<ul>
+<li>Lite：真实输出秒数＋真实输入视频秒数，按输出分辨率对应单价；真实输入图片超过5张的部分另收费。</li>
+<li>Pro系列无参考视频：真实输出秒数×无视频输入单价。</li>
+<li>Pro系列有参考视频：（真实输出秒数＋max(真实输入视频秒数，真实输出秒数×2/3)）×有视频输入单价。输入、输出同一分辨率档位。</li>
+<li>仅成功视频计入模型账单；缺失真实InputSeconds、OutputSeconds或Lite图片数时进入待计价，绝不按请求时长补零估算。</li>
+<li>素材注册、活体认证与腾讯云存储等不是上述视频模型价格的一部分；相关供应商收费不承诺免费，第一阶段不纳入本站视频自动计费。</li>
+</ul>
+<p>默认并发通常为1路，提升需联系供应商；Pro需要供应商开通权限。429或超时后保留原幂等键，不自动重发付费创建。</p>
 </article>
 <article class="docs-page" id="assets" data-kind="reference" data-label="素材上传与素材库" data-provider="volcengine_ark"><h1 id="assets--素材接口">素材接口</h1>
 <p><a href="#start">文档首页</a> · <a href="#basics">鉴权与通用约定</a> · <a href="#errors">错误与安全重试</a></p>
@@ -13616,6 +13931,991 @@ request = urllib.request.Request(
 with urllib.request.urlopen(request, timeout=1900) as response:
     print(json.loads(response.read()))</code></pre></div>
 <p>价格查询按名称包含匹配，请从 data 中选择 id 完全等于 <code>dreamina-seedance-2.0-mini-filter-off</code> 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。</p>
+</article>
+<article class="docs-page" id="model-vega-1.0-lite" data-kind="model" data-label="vega-1.0-lite" data-provider="vega"><h1 id="model-vega-1.0-lite--vega-10-lite"><code>vega-1.0-lite</code></h1><div class="endpoint-bar"><span class="method method-post">POST</span><code>/api/v3/contents/generations/tasks</code><button type="button" class="copy-path" data-path="/api/v3/contents/generations/tasks">复制路径</button></div><div class="api-note">生产环境 <code>https://api.richbest.cn</code> · Bearer API Key</div><section class="request-headers"><h2 id="model-vega-1.0-lite--请求头">请求头</h2><div class="field-row"><div><code>Authorization</code><span class="field-type">string</span><b>必需</b></div><p>Bearer YOUR_API_KEY · 使用管理员签发的星辰平台业务 Key</p></div><div class="field-row"><div><code>Content-Type</code><span class="field-type">string</span><b>必需</b></div><p>application/json</p></div></section>
+<p>多模态异步视频</p>
+<p><a href="#basics">鉴权</a> · <a href="#errors">错误与安全重试</a></p>
+<p>需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按<a href="#basics--地址与示例约定">示例约定</a>设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。</p>
+<h2 id="model-vega-1.0-lite--接口">接口</h2>
+<p><code>POST /api/v3/contents/generations/tasks</code></p>
+<p><code>GET /api/v3/contents/generations/tasks/{taskId}</code></p>
+<p>异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。</p>
+<h2 id="model-vega-1.0-lite--请求参数">请求参数</h2>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>必填</th>
+<th>类型与说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>model</code></td>
+<td>是</td>
+<td>固定填写 <code>vega-1.0-lite</code>，最长 128 个字符</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>是</td>
+<td>文本、图片、视频、音频数组，格式见下方说明</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>否</td>
+<td>4～15秒，支持小数；默认4秒，不支持-1</td>
+</tr>
+<tr>
+<td><code>resolution</code></td>
+<td>否</td>
+<td>480p、768p、1080p、2k、4k；默认768p</td>
+</tr>
+<tr>
+<td><code>ratio</code></td>
+<td>否</td>
+<td>21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9</td>
+</tr>
+<tr>
+<td><code>generate_audio</code></td>
+<td>否</td>
+<td>布尔值，默认true</td>
+</tr>
+<tr>
+<td><code>vega</code></td>
+<td>否</td>
+<td>模型专用选项对象，见<a href="#vega">Vega参数与素材流程</a></td>
+</tr>
+</tbody></table></div>
+<h2 id="model-vega-1.0-lite--创建示例">创建示例</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Idempotency-Key: customer-order-unique-id&quot; \
+  -d &#39;{
+  &quot;model&quot;: &quot;vega-1.0-lite&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;768p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+}&#39;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;,
+  &quot;Content-Type&quot;: &quot;application/json&quot;,
+  &quot;Idempotency-Key&quot;: &quot;customer-order-unique-id&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const body = {
+  &quot;model&quot;: &quot;vega-1.0-lite&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;768p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+};
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;POST&quot;, headers,
+  body: JSON.stringify(body),
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;,\&quot;Content-Type\&quot;:\&quot;application/json\&quot;,\&quot;Idempotency-Key\&quot;:\&quot;customer-order-unique-id\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+payload = json.loads(&quot;{\&quot;model\&quot;:\&quot;vega-1.0-lite\&quot;,\&quot;content\&quot;:[{\&quot;type\&quot;:\&quot;text\&quot;,\&quot;text\&quot;:\&quot;晨光下的海面，镜头缓慢推进\&quot;}],\&quot;duration\&quot;:4,\&quot;resolution\&quot;:\&quot;768p\&quot;,\&quot;ratio\&quot;:\&quot;16:9\&quot;,\&quot;generate_audio\&quot;:true}&quot;)
+data = json.dumps(payload, ensure_ascii=False).encode(&quot;utf-8&quot;)
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;POST&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<h2 id="model-vega-1.0-lite--素材与生成限制">素材与生成限制</h2>
+<p>图片最多9张，视频最多3段，音频最多3段，合计最多12个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。</p>
+<p>Lite提示词最多7000字符，默认开启提示词优化，支持单独尾帧。</p>
+<p>不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见<a href="#vega">Vega接口</a>。</p>
+<h2 id="model-vega-1.0-lite--创建响应">创建响应</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;
+}</code></pre></div>
+<h2 id="model-vega-1.0-lite--查询结果">查询结果</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。</p>
+<h2 id="model-vega-1.0-lite--成功结果示例">成功结果示例</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;,
+  &quot;model&quot;: &quot;vega-1.0-lite&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;,
+  &quot;duration&quot;: 4,
+  &quot;content&quot;: {
+    &quot;video_url&quot;: &quot;https://provider.example.com/result.mp4&quot;
+  },
+  &quot;usage&quot;: {
+    &quot;vega&quot;: {
+      &quot;InputSeconds&quot;: 0,
+      &quot;OutputSeconds&quot;: 4
+    }
+  }
+}</code></pre></div>
+<p>usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。</p>
+<h2 id="model-vega-1.0-lite--查询模型价格">查询模型价格</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/v1/pricing?model=vega-1.0-lite&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/v1/pricing?model=vega-1.0-lite&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/v1/pricing?model=vega-1.0-lite&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>价格查询按名称包含匹配，请从 data 中选择 id 完全等于 <code>vega-1.0-lite</code> 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。</p>
+</article>
+<article class="docs-page" id="model-vega-1.0-pro" data-kind="model" data-label="vega-1.0-pro" data-provider="vega"><h1 id="model-vega-1.0-pro--vega-10-pro"><code>vega-1.0-pro</code></h1><div class="endpoint-bar"><span class="method method-post">POST</span><code>/api/v3/contents/generations/tasks</code><button type="button" class="copy-path" data-path="/api/v3/contents/generations/tasks">复制路径</button></div><div class="api-note">生产环境 <code>https://api.richbest.cn</code> · Bearer API Key</div><section class="request-headers"><h2 id="model-vega-1.0-pro--请求头">请求头</h2><div class="field-row"><div><code>Authorization</code><span class="field-type">string</span><b>必需</b></div><p>Bearer YOUR_API_KEY · 使用管理员签发的星辰平台业务 Key</p></div><div class="field-row"><div><code>Content-Type</code><span class="field-type">string</span><b>必需</b></div><p>application/json</p></div></section>
+<p>多模态异步视频</p>
+<p><a href="#basics">鉴权</a> · <a href="#errors">错误与安全重试</a></p>
+<p>需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按<a href="#basics--地址与示例约定">示例约定</a>设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。</p>
+<h2 id="model-vega-1.0-pro--接口">接口</h2>
+<p><code>POST /api/v3/contents/generations/tasks</code></p>
+<p><code>GET /api/v3/contents/generations/tasks/{taskId}</code></p>
+<p>异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。</p>
+<h2 id="model-vega-1.0-pro--请求参数">请求参数</h2>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>必填</th>
+<th>类型与说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>model</code></td>
+<td>是</td>
+<td>固定填写 <code>vega-1.0-pro</code>，最长 128 个字符</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>是</td>
+<td>文本、图片、视频、音频数组，格式见下方说明</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>否</td>
+<td>4～15秒，支持小数；默认4秒，-1表示智能时长</td>
+</tr>
+<tr>
+<td><code>resolution</code></td>
+<td>否</td>
+<td>720p、1080p、2k、4k；默认720p</td>
+</tr>
+<tr>
+<td><code>ratio</code></td>
+<td>否</td>
+<td>21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9</td>
+</tr>
+<tr>
+<td><code>generate_audio</code></td>
+<td>否</td>
+<td>布尔值，默认true</td>
+</tr>
+<tr>
+<td><code>vega</code></td>
+<td>否</td>
+<td>模型专用选项对象，见<a href="#vega">Vega参数与素材流程</a></td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td>否</td>
+<td>整数-1～2147483647</td>
+</tr>
+<tr>
+<td><code>return_last_frame</code></td>
+<td>否</td>
+<td>布尔值；通过content.last_frame_url读取</td>
+</tr>
+<tr>
+<td><code>output_format</code></td>
+<td>否</td>
+<td>mp4或mov</td>
+</tr>
+</tbody></table></div>
+<h2 id="model-vega-1.0-pro--创建示例">创建示例</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Idempotency-Key: customer-order-unique-id&quot; \
+  -d &#39;{
+  &quot;model&quot;: &quot;vega-1.0-pro&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;720p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+}&#39;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;,
+  &quot;Content-Type&quot;: &quot;application/json&quot;,
+  &quot;Idempotency-Key&quot;: &quot;customer-order-unique-id&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const body = {
+  &quot;model&quot;: &quot;vega-1.0-pro&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;720p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+};
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;POST&quot;, headers,
+  body: JSON.stringify(body),
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;,\&quot;Content-Type\&quot;:\&quot;application/json\&quot;,\&quot;Idempotency-Key\&quot;:\&quot;customer-order-unique-id\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+payload = json.loads(&quot;{\&quot;model\&quot;:\&quot;vega-1.0-pro\&quot;,\&quot;content\&quot;:[{\&quot;type\&quot;:\&quot;text\&quot;,\&quot;text\&quot;:\&quot;晨光下的海面，镜头缓慢推进\&quot;}],\&quot;duration\&quot;:4,\&quot;resolution\&quot;:\&quot;720p\&quot;,\&quot;ratio\&quot;:\&quot;16:9\&quot;,\&quot;generate_audio\&quot;:true}&quot;)
+data = json.dumps(payload, ensure_ascii=False).encode(&quot;utf-8&quot;)
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;POST&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<h2 id="model-vega-1.0-pro--素材与生成限制">素材与生成限制</h2>
+<p>图片最多9张，视频最多3段，音频最多3段，合计最多12个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。</p>
+<p>Pro默认关闭提示词优化；真人素材须先完成<a href="#vega--素材与真人活体流程">Vega素材注册流程</a>。</p>
+<p>不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见<a href="#vega">Vega接口</a>。</p>
+<h2 id="model-vega-1.0-pro--创建响应">创建响应</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;
+}</code></pre></div>
+<h2 id="model-vega-1.0-pro--查询结果">查询结果</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。</p>
+<h2 id="model-vega-1.0-pro--成功结果示例">成功结果示例</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;,
+  &quot;model&quot;: &quot;vega-1.0-pro&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;,
+  &quot;duration&quot;: 4,
+  &quot;content&quot;: {
+    &quot;video_url&quot;: &quot;https://provider.example.com/result.mp4&quot;
+  },
+  &quot;usage&quot;: {
+    &quot;vega&quot;: {
+      &quot;InputSeconds&quot;: 0,
+      &quot;OutputSeconds&quot;: 4
+    }
+  }
+}</code></pre></div>
+<p>usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。</p>
+<h2 id="model-vega-1.0-pro--查询模型价格">查询模型价格</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/v1/pricing?model=vega-1.0-pro&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/v1/pricing?model=vega-1.0-pro&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/v1/pricing?model=vega-1.0-pro&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>价格查询按名称包含匹配，请从 data 中选择 id 完全等于 <code>vega-1.0-pro</code> 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。</p>
+</article>
+<article class="docs-page" id="model-vega-1.0-pro-fast" data-kind="model" data-label="vega-1.0-pro-fast" data-provider="vega"><h1 id="model-vega-1.0-pro-fast--vega-10-pro-fast"><code>vega-1.0-pro-fast</code></h1><div class="endpoint-bar"><span class="method method-post">POST</span><code>/api/v3/contents/generations/tasks</code><button type="button" class="copy-path" data-path="/api/v3/contents/generations/tasks">复制路径</button></div><div class="api-note">生产环境 <code>https://api.richbest.cn</code> · Bearer API Key</div><section class="request-headers"><h2 id="model-vega-1.0-pro-fast--请求头">请求头</h2><div class="field-row"><div><code>Authorization</code><span class="field-type">string</span><b>必需</b></div><p>Bearer YOUR_API_KEY · 使用管理员签发的星辰平台业务 Key</p></div><div class="field-row"><div><code>Content-Type</code><span class="field-type">string</span><b>必需</b></div><p>application/json</p></div></section>
+<p>多模态异步视频</p>
+<p><a href="#basics">鉴权</a> · <a href="#errors">错误与安全重试</a></p>
+<p>需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按<a href="#basics--地址与示例约定">示例约定</a>设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。</p>
+<h2 id="model-vega-1.0-pro-fast--接口">接口</h2>
+<p><code>POST /api/v3/contents/generations/tasks</code></p>
+<p><code>GET /api/v3/contents/generations/tasks/{taskId}</code></p>
+<p>异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。</p>
+<h2 id="model-vega-1.0-pro-fast--请求参数">请求参数</h2>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>必填</th>
+<th>类型与说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>model</code></td>
+<td>是</td>
+<td>固定填写 <code>vega-1.0-pro-fast</code>，最长 128 个字符</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>是</td>
+<td>文本、图片、视频、音频数组，格式见下方说明</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>否</td>
+<td>4～15秒，支持小数；默认4秒，-1表示智能时长</td>
+</tr>
+<tr>
+<td><code>resolution</code></td>
+<td>否</td>
+<td>720p、1080p、2k、4k；默认720p</td>
+</tr>
+<tr>
+<td><code>ratio</code></td>
+<td>否</td>
+<td>21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9</td>
+</tr>
+<tr>
+<td><code>generate_audio</code></td>
+<td>否</td>
+<td>布尔值，默认true</td>
+</tr>
+<tr>
+<td><code>vega</code></td>
+<td>否</td>
+<td>模型专用选项对象，见<a href="#vega">Vega参数与素材流程</a></td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td>否</td>
+<td>整数-1～2147483647</td>
+</tr>
+<tr>
+<td><code>return_last_frame</code></td>
+<td>否</td>
+<td>布尔值；通过content.last_frame_url读取</td>
+</tr>
+<tr>
+<td><code>output_format</code></td>
+<td>否</td>
+<td>mp4或mov</td>
+</tr>
+</tbody></table></div>
+<h2 id="model-vega-1.0-pro-fast--创建示例">创建示例</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Idempotency-Key: customer-order-unique-id&quot; \
+  -d &#39;{
+  &quot;model&quot;: &quot;vega-1.0-pro-fast&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;720p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+}&#39;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;,
+  &quot;Content-Type&quot;: &quot;application/json&quot;,
+  &quot;Idempotency-Key&quot;: &quot;customer-order-unique-id&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const body = {
+  &quot;model&quot;: &quot;vega-1.0-pro-fast&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;720p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+};
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;POST&quot;, headers,
+  body: JSON.stringify(body),
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;,\&quot;Content-Type\&quot;:\&quot;application/json\&quot;,\&quot;Idempotency-Key\&quot;:\&quot;customer-order-unique-id\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+payload = json.loads(&quot;{\&quot;model\&quot;:\&quot;vega-1.0-pro-fast\&quot;,\&quot;content\&quot;:[{\&quot;type\&quot;:\&quot;text\&quot;,\&quot;text\&quot;:\&quot;晨光下的海面，镜头缓慢推进\&quot;}],\&quot;duration\&quot;:4,\&quot;resolution\&quot;:\&quot;720p\&quot;,\&quot;ratio\&quot;:\&quot;16:9\&quot;,\&quot;generate_audio\&quot;:true}&quot;)
+data = json.dumps(payload, ensure_ascii=False).encode(&quot;utf-8&quot;)
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;POST&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<h2 id="model-vega-1.0-pro-fast--素材与生成限制">素材与生成限制</h2>
+<p>图片最多9张，视频最多3段，音频最多3段，合计最多12个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。</p>
+<p>Pro默认关闭提示词优化；真人素材须先完成<a href="#vega--素材与真人活体流程">Vega素材注册流程</a>。</p>
+<p>不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见<a href="#vega">Vega接口</a>。</p>
+<h2 id="model-vega-1.0-pro-fast--创建响应">创建响应</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;
+}</code></pre></div>
+<h2 id="model-vega-1.0-pro-fast--查询结果">查询结果</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。</p>
+<h2 id="model-vega-1.0-pro-fast--成功结果示例">成功结果示例</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;,
+  &quot;model&quot;: &quot;vega-1.0-pro-fast&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;,
+  &quot;duration&quot;: 4,
+  &quot;content&quot;: {
+    &quot;video_url&quot;: &quot;https://provider.example.com/result.mp4&quot;
+  },
+  &quot;usage&quot;: {
+    &quot;vega&quot;: {
+      &quot;InputSeconds&quot;: 0,
+      &quot;OutputSeconds&quot;: 4
+    }
+  }
+}</code></pre></div>
+<p>usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。</p>
+<h2 id="model-vega-1.0-pro-fast--查询模型价格">查询模型价格</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/v1/pricing?model=vega-1.0-pro-fast&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/v1/pricing?model=vega-1.0-pro-fast&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/v1/pricing?model=vega-1.0-pro-fast&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>价格查询按名称包含匹配，请从 data 中选择 id 完全等于 <code>vega-1.0-pro-fast</code> 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。</p>
+</article>
+<article class="docs-page" id="model-vega-1.0-pro-mini" data-kind="model" data-label="vega-1.0-pro-mini" data-provider="vega"><h1 id="model-vega-1.0-pro-mini--vega-10-pro-mini"><code>vega-1.0-pro-mini</code></h1><div class="endpoint-bar"><span class="method method-post">POST</span><code>/api/v3/contents/generations/tasks</code><button type="button" class="copy-path" data-path="/api/v3/contents/generations/tasks">复制路径</button></div><div class="api-note">生产环境 <code>https://api.richbest.cn</code> · Bearer API Key</div><section class="request-headers"><h2 id="model-vega-1.0-pro-mini--请求头">请求头</h2><div class="field-row"><div><code>Authorization</code><span class="field-type">string</span><b>必需</b></div><p>Bearer YOUR_API_KEY · 使用管理员签发的星辰平台业务 Key</p></div><div class="field-row"><div><code>Content-Type</code><span class="field-type">string</span><b>必需</b></div><p>application/json</p></div></section>
+<p>多模态异步视频</p>
+<p><a href="#basics">鉴权</a> · <a href="#errors">错误与安全重试</a></p>
+<p>需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按<a href="#basics--地址与示例约定">示例约定</a>设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。</p>
+<h2 id="model-vega-1.0-pro-mini--接口">接口</h2>
+<p><code>POST /api/v3/contents/generations/tasks</code></p>
+<p><code>GET /api/v3/contents/generations/tasks/{taskId}</code></p>
+<p>异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。</p>
+<h2 id="model-vega-1.0-pro-mini--请求参数">请求参数</h2>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>必填</th>
+<th>类型与说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>model</code></td>
+<td>是</td>
+<td>固定填写 <code>vega-1.0-pro-mini</code>，最长 128 个字符</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>是</td>
+<td>文本、图片、视频、音频数组，格式见下方说明</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>否</td>
+<td>4～15秒，支持小数；默认4秒，-1表示智能时长</td>
+</tr>
+<tr>
+<td><code>resolution</code></td>
+<td>否</td>
+<td>720p、1080p、2k、4k；默认720p</td>
+</tr>
+<tr>
+<td><code>ratio</code></td>
+<td>否</td>
+<td>21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9</td>
+</tr>
+<tr>
+<td><code>generate_audio</code></td>
+<td>否</td>
+<td>布尔值，默认true</td>
+</tr>
+<tr>
+<td><code>vega</code></td>
+<td>否</td>
+<td>模型专用选项对象，见<a href="#vega">Vega参数与素材流程</a></td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td>否</td>
+<td>整数-1～2147483647</td>
+</tr>
+<tr>
+<td><code>return_last_frame</code></td>
+<td>否</td>
+<td>布尔值；通过content.last_frame_url读取</td>
+</tr>
+<tr>
+<td><code>output_format</code></td>
+<td>否</td>
+<td>mp4或mov</td>
+</tr>
+</tbody></table></div>
+<h2 id="model-vega-1.0-pro-mini--创建示例">创建示例</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Idempotency-Key: customer-order-unique-id&quot; \
+  -d &#39;{
+  &quot;model&quot;: &quot;vega-1.0-pro-mini&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;720p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+}&#39;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;,
+  &quot;Content-Type&quot;: &quot;application/json&quot;,
+  &quot;Idempotency-Key&quot;: &quot;customer-order-unique-id&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const body = {
+  &quot;model&quot;: &quot;vega-1.0-pro-mini&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;720p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+};
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;POST&quot;, headers,
+  body: JSON.stringify(body),
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;,\&quot;Content-Type\&quot;:\&quot;application/json\&quot;,\&quot;Idempotency-Key\&quot;:\&quot;customer-order-unique-id\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+payload = json.loads(&quot;{\&quot;model\&quot;:\&quot;vega-1.0-pro-mini\&quot;,\&quot;content\&quot;:[{\&quot;type\&quot;:\&quot;text\&quot;,\&quot;text\&quot;:\&quot;晨光下的海面，镜头缓慢推进\&quot;}],\&quot;duration\&quot;:4,\&quot;resolution\&quot;:\&quot;720p\&quot;,\&quot;ratio\&quot;:\&quot;16:9\&quot;,\&quot;generate_audio\&quot;:true}&quot;)
+data = json.dumps(payload, ensure_ascii=False).encode(&quot;utf-8&quot;)
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;POST&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<h2 id="model-vega-1.0-pro-mini--素材与生成限制">素材与生成限制</h2>
+<p>图片最多9张，视频最多3段，音频最多3段，合计最多12个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。</p>
+<p>Pro默认关闭提示词优化；真人素材须先完成<a href="#vega--素材与真人活体流程">Vega素材注册流程</a>。</p>
+<p>不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见<a href="#vega">Vega接口</a>。</p>
+<h2 id="model-vega-1.0-pro-mini--创建响应">创建响应</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;
+}</code></pre></div>
+<h2 id="model-vega-1.0-pro-mini--查询结果">查询结果</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。</p>
+<h2 id="model-vega-1.0-pro-mini--成功结果示例">成功结果示例</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;,
+  &quot;model&quot;: &quot;vega-1.0-pro-mini&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;,
+  &quot;duration&quot;: 4,
+  &quot;content&quot;: {
+    &quot;video_url&quot;: &quot;https://provider.example.com/result.mp4&quot;
+  },
+  &quot;usage&quot;: {
+    &quot;vega&quot;: {
+      &quot;InputSeconds&quot;: 0,
+      &quot;OutputSeconds&quot;: 4
+    }
+  }
+}</code></pre></div>
+<p>usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。</p>
+<h2 id="model-vega-1.0-pro-mini--查询模型价格">查询模型价格</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/v1/pricing?model=vega-1.0-pro-mini&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/v1/pricing?model=vega-1.0-pro-mini&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/v1/pricing?model=vega-1.0-pro-mini&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>价格查询按名称包含匹配，请从 data 中选择 id 完全等于 <code>vega-1.0-pro-mini</code> 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。</p>
+</article>
+<article class="docs-page" id="model-vega-1.5-pro" data-kind="model" data-label="vega-1.5-pro" data-provider="vega"><h1 id="model-vega-1.5-pro--vega-15-pro"><code>vega-1.5-pro</code></h1><div class="endpoint-bar"><span class="method method-post">POST</span><code>/api/v3/contents/generations/tasks</code><button type="button" class="copy-path" data-path="/api/v3/contents/generations/tasks">复制路径</button></div><div class="api-note">生产环境 <code>https://api.richbest.cn</code> · Bearer API Key</div><section class="request-headers"><h2 id="model-vega-1.5-pro--请求头">请求头</h2><div class="field-row"><div><code>Authorization</code><span class="field-type">string</span><b>必需</b></div><p>Bearer YOUR_API_KEY · 使用管理员签发的星辰平台业务 Key</p></div><div class="field-row"><div><code>Content-Type</code><span class="field-type">string</span><b>必需</b></div><p>application/json</p></div></section>
+<p>多模态异步视频</p>
+<p><a href="#basics">鉴权</a> · <a href="#errors">错误与安全重试</a></p>
+<p>需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按<a href="#basics--地址与示例约定">示例约定</a>设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。</p>
+<h2 id="model-vega-1.5-pro--接口">接口</h2>
+<p><code>POST /api/v3/contents/generations/tasks</code></p>
+<p><code>GET /api/v3/contents/generations/tasks/{taskId}</code></p>
+<p>异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。</p>
+<h2 id="model-vega-1.5-pro--请求参数">请求参数</h2>
+<div class="table-wrap" tabindex="0"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>必填</th>
+<th>类型与说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>model</code></td>
+<td>是</td>
+<td>固定填写 <code>vega-1.5-pro</code>，最长 128 个字符</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>是</td>
+<td>文本、图片、视频、音频数组，格式见下方说明</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>否</td>
+<td>4～30秒，支持小数；默认4秒，-1表示智能时长</td>
+</tr>
+<tr>
+<td><code>resolution</code></td>
+<td>否</td>
+<td>720p、1080p、2k、4k；默认720p</td>
+</tr>
+<tr>
+<td><code>ratio</code></td>
+<td>否</td>
+<td>21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9</td>
+</tr>
+<tr>
+<td><code>generate_audio</code></td>
+<td>否</td>
+<td>布尔值，默认true</td>
+</tr>
+<tr>
+<td><code>vega</code></td>
+<td>否</td>
+<td>模型专用选项对象，见<a href="#vega">Vega参数与素材流程</a></td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td>否</td>
+<td>整数-1～2147483647</td>
+</tr>
+<tr>
+<td><code>return_last_frame</code></td>
+<td>否</td>
+<td>布尔值；通过content.last_frame_url读取</td>
+</tr>
+<tr>
+<td><code>output_format</code></td>
+<td>否</td>
+<td>mp4或mov</td>
+</tr>
+</tbody></table></div>
+<h2 id="model-vega-1.5-pro--创建示例">创建示例</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Idempotency-Key: customer-order-unique-id&quot; \
+  -d &#39;{
+  &quot;model&quot;: &quot;vega-1.5-pro&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;720p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+}&#39;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;,
+  &quot;Content-Type&quot;: &quot;application/json&quot;,
+  &quot;Idempotency-Key&quot;: &quot;customer-order-unique-id&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const body = {
+  &quot;model&quot;: &quot;vega-1.5-pro&quot;,
+  &quot;content&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;晨光下的海面，镜头缓慢推进&quot;
+    }
+  ],
+  &quot;duration&quot;: 4,
+  &quot;resolution&quot;: &quot;720p&quot;,
+  &quot;ratio&quot;: &quot;16:9&quot;,
+  &quot;generate_audio&quot;: true
+};
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;POST&quot;, headers,
+  body: JSON.stringify(body),
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;,\&quot;Content-Type\&quot;:\&quot;application/json\&quot;,\&quot;Idempotency-Key\&quot;:\&quot;customer-order-unique-id\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+payload = json.loads(&quot;{\&quot;model\&quot;:\&quot;vega-1.5-pro\&quot;,\&quot;content\&quot;:[{\&quot;type\&quot;:\&quot;text\&quot;,\&quot;text\&quot;:\&quot;晨光下的海面，镜头缓慢推进\&quot;}],\&quot;duration\&quot;:4,\&quot;resolution\&quot;:\&quot;720p\&quot;,\&quot;ratio\&quot;:\&quot;16:9\&quot;,\&quot;generate_audio\&quot;:true}&quot;)
+data = json.dumps(payload, ensure_ascii=False).encode(&quot;utf-8&quot;)
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;POST&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<h2 id="model-vega-1.5-pro--素材与生成限制">素材与生成限制</h2>
+<p>图片最多30张，视频最多10段，音频最多10段，合计最多50个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。</p>
+<p>Pro默认关闭提示词优化；真人素材须先完成<a href="#vega--素材与真人活体流程">Vega素材注册流程</a>。</p>
+<p>不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见<a href="#vega">Vega接口</a>。</p>
+<h2 id="model-vega-1.5-pro--创建响应">创建响应</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;
+}</code></pre></div>
+<h2 id="model-vega-1.5-pro--查询结果">查询结果</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/api/v3/contents/generations/tasks/$TASK_ID&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/api/v3/contents/generations/tasks/$TASK_ID&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。</p>
+<h2 id="model-vega-1.5-pro--成功结果示例">成功结果示例</h2>
+<div class="code-block"><div class="code-head"><span>json</span><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0"><code>{
+  &quot;id&quot;: &quot;vid_example&quot;,
+  &quot;model&quot;: &quot;vega-1.5-pro&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;,
+  &quot;duration&quot;: 4,
+  &quot;content&quot;: {
+    &quot;video_url&quot;: &quot;https://provider.example.com/result.mp4&quot;
+  },
+  &quot;usage&quot;: {
+    &quot;vega&quot;: {
+      &quot;InputSeconds&quot;: 0,
+      &quot;OutputSeconds&quot;: 4
+    }
+  }
+}</code></pre></div>
+<p>usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。</p>
+<h2 id="model-vega-1.5-pro--查询模型价格">查询模型价格</h2>
+<div class="code-block"><div class="code-head"><div class="code-tabs" role="tablist" aria-label="请求示例语言"><button type="button" class="code-tab" role="tab" aria-selected="true" tabindex="0" data-language="shell">Shell</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="javascript">JavaScript</button><button type="button" class="code-tab" role="tab" aria-selected="false" tabindex="-1" data-language="python">Python</button></div><button type="button" class="copy-code" aria-label="复制代码">复制代码</button></div><pre tabindex="0" data-language="shell" ><code>curl &quot;$BASE_URL/v1/pricing?model=vega-1.5-pro&quot; \
+  -H &quot;Authorization: Bearer $API_KEY&quot;</code></pre><pre tabindex="0" data-language="javascript" hidden><code>const apiKey = process.env.API_KEY; // 仅在服务器保存
+const endpoint = &quot;/v1/pricing?model=vega-1.5-pro&quot;.replace(&quot;$TASK_ID&quot;, process.env.TASK_ID ?? &quot;task_id&quot;);
+const headers = {
+  &quot;Authorization&quot;: &quot;Bearer REPLACE_API_KEY&quot;
+};
+headers.Authorization = &quot;Bearer &quot; + apiKey;
+const response = await fetch(&quot;https://api.richbest.cn&quot; + endpoint, {
+  method: &quot;GET&quot;, headers,
+});
+if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+console.log(await response.json());</code></pre><pre tabindex="0" data-language="python" hidden><code>import json
+import os
+import urllib.request
+endpoint = &quot;/v1/pricing?model=vega-1.5-pro&quot;.replace(&quot;$TASK_ID&quot;, os.environ.get(&quot;TASK_ID&quot;, &quot;task_id&quot;))
+headers = json.loads(&quot;{\&quot;Authorization\&quot;:\&quot;Bearer REPLACE_API_KEY\&quot;}&quot;)
+headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + os.environ[&quot;API_KEY&quot;]
+data = None
+request = urllib.request.Request(
+    &quot;https://api.richbest.cn&quot; + endpoint, data=data, headers=headers, method=&quot;GET&quot;
+)
+with urllib.request.urlopen(request, timeout=1900) as response:
+    print(json.loads(response.read()))</code></pre></div>
+<p>价格查询按名称包含匹配，请从 data 中选择 id 完全等于 <code>vega-1.5-pro</code> 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。</p>
 </article>
 <article class="docs-page" id="asset-upload" data-kind="asset" data-label="上传文件 · 火山引擎" data-provider="volcengine_ark"><h1 id="asset-upload--上传文件">上传文件</h1><div class="endpoint-bar"><span class="method method-post">POST</span><code>/api/asset/upload-file</code><button type="button" class="copy-path" data-path="/api/asset/upload-file">复制路径</button></div><div class="api-note">生产环境 <code>https://api.richbest.cn</code> · Bearer API Key</div><section class="request-headers"><h2 id="asset-upload--请求头">请求头</h2><div class="field-row"><div><code>Authorization</code><span class="field-type">string</span><b>必需</b></div><p>Bearer YOUR_API_KEY · 使用管理员签发的星辰平台业务 Key</p></div><div class="field-row"><div><code>Content-Type</code><span class="field-type">string</span><b>必需</b></div><p>multipart/form-data（boundary 由客户端生成）</p></div></section>
 <p>供应商：火山引擎。使用星辰平台业务 Key，素材范围由当前项目确定。</p>

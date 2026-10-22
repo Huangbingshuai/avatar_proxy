@@ -17,6 +17,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AdminApiError, type AdminApi } from "./admin-api";
 
 type Provider =
+  | "vega"
   | "openai"
   | "maxmodel"
   | "modeltop"
@@ -40,6 +41,7 @@ type Channel = {
 };
 
 const providerLabels: Record<Provider, string> = {
+  vega: "Vega（腾讯云点播）",
   openai: "OpenAI",
   maxmodel: "MaxModel",
   modeltop: "ModelTop",
@@ -55,6 +57,9 @@ const emptyForm = {
   name: "",
   provider: "volcengine_ark" as Provider,
   secret: "",
+  secretId: "",
+  subAppId: "",
+  site: "domestic",
   workspaceId: "",
   region: "cn-beijing",
   organization: "",
@@ -64,6 +69,7 @@ const emptyForm = {
 };
 
 function channelConfig(form: typeof emptyForm) {
+  if (form.provider === "vega") return { site: form.site, subAppId: form.subAppId };
   if (form.provider === "volcengine_ark") return {};
   if (form.provider === "aliyun_bailian")
     return { workspaceId: form.workspaceId, region: form.region };
@@ -138,6 +144,7 @@ export default function ProviderChannelsPanel({
   const [rotateTarget, setRotateTarget] = useState<Channel | null>(null);
   const [rotateForm, setRotateForm] = useState({
     secret: "",
+    secretId: "",
     currentPassword: "",
     totpCode: "",
   });
@@ -192,6 +199,10 @@ export default function ProviderChannelsPanel({
       setModalError({ message: validation });
       return;
     }
+    if (form.provider === "vega" && (!/^[1-9][0-9]{0,18}$/.test(form.subAppId) || form.secretId.trim().length < 8)) {
+      setModalError({ message: "请填写有效的 SubAppId 和 SecretId。" });
+      return;
+    }
     createPending.current = true;
     setBusy("create");
     setError("");
@@ -207,7 +218,7 @@ export default function ProviderChannelsPanel({
           name: form.name,
           provider: form.provider,
           config: channelConfig(form),
-          secret: form.secret,
+          secret: form.provider === "vega" ? JSON.stringify({ secretId: form.secretId.trim(), secretKey: form.secret.trim() }) : form.secret,
           currentPassword: form.currentPassword,
           totpCode: form.totpCode,
         }),
@@ -217,7 +228,7 @@ export default function ProviderChannelsPanel({
       setNotice("渠道已创建，供应商凭证已加密保存。");
       await load();
     } catch (caught) {
-      setModalError(channelFormError(caught, [form.secret, form.currentPassword, form.totpCode]));
+      setModalError(channelFormError(caught, [form.secret, form.secretId, form.currentPassword, form.totpCode]));
       if (caught instanceof AdminApiError && ["csrf_token_refreshed", "invalid_admin_totp", "admin_totp_replayed"].includes(caught.code)) {
         setForm((current) => ({ ...current, totpCode: "" }));
       }
@@ -286,11 +297,13 @@ export default function ProviderChannelsPanel({
         `/api/internal/provider/channels/${encodeURIComponent(rotateTarget.id)}/rotate-key`,
         {
           method: "POST",
-          body: JSON.stringify(rotateForm),
+          body: JSON.stringify({ secret: rotateTarget.provider === "vega"
+            ? JSON.stringify({ secretId: rotateForm.secretId.trim(), secretKey: rotateForm.secret.trim() }) : rotateForm.secret,
+            currentPassword: rotateForm.currentPassword, totpCode: rotateForm.totpCode }),
         },
       );
       setRotateTarget(null);
-      setRotateForm({ secret: "", currentPassword: "", totpCode: "" });
+      setRotateForm({ secret: "", secretId: "", currentPassword: "", totpCode: "" });
       await load();
     } catch (caught) {
       setModalError(channelFormError(caught, Object.values(rotateForm)));
@@ -586,8 +599,19 @@ export default function ProviderChannelsPanel({
                   </label>
                 </>
               )}
+              {form.provider === "vega" && (
+                <>
+                  <label>腾讯云站点<select value={form.site} onChange={(event) => setForm({ ...form, site: event.target.value })}>
+                    <option value="domestic">国内站（人民币刊例价）</option>
+                    <option value="international">国际站（美元价折算人民币）</option>
+                  </select></label>
+                  <label>SubAppId<input required inputMode="numeric" pattern="[1-9][0-9]{0,18}" value={form.subAppId} onChange={(event) => setForm({ ...form, subAppId: event.target.value })} /></label>
+                  <label>SecretId<input type="password" required minLength={8} autoComplete="new-password" value={form.secretId} onChange={(event) => setForm({ ...form, secretId: event.target.value })} /></label>
+                  <div className="note">先开通腾讯云点播 VOD，并申请 Vega 模型权限。SecretId/SecretKey 一起加密保存；SubAppId 固定注入，不接受客户覆盖。默认并发通常为 1，扩容请联系供应商。渠道测试不提交付费生成。</div>
+                </>
+              )}
               <label>
-                供应商 API Key
+                {form.provider === "vega" ? "SecretKey" : "供应商 API Key"}
                 <input
                   type="password"
                   autoComplete="new-password"
@@ -736,7 +760,7 @@ export default function ProviderChannelsPanel({
           >
             <header>
               <h2 id="rotate-channel-title">轮换“{rotateTarget.name}”凭证</h2>
-              <button onClick={() => { setRotateTarget(null); setRotateForm({ secret: "", currentPassword: "", totpCode: "" }); setModalError(null); }} disabled={Boolean(busy)} aria-label="关闭">
+              <button onClick={() => { setRotateTarget(null); setRotateForm({ secret: "", secretId: "", currentPassword: "", totpCode: "" }); setModalError(null); }} disabled={Boolean(busy)} aria-label="关闭">
                 ×
               </button>
             </header>
@@ -744,8 +768,9 @@ export default function ProviderChannelsPanel({
               <div className="note">
                 新请求立即使用新凭证；已提交的视频任务继续固定使用原凭证版本。
               </div>
+              {rotateTarget.provider === "vega" && <label>新 SecretId<input type="password" required minLength={8} autoComplete="new-password" value={rotateForm.secretId} onChange={(event) => setRotateForm({ ...rotateForm, secretId: event.target.value })} /></label>}
               <label>
-                新 API Key
+                {rotateTarget.provider === "vega" ? "新 SecretKey" : "新 API Key"}
                 <input
                   type="password"
                   autoComplete="new-password"

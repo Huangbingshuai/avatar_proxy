@@ -25,6 +25,21 @@ async function setup(create: (init?: RequestInit) => Promise<Record<string, unkn
 }
 
 describe("渠道弹窗提交反馈", () => {
+  it("Vega凭证成对提交，站点及SubAppId不混入Secret", async () => {
+    const create = vi.fn().mockResolvedValue({ channel: {} });
+    const { user, dialog } = await setup(create);
+    await user.selectOptions(within(dialog).getByLabelText("供应商"), "vega");
+    await user.selectOptions(within(dialog).getByLabelText("腾讯云站点"), "international");
+    await user.type(within(dialog).getByLabelText("SubAppId"), "123456");
+    await user.type(within(dialog).getByLabelText("SecretId"), "example-id-12345678");
+    await user.click(within(dialog).getByRole("button", { name: "加密保存渠道" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(create.mock.calls[0][0].body);
+    expect(body.provider).toBe("vega");
+    expect(body.config).toEqual({ site: "international", subAppId: "123456" });
+    expect(JSON.parse(body.secret)).toEqual({ secretId: "example-id-12345678", secretKey: "test-provider-secret" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
   it.each([
     ["invalid_csrf_token", 403, "安全校验已失效"],
     ["csrf_token_refreshed", 403, "安全校验已更新"],

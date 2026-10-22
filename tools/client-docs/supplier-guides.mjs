@@ -1,10 +1,12 @@
 // Public, request-relevant channel differences only. Contract tests compare
 // these capabilities with the backend's effective per-channel catalogue.
 export const supplierLabels = {
+  vega: 'Vega（腾讯云点播）',
   volcengine_ark: '火山引擎', byteplus_modelark: 'BytePlus', maxmodel: 'MaxModel', modeltop: 'ModelTop',
   volcengine_speech: '豆包语音', aliyun_bailian: '阿里百炼', minimax: 'MiniMax',
 };
 export const supplierGroups = [
+  { id: 'vega', label: 'Vega（腾讯云点播）', providers: ['vega'] },
   { id: 'volcengine', label: '火山引擎', providers: ['volcengine_ark', 'volcengine_speech'] },
   { id: 'byteplus_modelark', label: 'BytePlus', providers: ['byteplus_modelark'] },
   { id: 'maxmodel', label: 'MaxModel', providers: ['maxmodel'] },
@@ -16,6 +18,7 @@ export const supplierOrder = supplierGroups.flatMap(group => group.providers);
 export const supplierGroupLabel = provider => supplierGroups.find(group => group.providers.includes(provider))?.label || supplierLabels[provider];
 export const supplierPageId = model => 'model-' + model.id + (model.primary ? '' : '-' + model.provider);
 export function primarySupplier(model) {
+  if (model.id.startsWith('vega-')) return 'vega';
   if (model.id.startsWith('gpt-image-2.5') || model.id.endsWith('-filter-off')) return 'modeltop';
   if (model.id === 'gpt-image-2') return 'maxmodel';
   if (model.id.startsWith('dreamina-') || model.id.startsWith('dola-')) return 'byteplus_modelark';

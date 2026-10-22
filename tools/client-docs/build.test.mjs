@@ -64,7 +64,7 @@ test('brand uses the original embedded Ruichi logo without external image reques
 test('supplier then model navigation includes duplicate aliases without a channel isolation layer', t => {
   const window = reader(t);
   const { document } = window;
-  assert.equal(supplierCatalog.length, 48);
+  assert.equal(supplierCatalog.length, 53);
   for (const variant of supplierCatalog) {
       const id = supplierPageId(variant);
       window.location.hash = '#' + id;
@@ -90,7 +90,7 @@ test('supplier then model navigation includes duplicate aliases without a channe
       }
   }
   assert.equal(document.querySelectorAll('.supplier-folder').length, supplierGroups.length);
-  assert.equal(document.querySelectorAll('.supplier-folder').length, 6);
+  assert.equal(document.querySelectorAll('.supplier-folder').length, 7);
   assert.equal(document.querySelector('.speech-folder'), null);
   assert.equal(document.querySelectorAll('.supplier-folder[data-supplier="volcengine"] > div > .page-link').length, 27);
   const volcanoModelLinks = [...document.querySelectorAll('.supplier-folder[data-supplier="volcengine"] > div > .page-link')];

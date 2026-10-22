@@ -44,6 +44,7 @@ const providers: Record<string, string> = {
   openai: "OpenAI",
   maxmodel: "MaxModel",
   modeltop: "ModelTop",
+  vega: "Vega（腾讯云点播）",
   aliyun_bailian: "阿里百炼",
   minimax: "MiniMax",
 };
@@ -90,6 +91,9 @@ function unitLabel(rule: RateRule) {
 }
 
 function dimensionLabel(value: string): string {
+  if (value.startsWith("domestic:")) return `国内站 · ${dimensionLabel(value.slice(9))}`;
+  if (value.startsWith("international:")) return `国际站 · ${dimensionLabel(value.slice(14))}`;
+  if (value === "input:after_five") return "输入图（超过5张的部分）";
   if (value.startsWith("modeltop:")) return `ModelTop · ${value.slice(9) === "image" ? "图片" : dimensionLabel(value.slice(9))}`;
   if (!value) return "标准";
   const pixelBucket = /^output:(le|gt)(\d+)$/.exec(value);
@@ -259,7 +263,7 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
               {(drafts[rate.model] ?? []).length === 0 && <div className="globalRateEmpty">尚未配置计价规则</div>}
             </div>
             <div className="globalRateAction">
-              {rate.officialSource ? <a href={rate.officialSource.url} target="_blank" rel="noreferrer">{rate.officialSource.currency === "USD" ? `${rate.provider === "modeltop" ? "ModelTop 公示价" : "BytePlus 官方价"}（USD 按 ${rate.officialSource.fxRateToCny} 折算）` : "火山官方价"} · {rate.officialSource.version}</a> : <span>人工定价</span>}
+              {rate.officialSource ? <a href={rate.officialSource.url} target="_blank" rel="noreferrer">{rate.provider === "vega" ? `Vega 刊例价（国际站 USD 按 ${rate.officialSource.fxRateToCny} 折算）` : rate.officialSource.currency === "USD" ? `${rate.provider === "modeltop" ? "ModelTop 公示价" : "BytePlus 官方价"}（USD 按 ${rate.officialSource.fxRateToCny} 折算）` : "火山官方价"} · {rate.officialSource.version}</a> : <span>人工定价</span>}
               {rate.additionalSources?.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">ModelTop 公示价（USD 按 {source.fxRateToCny} 折算） · {source.version}</a>)}
               <button className="primary" type="button" onClick={() => void save(rate)} disabled={busy === rate.model || (drafts[rate.model] ?? []).length === 0}>{busy === rate.model ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}保存</button>
             </div>

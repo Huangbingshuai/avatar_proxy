@@ -21,6 +21,7 @@ from .database import Database
 from .errors import ApiError
 from .modeltop import MODELTOP_MODELS
 from .security import ApiPrincipal
+from . import vega
 
 
 PROVIDERS = {
@@ -32,6 +33,7 @@ PROVIDERS = {
     "volcengine_speech",
     "aliyun_bailian",
     "minimax",
+    "vega",
 }
 ARK_PROVIDERS = frozenset({"volcengine_ark", "byteplus_modelark", "modeltop"})
 TERMINAL_TASK_STATUSES = {"succeeded", "failed", "canceled"}
@@ -355,6 +357,8 @@ class ProviderRelay:
             raise ApiError("不支持的供应商类型", 422, "provider_not_supported")
         if not isinstance(config, dict):
             raise ApiError("渠道配置必须是对象", 422, "provider_config_invalid")
+        if provider == "vega":
+            return vega.channel_config(config)
         allowed: dict[str, set[str]] = {
             "openai": {"organization", "project"},
             "maxmodel": set(),
@@ -453,6 +457,8 @@ class ProviderRelay:
         if not normalized_name or len(normalized_name) > 100:
             raise ApiError("渠道名称长度无效", 422, "provider_channel_name_invalid")
         normalized_config = self._validate_provider_config(provider, config)
+        if provider == "vega":
+            vega.credentials(secret)
         # The customer project is already bound to the canonical Volcengine
         # ProjectName. Never trust or require a second client-supplied value.
         if provider in {"volcengine_ark", "volcengine_speech"}:
@@ -470,7 +476,7 @@ class ProviderRelay:
                 connection.execute(
                     "INSERT INTO provider_credentials "
                     "(id,channel_id,secret_ciphertext,secret_hint,created_by) VALUES (?,?,?,?,?)",
-                    (credential_id, channel_id, ciphertext, _secret_hint(secret), actor_id),
+                    (credential_id, channel_id, ciphertext, "SecretId/SecretKey 已加密" if provider == "vega" else _secret_hint(secret), actor_id),
                 )
             except Exception as error:
                 if "UNIQUE constraint" in str(error):
@@ -484,10 +490,12 @@ class ProviderRelay:
         new_id = f"pcr_{uuid.uuid4().hex}"
         with self.database.connect() as connection:
             channel = connection.execute(
-                "SELECT id FROM provider_channels WHERE id=? AND deleted_at IS NULL", (channel_id,)
+                "SELECT id,provider FROM provider_channels WHERE id=? AND deleted_at IS NULL", (channel_id,)
             ).fetchone()
             if channel is None:
                 raise ApiError("供应商渠道不存在", 404, "provider_channel_not_found")
+            if channel["provider"] == "vega":
+                vega.credentials(secret)
             connection.execute(
                 "UPDATE provider_credentials SET status='retired',retired_at=CURRENT_TIMESTAMP "
                 "WHERE channel_id=? AND status='active'",
@@ -496,7 +504,7 @@ class ProviderRelay:
             connection.execute(
                 "INSERT INTO provider_credentials "
                 "(id,channel_id,secret_ciphertext,secret_hint,created_by) VALUES (?,?,?,?,?)",
-                (new_id, channel_id, ciphertext, _secret_hint(secret), actor_id),
+                (new_id, channel_id, ciphertext, "SecretId/SecretKey 已加密" if channel["provider"] == "vega" else _secret_hint(secret), actor_id),
             )
             connection.execute(
                 "UPDATE provider_channels SET updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -713,7 +721,7 @@ class ProviderRelay:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT m.alias,m.display_name,m.modality,m.capabilities_json,m.upstream_model,c.provider
+                SELECT m.alias,m.display_name,m.modality,m.capabilities_json,m.upstream_model,c.provider,c.config_json
                 FROM model_catalog m
                 JOIN project_model_bindings b
                   ON b.model_alias=m.alias AND b.project_name=? AND b.enabled=1
@@ -734,7 +742,8 @@ class ProviderRelay:
                 "display_name": row["display_name"],
                 "modality": row["modality"],
                 "provider": row["provider"],
-                "capabilities": _channel_model(row["alias"],row["provider"],row["upstream_model"],row["capabilities_json"])[1],
+                "capabilities": {**_channel_model(row["alias"],row["provider"],row["upstream_model"],row["capabilities_json"])[1],
+                                 **({"billingSite": _loaded(row["config_json"], {}).get("site")} if row["provider"] == "vega" else {})},
             }
             for row in rows
         ]
@@ -798,6 +807,8 @@ class ProviderRelay:
     async def _request(
         self, route: ModelRoute, method: str, path: str, payload: dict[str, Any] | None = None
     ) -> tuple[httpx.Response, dict[str, Any]]:
+        if route.provider == "vega":
+            return await self._vega_request(route, path.removeprefix("/"), payload or {})
         try:
             async with httpx.AsyncClient(
                 timeout=self._model_timeout(generation=method == "POST" and (
@@ -839,6 +850,31 @@ class ProviderRelay:
             raise ApiError("模型供应商返回了无效响应", 502, "provider_response_invalid")
         return response, data
 
+    async def _vega_request(self, route: ModelRoute, action: str, payload: dict[str, Any]):
+        url, headers, body = vega.signed_request(route.secret, route.channel_config, action, payload, _now_epoch())
+        try:
+            async with httpx.AsyncClient(timeout=self._model_timeout(), transport=self.transport) as client:
+                response = await client.post(url, headers=headers, content=body)
+        except httpx.RequestError as error:
+            raise self._transport_error(error, submitted=action.startswith("Create")) from error
+        try:
+            data = response.json().get("Response")
+        except (ValueError, AttributeError):
+            data = None
+        if not isinstance(data, dict):
+            raise ApiError("Vega供应商返回了无效响应", 502, "provider_response_invalid")
+        error = data.get("Error")
+        if response.status_code >= 400 or isinstance(error, dict):
+            error = error if isinstance(error, dict) else {}
+            message = str(error.get("Message") or "Vega供应商拒绝了请求")[:500]
+            for secret in vega.credentials(route.secret).values():
+                message = message.replace(secret, "[REDACTED]")
+            code = str(error.get("Code") or "UpstreamError")
+            status = 429 if code.startswith("LimitExceeded") or code.startswith("RequestLimitExceeded") else 502
+            raise ApiError(message, status, "vega_request_failed", details={
+                "upstreamCode": code, "upstreamRequestId": data.get("RequestId"), "automaticRetry": False})
+        return response, data
+
     async def test_channel(self, channel_id: str) -> dict[str, Any]:
         self.require_enabled()
         with self.database.connect() as connection:
@@ -867,11 +903,12 @@ class ProviderRelay:
             credential_id=row["credential_id"],
             secret=self.vault.decrypt(row["secret_ciphertext"]),
         )
-        if route.provider in {"volcengine_speech", "maxmodel", "byteplus_modelark", "modeltop"}:
+        if route.provider in {"volcengine_speech", "maxmodel", "byteplus_modelark", "modeltop", "vega"}:
             provider_name = {
                 "volcengine_speech": "豆包语音", "maxmodel": "MaxModel",
                 "byteplus_modelark": "BytePlus ModelArk",
                 "modeltop": "ModelTop",
+                "vega": "Vega（腾讯云点播）",
             }[route.provider]
             message = f"{provider_name}没有可靠的免费凭证探测接口，请绑定模型后从用户端发起一次真实测试"
             with self.database.connect() as connection:
@@ -1501,6 +1538,9 @@ class ProviderRelay:
             billing_metadata["containsVideoInput"] = any(
                 isinstance(item, dict) and item.get("type") == "video_url" for item in content
             )
+            if route.provider == "vega":
+                billing_metadata["vegaSite"] = route.channel_config["site"]
+                billing_metadata["resolution"] = str(resolution or route.capabilities["defaultResolution"]).lower()
         elif operation == "image":
             image = payload.get("image")
             billing_metadata["inputImageCount"] = len(image) if isinstance(image, list) else int(
@@ -1859,6 +1899,8 @@ class ProviderRelay:
         return result
 
     def _video_submit_payload(self, route: ModelRoute, payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if route.provider == "vega":
+            return "/CreateAigcVideoTask", vega.submit_payload(route, payload)
         if route.provider in ARK_PROVIDERS:
             return self._volcengine_video_submit_payload(route, payload)
         if route.provider == "aliyun_bailian":
@@ -2211,6 +2253,12 @@ class ProviderRelay:
         if route.modality != "video":
             raise ApiError("该模型不支持视频接口", 422, "model_modality_mismatch")
         path, upstream_payload = self._video_submit_payload(route, payload)
+        if route.provider == "vega":
+            from .vega_resources import VegaResources
+            resources = VegaResources(self)
+            for item in upstream_payload.get("FileInfos", []):
+                if item["Url"].startswith("asset://"):
+                    resources.owns(principal, route, "AssetId", item["Url"][8:].rstrip("/"))
         task, created = self._create_task(principal, route, "video", payload, idempotency_key)
         if not created:
             return self._video_public(task)
@@ -2219,6 +2267,8 @@ class ProviderRelay:
             if route.provider == "aliyun_bailian":
                 output = data.get("output") if isinstance(data.get("output"), dict) else {}
                 upstream_task_id = output.get("task_id")
+            elif route.provider == "vega":
+                upstream_task_id = data.get("TaskId")
             elif route.provider in ARK_PROVIDERS:
                 upstream_task_id = data.get("id")
             else:
@@ -2227,7 +2277,7 @@ class ProviderRelay:
                     upstream_task_id = data["task"].get("id")
             if not isinstance(upstream_task_id, (str, int)) or not str(upstream_task_id):
                 raise ApiError("供应商未返回任务ID", 502, "provider_task_id_missing")
-            provider_id = _provider_request_id(response.headers, data)
+            provider_id = data.get("RequestId") if route.provider == "vega" else _provider_request_id(response.headers, data)
             with self.database.connect() as connection:
                 connection.execute(
                     "UPDATE inference_tasks SET upstream_task_id=?,status='queued',provider_request_id=?,"
@@ -2362,12 +2412,21 @@ class ProviderRelay:
 
     async def refresh_video(self, principal: ApiPrincipal, task_id: str) -> dict[str, Any]:
         task = self.get_local_task(principal, task_id)
+        if task.get("operation") != "video":
+            raise ApiError("视频任务不存在", 404, "video_task_not_found")
         if task["status"] in TERMINAL_TASK_STATUSES or not task.get("upstream_task_id"):
             return self._video_public(task)
         route = self._task_route(task)
         upstream_id = task["upstream_task_id"]
         error_code_value: str | None = None
-        if route.provider == "aliyun_bailian":
+        if route.provider == "vega":
+            response, data = await self._request(route, "POST", "/DescribeTaskDetail", {"TaskId": upstream_id})
+            result = vega.video_result(data)
+            status, result_url, usage = result["status"], result["url"], result["usage"]
+            seconds_value = result.get("seconds")
+            error, error_code_value = result.get("error"), result.get("error_code")
+            metadata = result["metadata"]
+        elif route.provider == "aliyun_bailian":
             response, data = await self._request(route, "GET", f"/tasks/{upstream_id}")
             output = data.get("output") if isinstance(data.get("output"), dict) else {}
             raw_status = str(output.get("task_status") or "PENDING").upper()
@@ -2448,7 +2507,8 @@ class ProviderRelay:
             seconds = float(seconds_value) if seconds_value is not None else None
         except (TypeError, ValueError):
             seconds = None
-        provider_id = _provider_request_id(response.headers, data) or task.get("provider_request_id")
+        provider_id = data.get("RequestId") if route.provider == "vega" else _provider_request_id(response.headers, data)
+        provider_id = provider_id or task.get("provider_request_id")
         progress = 100 if status in TERMINAL_TASK_STATUSES else (50 if status == "running" else 0)
         error_code = error_code_value if status == "failed" else None
         with self.database.connect() as connection:
@@ -2555,4 +2615,7 @@ class ProviderRelay:
         return [self._video_public(dict(row)) if row["operation"] == "video" else self._transcription_public(dict(row)) if row["operation"] == "transcription" else {
             "id": row["id"], "object": "image", "model": row["model_alias"],
             "status": row["status"], "created_at": row["created_at"],
+        } if not row["operation"].startswith("vega_") else {
+            "id": row["id"], "object": "vega_resource", "model": row["model_alias"],
+            "operation": row["operation"], "status": row["status"], "created_at": row["created_at"],
         } for row in rows]

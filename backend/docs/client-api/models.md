@@ -87,14 +87,19 @@ curl "$BASE_URL/v1/models" \
 | `dreamina-seedance-2.0-filter-off` | 异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#dreamina-seedance-20-filter-off) |
 | `dreamina-seedance-2.0-fast-filter-off` | 异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#dreamina-seedance-20-fast-filter-off) |
 | `dreamina-seedance-2.0-mini-filter-off` | 异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#dreamina-seedance-20-mini-filter-off) |
-
 创建和查询视频任务必须使用同一枚业务 API Key；支持取消的供应商同样要求使用创建任务时的业务 Key。
 
 模型是否已经对当前项目开放，以 `/v1/models` 的实时返回结果为准。请求未开通的模型会返回 `403 model_not_allowed`，请联系管理员确认项目授权和供应商渠道状态。
 
+| `vega-1.0-lite` | Vega多模态异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#vega-10-lite) |
+| `vega-1.0-pro` | Vega多模态异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#vega-10-pro) |
+| `vega-1.0-pro-fast` | Vega多模态异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#vega-10-pro-fast) |
+| `vega-1.0-pro-mini` | Vega多模态异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#vega-10-pro-mini) |
+| `vega-1.5-pro` | Vega多模态异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#vega-15-pro) |
+
 每个“查看接口”包含该模型的请求、参数、示例与结果；无需先猜测应使用哪类接口。
 
-左侧按供应商分组，再选择模型。`gpt-image-2` 同时出现在 MaxModel 和 ModelTop 下；四个标准 `dreamina-seedance-*` 型号同时出现在 BytePlus 和 ModelTop 下。它们的公开路径及模型别名相同，但数量限制、参数、结果格式或取消能力可能不同，请按当前项目的 `provider` 阅读。`-filter-off` 型号只列在 ModelTop 下。
+左侧按供应商分组，再选择模型。`gpt-image-2` 同时出现在 MaxModel 和 ModelTop 下；四个标准 `dreamina-seedance-*` 型号同时出现在 BytePlus 和 ModelTop 下。它们的公开路径及模型别名相同，但数量限制、参数、结果格式或取消能力可能不同，请按当前项目的 `provider` 阅读。`-filter-off` 型号只列在 ModelTop 下。Vega独立列在“Vega（腾讯云点播）”下。
 
 ## 查询模型价格
 

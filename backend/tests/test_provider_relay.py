@@ -144,8 +144,8 @@ def provision(
         project_name=project_name,
         name=f"{provider}-production",
         provider=provider,
-        config=config or {},
-        secret=f"secret-{provider}-abcdefgh",
+        config=config or ({"site": "domestic", "subAppId": "123456"} if provider == "vega" else {}),
+        secret=json.dumps({"secretId": "example-id-12345678", "secretKey": "example-key-12345678"}) if provider == "vega" else f"secret-{provider}-abcdefgh",
         actor_id="super-admin",
     )
     relay.set_project_models(
@@ -1634,6 +1634,7 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "dola-seedream-5.0-pro", "dola-seedream-5.0-lite", "dola-seedream-5.0-flash",
         "wan3.0-video", "doubao-embedding-vision", "doubao-seed-tts-2.0",
         "doubao-seedasr-2.0", "doubao-seed-audio-1.0",
+        "vega-1.0-lite", "vega-1.0-pro", "vega-1.0-pro-fast", "vega-1.0-pro-mini", "vega-1.5-pro",
     ])
     with app.state.database.connect() as connection:
         upstream_models = dict(
@@ -1692,6 +1693,11 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "doubao-seed-tts-2.0": "seed-tts-2.0",
         "doubao-seedasr-2.0": "volc.seedasr.auc",
         "doubao-seed-audio-1.0": "seed-audio-1.0",
+        "vega-1.0-lite": "1.0-lite",
+        "vega-1.0-pro": "1.0-pro",
+        "vega-1.0-pro-fast": "1.0-pro-fast",
+        "vega-1.0-pro-mini": "1.0-pro-mini",
+        "vega-1.5-pro": "1.5-pro",
     }
     assert seedream_capabilities
     assert all(

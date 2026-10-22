@@ -843,5 +843,176 @@
       "billingUnit": 1000000
     },
     "summary": "异步视频"
+  },
+  {
+    "id": "vega-1.0-lite",
+    "name": "Vega 1.0-lite",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": false,
+      "resolutions": [
+        "480p",
+        "768p",
+        "1080p",
+        "2k",
+        "4k"
+      ],
+      "defaultResolution": "768p",
+      "maxContent": 13,
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxFiles": 12,
+      "audioOnly": false,
+      "cancelSupported": false,
+      "seed": false,
+      "returnLastFrame": false,
+      "billingMetric": "video_second",
+      "billingUnit": 1
+    },
+    "summary": "多模态异步视频"
+  },
+  {
+    "id": "vega-1.0-pro",
+    "name": "Vega 1.0-pro",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "720p",
+        "1080p",
+        "2k",
+        "4k"
+      ],
+      "defaultResolution": "720p",
+      "maxContent": 13,
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxFiles": 12,
+      "audioOnly": false,
+      "cancelSupported": false,
+      "seed": true,
+      "returnLastFrame": true,
+      "billingMetric": "video_second",
+      "billingUnit": 1
+    },
+    "summary": "多模态异步视频"
+  },
+  {
+    "id": "vega-1.0-pro-fast",
+    "name": "Vega 1.0-pro-fast",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "720p",
+        "1080p",
+        "2k",
+        "4k"
+      ],
+      "defaultResolution": "720p",
+      "maxContent": 13,
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxFiles": 12,
+      "audioOnly": false,
+      "cancelSupported": false,
+      "seed": true,
+      "returnLastFrame": true,
+      "billingMetric": "video_second",
+      "billingUnit": 1
+    },
+    "summary": "多模态异步视频"
+  },
+  {
+    "id": "vega-1.0-pro-mini",
+    "name": "Vega 1.0-pro-mini",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 15,
+      "smartDuration": true,
+      "resolutions": [
+        "720p",
+        "1080p",
+        "2k",
+        "4k"
+      ],
+      "defaultResolution": "720p",
+      "maxContent": 13,
+      "maxImages": 9,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxFiles": 12,
+      "audioOnly": false,
+      "cancelSupported": false,
+      "seed": true,
+      "returnLastFrame": true,
+      "billingMetric": "video_second",
+      "billingUnit": 1
+    },
+    "summary": "多模态异步视频"
+  },
+  {
+    "id": "vega-1.5-pro",
+    "name": "Vega 1.5-pro",
+    "modality": "video",
+    "capabilities": {
+      "text": true,
+      "image": true,
+      "video": true,
+      "audio": true,
+      "generateAudio": true,
+      "durationMin": 4,
+      "durationMax": 30,
+      "smartDuration": true,
+      "resolutions": [
+        "720p",
+        "1080p",
+        "2k",
+        "4k"
+      ],
+      "defaultResolution": "720p",
+      "maxContent": 51,
+      "maxImages": 30,
+      "maxVideos": 10,
+      "maxAudios": 10,
+      "maxFiles": 50,
+      "audioOnly": false,
+      "cancelSupported": false,
+      "seed": true,
+      "returnLastFrame": true,
+      "billingMetric": "video_second",
+      "billingUnit": 1
+    },
+    "summary": "多模态异步视频"
   }
 ]

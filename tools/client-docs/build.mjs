@@ -20,6 +20,7 @@ export const pages = [
   ['videos', '模型接口', '异步视频', 'backend/docs/client-api/videos.md'],
   ['embeddings', '模型接口', '向量', 'backend/docs/client-api/embeddings.md'],
   ['audio', '模型接口', '语音与音频', 'backend/docs/client-api/audio.md'],
+  ['vega', '模型接口', 'Vega 视频与素材', 'backend/docs/client-api/vega.md'],
   ['assets', '素材与帮助', '素材上传与素材库', 'backend/docs/client-api/assets.md'],
   ['errors', '素材与帮助', '错误与安全重试', 'backend/docs/client-api/errors.md'],
 ];

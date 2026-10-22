@@ -26,6 +26,7 @@ ARK_VIDEO_FIELDS = {
     "execution_expires_after",
     "task_type",
     "output_format",
+    "vega",
 }
 FORBIDDEN_ROUTE_FIELDS = {
     "provider",

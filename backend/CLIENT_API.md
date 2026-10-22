@@ -1,12 +1,14 @@
 # 星辰平台 API 文档
 
-版本：6.0 · 更新日期：2026-10-16
+版本：6.1 · 更新日期：2026-10-22
 
 统一调用文本、图片、视频、向量和音频模型，并管理项目素材。正式地址：`https://api.richbest.cn`。
 
 你只需要管理员签发的业务 API Key。需要使用哪个模型，请联系管理员为项目开通；项目下现有有效 Key 无需重新签发。可用型号及能力以 `/v1/models` 为准，人民币税前价目以 `/v1/pricing` 为准。
 
 [HTML 阅读版](CLIENT_API.html) · [模型与接口对照表](docs/client-api/models.md#模型与接口对照表) · [错误与安全重试](docs/client-api/errors.md)
+
+新增[Vega视频与素材](docs/client-api/vega.md)：5个视频版本统一使用本站视频创建/查询接口，Pro素材与活体流程使用 `POST /v1/vega/{action}`。Vega与火山素材ID不能混用；调用方始终只使用业务Key。
 
 ## 快速开始
 

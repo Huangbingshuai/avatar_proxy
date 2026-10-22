@@ -84,6 +84,7 @@ const providerLabel: Record<string, string> = {
   openai: "OpenAI",
   maxmodel: "MaxModel",
   modeltop: "ModelTop",
+  vega: "Vega（腾讯云点播）",
   volcengine_ark: "火山方舟",
   byteplus_modelark: "BytePlus ModelArk（海外）",
   volcengine_speech: "豆包语音",

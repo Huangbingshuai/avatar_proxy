@@ -43,6 +43,7 @@ const providerLabels: Record<string, string> = {
   openai: "OpenAI",
   maxmodel: "MaxModel",
   modeltop: "ModelTop",
+  vega: "Vega（腾讯云点播）",
   aliyun_bailian: "阿里百炼",
   minimax: "MiniMax",
 };
@@ -76,6 +77,9 @@ function metricLabel(rate: ModelRate, rule: PriceRule) {
 }
 
 function dimensionLabel(value: string): string {
+  if (value.startsWith("domestic:")) return `国内站 · ${dimensionLabel(value.slice(9))}`;
+  if (value.startsWith("international:")) return `国际站 · ${dimensionLabel(value.slice(14))}`;
+  if (value === "input:after_five") return "输入图（超过5张的部分）";
   if (value.startsWith("modeltop:")) return `ModelTop · ${value.slice(9) === "image" ? "图片" : dimensionLabel(value.slice(9))}`;
   if (!value) return "标准";
   const pixelBucket = /^output:(le|gt)(\d+)$/.exec(value);

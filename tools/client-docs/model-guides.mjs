@@ -5,6 +5,7 @@ const json = body => fence('json', JSON.stringify(body, null, 2));
 const table = rows => ['| 参数 | 必填 | 类型与说明 |', '|---|---|---|', ...rows.map(row => '| ' + row.join(' | ') + ' |')].join('\n');
 export const modelPageId = alias => 'model-' + alias;
 export function modelFamily(model) {
+  if (model.id.startsWith('vega-')) return 'Vega';
   if (model.id.startsWith('gpt-image')) return 'GPT Image';
   if (model.id.startsWith('doubao-seedream')) return 'Doubao Seedream';
   if (model.id.startsWith('dola-seedream')) return 'Dola Seedream';
@@ -125,8 +126,40 @@ function imageGuide(model) {
   return parts.join('\n\n');
 }
 
+function vegaGuide({ id, capabilities: caps }) {
+  const path = '/api/v3/contents/generations/tasks';
+  const body = { model: id, content: [{ type: 'text', text: '晨光下的海面，镜头缓慢推进' }], duration: 4,
+    resolution: caps.defaultResolution, ratio: '16:9', generate_audio: true };
+  return [
+    '### 接口', inline('POST ' + path) + '\n\n' + inline('GET ' + path + '/{taskId}'),
+    '异步生成，不支持取消。仅使用星辰平台业务 Key，无需传入腾讯云凭证、SubAppId 或 ModelVersion。',
+    '### 请求参数', table([modelField(id),
+      [inline('content'), '是', '文本、图片、视频、音频数组，格式见下方说明'],
+      [inline('duration'), '否', '4～' + caps.durationMax + '秒，支持小数；默认4秒' + (caps.smartDuration ? '，-1表示智能时长' : '，不支持-1')],
+      [inline('resolution'), '否', caps.resolutions.join('、') + '；默认' + caps.defaultResolution],
+      [inline('ratio'), '否', '21:9、16:9、4:3、1:1、3:4、9:16、adaptive；默认16:9'],
+      [inline('generate_audio'), '否', '布尔值，默认true'],
+      [inline('vega'), '否', '模型专用选项对象，见[Vega参数与素材流程](vega.md)'],
+      ...(caps.seed ? [[inline('seed'), '否', '整数-1～2147483647'], [inline('return_last_frame'), '否', '布尔值；通过content.last_frame_url读取'],
+        [inline('output_format'), '否', 'mp4或mov']] : []),
+    ]),
+    '### 创建示例', curl(path, body, { idempotency: true }),
+    '### 素材与生成限制',
+    '图片最多' + caps.maxImages + '张，视频最多' + caps.maxVideos + '段，音频最多' + caps.maxAudios + '段，合计最多' + caps.maxFiles + '个文件。图片role为first_frame、last_frame或reference_image；视频为reference_video；音频为reference_audio。首尾帧各最多一张，不能与全模态参考混用；音频必须搭配图片或视频。只接受HTTP(S) URL或同Key同渠道登记的asset://素材，不接受Data URL。',
+    id === 'vega-1.0-lite' ? 'Lite提示词最多7000字符，默认开启提示词优化，支持单独尾帧。' : 'Pro默认关闭提示词优化；真人素材须先完成[Vega素材注册流程](vega.md#素材与真人活体流程)。',
+    '不支持frames、watermark、camera_fixed、draft、task_type、service_tier、execution_expires_after等其他渠道参数。任务类型使用vega.task_type，而非顶层task_type。远程媒体格式、时长、分辨率与大小由供应商最终校验；详细限制见[Vega接口](vega.md)。',
+    '### 创建响应', json({ id: 'vid_example' }),
+    '### 查询结果', fence('bash', 'curl "$BASE_URL' + path + '/$TASK_ID" \\\n  -H "Authorization: Bearer $API_KEY"'),
+    '使用创建任务的同一枚业务Key，每5～10秒轮询；queued/running为未完成，succeeded/failed为终态。供应商默认通常只有1路并发，429时不要自动换幂等键重提。',
+    '### 成功结果示例', json({ id: 'vid_example', model: id, status: 'succeeded', duration: 4,
+      content: { video_url: 'https://provider.example.com/result.mp4' }, usage: { vega: { InputSeconds: 0, OutputSeconds: 4 } } }),
+    'usage.vega为腾讯云真实计费用量；若返回completion_tokens/total_tokens则为真实Token，不代替按秒计费。未知用量不按零计算。结果采用供应商临时存储，URL可能过期，请及时下载；本站不另存TOS。',
+  ].join('\n\n');
+}
+
 function videoGuide(model) {
   const { id, capabilities: caps } = model;
+  if (id.startsWith('vega-')) return vegaGuide(model);
   const seedance = id.includes('seedance');
   const overseas = id.startsWith('dreamina');
   const modeltop = model.provider === 'modeltop' || id.endsWith('-filter-off');

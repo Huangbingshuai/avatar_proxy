@@ -13,6 +13,7 @@ from typing import Any
 from .admin_auth import AdminPrincipal
 from .database import Database
 from .errors import ApiError
+from . import vega
 from .modeltop import (MODELTOP_FX, MODELTOP_FX_SOURCE_URL, MODELTOP_FX_TIMESTAMP,
                       MODELTOP_RATE_VERSION, MODELTOP_RATE_SOURCE_URL, MODELTOP_MODELS, image_token_measurements)
 from .official_rates import (
@@ -90,8 +91,8 @@ def timestamp_month(value: str | int | float | None) -> str:
 
 def normalize_resolution(value: Any, width: Any = None, height: Any = None) -> str | None:
     raw = str(value or "").strip().lower()
-    if raw == "4k":
-        return "4k"
+    if raw in {"2k", "4k"}:
+        return raw
     if raw in VIDEO_RESOLUTIONS:
         return raw
     if raw.endswith("p") and raw[:-1].isdigit():
@@ -278,6 +279,9 @@ class BillingManager:
 
     @staticmethod
     def _editable_rule_templates(model: dict[str, Any]) -> list[dict[str, Any]]:
+        if model.get("provider") == "vega":
+            return [{"metric": metric, "dimension": dimension, "unitSize": unit, "unitPriceYuan": None}
+                    for metric, dimension, unit, _ in vega.VEGA_RATES[model["alias"]]]
         modality = model["modality"]
         if modality == "text":
             raw = (("input_tokens", "", TOKEN_UNIT), ("output_tokens", "", TOKEN_UNIT))
@@ -360,7 +364,12 @@ class BillingManager:
             for row in sorted(rows, key=lambda item: (item["metric"], item["resolution"]))
         ]
         provider = model["provider"]
-        if provider == "modeltop":
+        if provider == "vega":
+            official = {"version": vega.VEGA_VERSION, "url": vega.VEGA_SOURCE, "currency": "CNY",
+                        "fxRateToCny": str(vega.VEGA_FX), "fxSource": vega.VEGA_FX_SOURCE,
+                        "fxTimestamp": vega.VEGA_FX_TIMESTAMP,
+                        "note": "国内站人民币刊例价；international维度为国际站USD按汇率快照折算"}
+        elif provider == "modeltop":
             official = {"version": MODELTOP_RATE_VERSION, "url": MODELTOP_RATE_SOURCE_URL,
                         "currency": "USD", "fxRateToCny": str(MODELTOP_FX),
                         "fxSource": MODELTOP_FX_SOURCE_URL, "fxTimestamp": MODELTOP_FX_TIMESTAMP}
@@ -396,7 +405,7 @@ class BillingManager:
             "editableRules": editable_rules,
             "configured": bool(rules),
             "scope": "global",
-            "officialSource": official if alias in OFFICIAL_RATES else None,
+            "officialSource": official if alias in OFFICIAL_RATES or provider == "vega" else None,
             "additionalSources": [{"version": MODELTOP_RATE_VERSION, "url": MODELTOP_RATE_SOURCE_URL,
                                    "currency": "USD", "fxRateToCny": str(MODELTOP_FX)}]
                 if provider_filter is None and provider != "modeltop" and alias in MODELTOP_MODELS else [],
@@ -435,6 +444,9 @@ class BillingManager:
             rate = self.get_rate(alias, month, str(available.get("provider") or self._catalog_model(alias)["provider"]))
             rules = []
             for rule in rate["rules"]:
+                site = available.get("capabilities", {}).get("billingSite")
+                if rate["provider"] == "vega" and site and not rule["dimension"].startswith(site + ":"):
+                    continue
                 list_micros = yuan_to_micros(rule["unitPriceYuan"])
                 effective_micros = int(
                     (Decimal(list_micros) * Decimal(terms["discountBps"]) / Decimal(10_000))
@@ -693,6 +705,8 @@ class BillingManager:
 
     @classmethod
     def _relay_measurements(cls, row: dict[str, Any]) -> tuple[list[tuple[str, str, Decimal]] | None, str | None]:
+        if row.get("provider") == "vega":
+            return vega.measurements(row)
         if row["modality"] == "text":
             if row["input_tokens"] is None or row["output_tokens"] is None:
                 return None, "usage_unknown"
@@ -1085,6 +1099,7 @@ class BillingManager:
             start, end = month_bounds_utc(statement["billing_month"])
             active_relay = connection.execute(
                 "SELECT COUNT(*) FROM inference_tasks WHERE project_name=? AND status IN ('queued','running') "
+                "AND operation IN ('video','image','transcription') "
                 "AND datetime(created_at,'unixepoch')>=? AND datetime(created_at,'unixepoch')<?",
                 (statement["project_name"], start, end),
             ).fetchone()[0]
