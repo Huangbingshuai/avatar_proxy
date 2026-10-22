@@ -88,11 +88,31 @@ def credentials(secret: str) -> dict[str, str]:
         value = json.loads(secret)
     except (ValueError, TypeError):
         value = None
-    if (not isinstance(value, dict) or set(value) != {"secretId", "secretKey"}
-            or any(not isinstance(value.get(k), str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,256}", value[k])
-                   for k in ("secretId", "secretKey"))):
-        raise ApiError("Vega凭证须包含有效的SecretId和SecretKey", 422, "vega_credentials_invalid")
+    if not isinstance(value, dict) or not value or set(value) - {"secretId", "secretKey", "apiToken"}:
+        raise ApiError("Vega凭证须包含SecretId/SecretKey或VL API Token", 422, "vega_credentials_invalid")
+    pair = {"secretId", "secretKey"} & set(value)
+    if pair and (pair != {"secretId", "secretKey"} or any(
+            not isinstance(value[k], str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,256}", value[k]) for k in pair)):
+        raise ApiError("Vega的SecretId和SecretKey须完整填写", 422, "vega_credentials_invalid")
+    token = value.get("apiToken")
+    if "apiToken" in value and (not isinstance(token, str) or not 8 <= len(token) <= 4096
+                               or any(not 33 <= ord(c) <= 126 for c in token)):
+        raise ApiError("Vega-VL API Token格式无效", 422, "vega_credentials_invalid")
     return value
+
+
+def api_token(secret: str) -> str:
+    token = credentials(secret).get("apiToken")
+    if not token:
+        raise ApiError("Vega渠道尚未配置VL API Token，请在渠道轮换凭证中补充", 503, "vega_vl_token_missing")
+    return token
+
+
+def tc3_credentials(secret: str) -> dict[str, str]:
+    keys = credentials(secret)
+    if not keys.get("secretId") or not keys.get("secretKey"):
+        raise ApiError("Vega视频和生图需要渠道的SecretId及SecretKey", 503, "vega_tc3_credentials_missing")
+    return keys
 
 
 def channel_config(config: dict[str, Any]) -> dict[str, str]:
@@ -106,7 +126,7 @@ def channel_config(config: dict[str, Any]) -> dict[str, str]:
 
 def signed_request(secret: str, config: dict[str, Any], action: str, payload: dict[str, Any], timestamp: int):
     config = channel_config(config)
-    keys = credentials(secret)
+    keys = tc3_credentials(secret)
     host = VEGA_HOSTS[config["site"]]
     body = json.dumps({**payload, "SubAppId": int(config["subAppId"])}, ensure_ascii=False, separators=(",", ":")).encode()
     content_type = "application/json; charset=utf-8"

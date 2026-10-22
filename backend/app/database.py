@@ -8,6 +8,8 @@ from typing import Any, Iterator
 
 from .modeltop import MODELTOP_MODEL_CATALOG, MODELTOP_RATES, MODELTOP_RATE_VERSION, MODELTOP_RATE_EFFECTIVE_MONTH
 from .vega import VEGA_MODEL_CATALOG, VEGA_RATES, VEGA_VERSION
+from .vega_image import MODEL_CATALOG as VEGA_IMAGE_CATALOG, RATES as VEGA_IMAGE_RATES
+from .vega_vl import MODEL_CATALOG as VEGA_VL_CATALOG, RATES as VEGA_VL_RATES
 
 from .official_rates import (
     BYTEPLUS_RATE_EFFECTIVE_MONTH,
@@ -81,6 +83,7 @@ BUILTIN_MODEL_CATALOG = (
 
 BUILTIN_MODEL_CATALOG += tuple(row for row in MODELTOP_MODEL_CATALOG if row[0] not in {item[0] for item in BUILTIN_MODEL_CATALOG})
 BUILTIN_MODEL_CATALOG += VEGA_MODEL_CATALOG
+BUILTIN_MODEL_CATALOG += VEGA_IMAGE_CATALOG + VEGA_VL_CATALOG
 
 BUILTIN_MODEL_ALIAS_MIGRATIONS = (
     ("seedream-5.0-pro", "doubao-seedream-5.0-pro"),
@@ -1192,6 +1195,11 @@ class Database:
                 _seed_official_rates(connection, actor=f"system:vega:{VEGA_VERSION}",
                                      effective_month="2026-10", card=VEGA_RATES)
                 connection.execute("INSERT INTO app_migrations(id) VALUES (?)", (vega_migration,))
+            image_vl_migration = "vega-image-vl-rates-2026-10-22"
+            if not connection.execute("SELECT 1 FROM app_migrations WHERE id=?", (image_vl_migration,)).fetchone():
+                _seed_official_rates(connection, actor="system:vega-image-vl:2026-10-22", effective_month="2026-10",
+                                     card={**VEGA_IMAGE_RATES, **VEGA_VL_RATES})
+                connection.execute("INSERT INTO app_migrations(id) VALUES (?)", (image_vl_migration,))
             connection.execute("UPDATE api_keys SET status = 'disabled' WHERE status = 'revoked'")
             # A process can stop after reserving quota but before committing or rolling it
             # back. No requests are in flight during startup, so all persisted reservations

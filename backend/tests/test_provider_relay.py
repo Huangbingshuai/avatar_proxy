@@ -145,7 +145,8 @@ def provision(
         name=f"{provider}-production",
         provider=provider,
         config=config or ({"site": "domestic", "subAppId": "123456"} if provider == "vega" else {}),
-        secret=json.dumps({"secretId": "example-id-12345678", "secretKey": "example-key-12345678"}) if provider == "vega" else f"secret-{provider}-abcdefgh",
+        secret=json.dumps({"secretId": "example-id-12345678", "secretKey": "example-key-12345678",
+                           **({"apiToken": "mock-vl-token-12345678"} if alias.startswith("wand-vega-vl-") else {})}) if provider == "vega" else f"secret-{provider}-abcdefgh",
         actor_id="super-admin",
     )
     relay.set_project_models(
@@ -1635,6 +1636,8 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "wan3.0-video", "doubao-embedding-vision", "doubao-seed-tts-2.0",
         "doubao-seedasr-2.0", "doubao-seed-audio-1.0",
         "vega-1.0-lite", "vega-1.0-pro", "vega-1.0-pro-fast", "vega-1.0-pro-mini", "vega-1.5-pro",
+        "vega-image-1.0-lite", "vega-image-1.0-flash", "vega-image-1.0-pro",
+        "wand-vega-vl-1.0-lite", "wand-vega-vl-1.0-flash", "wand-vega-vl-1.0-pro",
     ])
     with app.state.database.connect() as connection:
         upstream_models = dict(
@@ -1698,6 +1701,12 @@ def test_schema_migration_is_idempotent_and_catalog_has_no_default_bindings(tmp_
         "vega-1.0-pro-fast": "1.0-pro-fast",
         "vega-1.0-pro-mini": "1.0-pro-mini",
         "vega-1.5-pro": "1.5-pro",
+        "vega-image-1.0-lite": "1.0-lite",
+        "vega-image-1.0-flash": "1.0-flash",
+        "vega-image-1.0-pro": "1.0-pro",
+        "wand-vega-vl-1.0-lite": "wand-vega-vl-1.0-lite",
+        "wand-vega-vl-1.0-flash": "wand-vega-vl-1.0-flash",
+        "wand-vega-vl-1.0-pro": "wand-vega-vl-1.0-pro",
     }
     assert seedream_capabilities
     assert all(

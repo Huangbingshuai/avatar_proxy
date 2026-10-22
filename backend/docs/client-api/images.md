@@ -4,6 +4,8 @@
 
 ## 创建图片
 
+Vega-Image另提供 `POST /v1/images/tasks` 和 `GET /v1/images/tasks/{taskId}` 异步入口；同步入口同样必须传幂等键。其提示词上限2000字符、参考图数量和 `aspect_ratio` 等专属参数见 [Vega图片与多模态理解](vega-image-vl.md)，不要直接套用Seedream的全部参数与限制。
+
 `POST /v1/images/generations`
 
 请求：JSON。响应：同步 JSON。建议发送 `Idempotency-Key`；长耗时调用与断线处理见[安全重试](errors.md#幂等与断线恢复)。

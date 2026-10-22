@@ -96,6 +96,12 @@ curl "$BASE_URL/v1/models" \
 | `vega-1.0-pro-fast` | Vega多模态异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#vega-10-pro-fast) |
 | `vega-1.0-pro-mini` | Vega多模态异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#vega-10-pro-mini) |
 | `vega-1.5-pro` | Vega多模态异步视频 | `POST /api/v3/contents/generations/tasks` | `GET /api/v3/contents/generations/tasks/{taskId}` | [查看接口](model-reference.md#vega-15-pro) |
+| `vega-image-1.0-lite` | 文生图、参考图生图；最多3张参考图 | `POST /v1/images/tasks` / `POST /v1/images/generations` | 异步查询或同步JSON，临时URL | [查看接口](model-reference.md#vega-image-10-lite) |
+| `vega-image-1.0-flash` | 文生图、参考图生图；最多6张参考图 | `POST /v1/images/tasks` / `POST /v1/images/generations` | 异步查询或同步JSON，临时URL | [查看接口](model-reference.md#vega-image-10-flash) |
+| `vega-image-1.0-pro` | 文生图、参考图生图；最多6张参考图 | `POST /v1/images/tasks` / `POST /v1/images/generations` | 异步查询或同步JSON，临时URL | [查看接口](model-reference.md#vega-image-10-pro) |
+| `wand-vega-vl-1.0-lite` | 纯文本及图片、视频、音频、文件理解 | `POST /v1/chat/completions` | JSON / SSE，不支持Responses | [查看接口](model-reference.md#wand-vega-vl-10-lite) |
+| `wand-vega-vl-1.0-flash` | 纯文本及图片、视频、音频、文件理解 | `POST /v1/chat/completions` | JSON / SSE，不支持Responses | [查看接口](model-reference.md#wand-vega-vl-10-flash) |
+| `wand-vega-vl-1.0-pro` | 图片、视频、音频、文件理解；不支持纯文本 | `POST /v1/chat/completions` | JSON / SSE，不支持Responses | [查看接口](model-reference.md#wand-vega-vl-10-pro) |
 
 每个“查看接口”包含该模型的请求、参数、示例与结果；无需先猜测应使用哪类接口。
 

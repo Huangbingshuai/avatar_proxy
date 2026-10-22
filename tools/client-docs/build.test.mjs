@@ -5,7 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createHash } from 'node:crypto';
 import { JSDOM, VirtualConsole } from 'jsdom';
-import { build, pages, root, escapeHtml, modelCatalog, assetOperations, supplierCatalog } from './build.mjs';
+import { build, pages, root, escapeHtml, modelCatalog, assetOperations, vegaMaterialOperations, supplierCatalog } from './build.mjs';
 import { supplierPageId, supplierGroups } from './supplier-guides.mjs';
 
 const html = await build();
@@ -32,7 +32,7 @@ test('HTML is deterministic, self-contained, and both delivery copies are curren
   const version = createHash('sha256').update(html).digest('hex').slice(0, 16);
   assert.match(await readFile(path.join(root, 'app/client-docs-manifest.ts'), 'utf8'), new RegExp('client-api\\.html\\?v=' + version));
   const dom = new JSDOM(html);
-  assert.equal(dom.window.document.querySelectorAll('.docs-page').length, pages.length + supplierCatalog.length + assetOperations.length);
+  assert.equal(dom.window.document.querySelectorAll('.docs-page').length, pages.length + supplierCatalog.length + assetOperations.length + vegaMaterialOperations.length);
   assert.equal(dom.window.document.querySelectorAll('script[src], link[rel="stylesheet"], iframe, form').length, 0);
   assert.match(dom.window.document.querySelector('meta[http-equiv]').content, /connect-src 'none'/);
   const ids = [...dom.window.document.querySelectorAll('[id]')].map(el => el.id);
@@ -64,7 +64,7 @@ test('brand uses the original embedded Ruichi logo without external image reques
 test('supplier then model navigation includes duplicate aliases without a channel isolation layer', t => {
   const window = reader(t);
   const { document } = window;
-  assert.equal(supplierCatalog.length, 53);
+  assert.equal(supplierCatalog.length, 59);
   for (const variant of supplierCatalog) {
       const id = supplierPageId(variant);
       window.location.hash = '#' + id;
@@ -98,13 +98,13 @@ test('supplier then model navigation includes duplicate aliases without a channe
   assert.equal(document.querySelectorAll('.channel-folder').length, 0);
 });
 
-test('all material operations belong to Volcengine and deep links expand the supplier folder', t => {
+test('original material operations remain under Volcengine and deep links expand the supplier folder', t => {
   const window = reader(t);
   const { document } = window;
-  const assets = document.querySelector('.asset-folder');
+  const assets = document.querySelector('[data-supplier="volcengine"] .asset-folder');
   assert.equal(assets.closest('.supplier-folder').dataset.supplier, 'volcengine');
   assert.equal(assets.closest('.provider-folder'), null);
-  assert.equal(document.querySelectorAll('.asset-folder').length, 1);
+  assert.equal(document.querySelectorAll('.asset-folder').length, 2);
   for (const [id] of assetOperations) {
     const link = document.querySelector('.page-link[data-page="' + id + '"]');
     assert.equal(link.closest('.supplier-folder').dataset.supplier, 'volcengine');
@@ -118,6 +118,36 @@ test('all material operations belong to Volcengine and deep links expand the sup
   assert.equal(assets.open, true);
   assert.equal(assets.closest('.supplier-folder').open, true);
   assert.equal(document.querySelector('.docs-page:not([hidden])').id, 'asset-get');
+});
+
+test('all ten Vega material and liveness operations have supplier-local pages, parameters and examples', t => {
+  const window = reader(t);
+  const { document } = window;
+  assert.equal(vegaMaterialOperations.length, 10);
+  const folder = document.querySelector('[data-supplier="vega"] .asset-folder');
+  assert.ok(folder);
+  assert.match(folder.querySelector('summary').textContent, /素材接口10/);
+  for (const operation of vegaMaterialOperations) {
+    const link = folder.querySelector('[data-page="' + operation.id + '"]');
+    assert.ok(link, operation.action);
+    window.location.hash = '#' + operation.id;
+    window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+    const article = document.querySelector('.docs-page:not([hidden])');
+    assert.equal(article.id, operation.id);
+    assert.equal(article.dataset.provider, 'vega');
+    assert.equal(article.querySelector('.endpoint-bar .method').textContent, 'POST');
+    assert.equal(article.querySelector('.endpoint-bar code').textContent, '/v1/vega/' + operation.action);
+    assert.match(article.textContent, /请求参数/);
+    assert.match(article.textContent, /响应与后续处理/);
+    assert.match(article.textContent, /model/);
+    assert.ok(article.querySelector('pre[data-language="shell"]'));
+    assert.ok(article.querySelector('pre[data-language="javascript"]'));
+    if (operation.create) assert.match(article.textContent, /Idempotency-Key/);
+    assert.equal(folder.open, true);
+    assert.equal(folder.closest('.supplier-folder').open, true);
+  }
+  const volcanicFolder = document.querySelector('[data-supplier="volcengine"] .asset-folder');
+  assert.equal(volcanicFolder.querySelectorAll('[data-page^="vega-"]').length, 0);
 });
 
 test('JavaScript examples execute offline with matching URLs, headers, bodies and response readers', async () => {

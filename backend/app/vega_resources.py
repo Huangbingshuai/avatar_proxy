@@ -90,7 +90,8 @@ class VegaResources:
             route = self.relay._task_route(task)
         else:
             route = self.relay.resolve(principal, alias)
-        if route.provider != "vega" or route.upstream_model == "1.0-lite":
+        if (route.provider != "vega" or route.modality != "video"
+                or route.upstream_model not in {"1.0-pro", "1.0-pro-fast", "1.0-pro-mini", "1.5-pro"}):
             raise ApiError("该接口仅支持Vega Pro系列渠道", 422, "vega_resource_unsupported")
         body = dict(payload)
         if "Liveness" in action and route.channel_config["site"] != "domestic":

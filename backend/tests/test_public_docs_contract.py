@@ -11,6 +11,7 @@ from app.database import BUILTIN_DISABLED_MODEL_ALIASES, BUILTIN_MODEL_CATALOG
 from app.routers.ark_compat import ARK_VIDEO_FIELDS, router as ark_router
 from app.routers.assets import router as asset_router
 from app.routers.auth import router as auth_router
+from app.routers.vega_images import router as image_tasks_router
 from app.routers.openai_compat import (
     CHAT_FIELDS, RESPONSE_FIELDS, IMAGE_FIELDS, EMBEDDING_FIELDS,
     MULTIMODAL_EMBEDDING_FIELDS, SPEECH_FIELDS, TRANSCRIPTION_FIELDS,
@@ -80,7 +81,7 @@ def test_asset_operations_have_independent_reference_sections() -> None:
 def test_client_api_lists_current_public_model_routes() -> None:
     client = _text(CLIENT_DOC)
     route_paths = {
-        route.path for router in (auth_router, asset_router, openai_router, ark_router)
+        route.path for router in (auth_router, asset_router, openai_router, ark_router, image_tasks_router)
         for route in router.routes
     }
     expected_paths = {
@@ -91,6 +92,7 @@ def test_client_api_lists_current_public_model_routes() -> None:
         "/api/asset/update", "/api/asset/delete", "/api/asset/upload-file",
         "/v1/models", "/v1/pricing", "/v1/chat/completions", "/v1/responses",
         "/v1/images/generations", "/v1/embeddings", "/v1/embeddings/multimodal",
+        "/v1/images/tasks", "/v1/images/tasks/{task_id}",
         "/v1/audio/speech", "/v1/audio/transcriptions",
         "/v1/audio/transcriptions/{task_id}", "/v1/audio/generations",
         "/api/v3/contents/generations/tasks",
@@ -98,7 +100,7 @@ def test_client_api_lists_current_public_model_routes() -> None:
     }
     assert expected_paths <= route_paths
     references = "\n".join(_text(p) for p in CUSTOMER_DOCS if p != CLIENT_DOC)
-    for route in (route for router in (auth_router, asset_router, openai_router, ark_router) for route in router.routes):
+    for route in (route for router in (auth_router, asset_router, openai_router, ark_router, image_tasks_router) for route in router.routes):
         if route.path not in expected_paths:
             continue
         public_path = route.path.replace("{task_id}", "{taskId}")
@@ -148,7 +150,7 @@ def test_specialized_docs_defer_to_client_contract() -> None:
     billing = _text(ADMIN_BILLING_DOC)
     relay = _text(MODEL_RELAY_DOC)
     richidrama = _text(RICHIDRAMA_DOC)
-    assert "版本：6.1" in client
+    assert "版本：6.2" in client
     assert "版本：1.2" in billing
     assert "独立的“模型价格”页面" in billing
     assert "`/v1/pricing`" in billing
@@ -211,7 +213,10 @@ def test_curl_payloads_only_use_supported_model_fields() -> None:
                 body = re.search(r"-d '([^']+)'", request, re.S)
                 if endpoint and body and endpoint[1] in whitelists:
                     payload = json.loads(body[1])
-                    assert payload.keys() <= whitelists[endpoint[1]], path.name
+                    allowed = whitelists[endpoint[1]]
+                    if endpoint[1] == "/v1/images/generations" and payload["model"].startswith("vega-image-"):
+                        allowed = allowed | {"aspect_ratio"}
+                    assert payload.keys() <= allowed, path.name
                     assert payload["model"] in aliases
 
 

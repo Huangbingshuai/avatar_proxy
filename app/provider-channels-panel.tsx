@@ -58,6 +58,7 @@ const emptyForm = {
   provider: "volcengine_ark" as Provider,
   secret: "",
   secretId: "",
+  apiToken: "",
   subAppId: "",
   site: "domestic",
   workspaceId: "",
@@ -145,6 +146,7 @@ export default function ProviderChannelsPanel({
   const [rotateForm, setRotateForm] = useState({
     secret: "",
     secretId: "",
+    apiToken: "",
     currentPassword: "",
     totpCode: "",
   });
@@ -191,7 +193,7 @@ export default function ProviderChannelsPanel({
     const validation = !form.projectName ? "请选择客户项目。"
       : !form.name.trim() ? "请填写渠道名称，不能只包含空格。"
       : form.name.length > 100 ? "渠道名称不能超过100个字符。"
-      : form.secret.trim().length < 8 || form.secret.trim().length > 4096 ? "供应商 API Key 必须为8～4096个字符，请确认已完整复制。"
+      : !(form.provider === "vega" && form.apiToken.trim()) && (form.secret.trim().length < 8 || form.secret.trim().length > 4096) ? "供应商 API Key 必须为8～4096个字符，请确认已完整复制。"
       : !form.currentPassword || form.currentPassword.length > 128 ? "请输入当前超级管理员密码，最多128个字符。"
       : !/^\d{6}$/.test(form.totpCode) ? "请输入6位 TOTP 动态验证码。"
       : form.provider === "aliyun_bailian" && !form.workspaceId.trim() ? "请填写 Workspace ID。" : "";
@@ -199,7 +201,9 @@ export default function ProviderChannelsPanel({
       setModalError({ message: validation });
       return;
     }
-    if (form.provider === "vega" && (!/^[1-9][0-9]{0,18}$/.test(form.subAppId) || form.secretId.trim().length < 8)) {
+    if (form.provider === "vega" && (!/^[1-9][0-9]{0,18}$/.test(form.subAppId)
+      || ((form.secretId.trim() || form.secret.trim()) && (form.secretId.trim().length < 8 || form.secret.trim().length < 8))
+      || (!form.secretId.trim() && !form.apiToken.trim()))) {
       setModalError({ message: "请填写有效的 SubAppId 和 SecretId。" });
       return;
     }
@@ -218,7 +222,10 @@ export default function ProviderChannelsPanel({
           name: form.name,
           provider: form.provider,
           config: channelConfig(form),
-          secret: form.provider === "vega" ? JSON.stringify({ secretId: form.secretId.trim(), secretKey: form.secret.trim() }) : form.secret,
+          secret: form.provider === "vega" ? JSON.stringify({
+            ...(form.secretId.trim() ? { secretId: form.secretId.trim(), secretKey: form.secret.trim() } : {}),
+            ...(form.apiToken.trim() ? { apiToken: form.apiToken.trim() } : {}),
+          }) : form.secret,
           currentPassword: form.currentPassword,
           totpCode: form.totpCode,
         }),
@@ -228,7 +235,7 @@ export default function ProviderChannelsPanel({
       setNotice("渠道已创建，供应商凭证已加密保存。");
       await load();
     } catch (caught) {
-      setModalError(channelFormError(caught, [form.secret, form.secretId, form.currentPassword, form.totpCode]));
+      setModalError(channelFormError(caught, [form.secret, form.secretId, form.apiToken, form.currentPassword, form.totpCode]));
       if (caught instanceof AdminApiError && ["csrf_token_refreshed", "invalid_admin_totp", "admin_totp_replayed"].includes(caught.code)) {
         setForm((current) => ({ ...current, totpCode: "" }));
       }
@@ -298,12 +305,16 @@ export default function ProviderChannelsPanel({
         {
           method: "POST",
           body: JSON.stringify({ secret: rotateTarget.provider === "vega"
-            ? JSON.stringify({ secretId: rotateForm.secretId.trim(), secretKey: rotateForm.secret.trim() }) : rotateForm.secret,
+            ? JSON.stringify({
+              ...(rotateForm.secretId.trim() ? { secretId: rotateForm.secretId.trim() } : {}),
+              ...(rotateForm.secret.trim() ? { secretKey: rotateForm.secret.trim() } : {}),
+              ...(rotateForm.apiToken.trim() ? { apiToken: rotateForm.apiToken.trim() } : {}),
+            }) : rotateForm.secret,
             currentPassword: rotateForm.currentPassword, totpCode: rotateForm.totpCode }),
         },
       );
       setRotateTarget(null);
-      setRotateForm({ secret: "", secretId: "", currentPassword: "", totpCode: "" });
+      setRotateForm({ secret: "", secretId: "", apiToken: "", currentPassword: "", totpCode: "" });
       await load();
     } catch (caught) {
       setModalError(channelFormError(caught, Object.values(rotateForm)));
@@ -606,8 +617,9 @@ export default function ProviderChannelsPanel({
                     <option value="international">国际站（美元价折算人民币）</option>
                   </select></label>
                   <label>SubAppId<input required inputMode="numeric" pattern="[1-9][0-9]{0,18}" value={form.subAppId} onChange={(event) => setForm({ ...form, subAppId: event.target.value })} /></label>
-                  <label>SecretId<input type="password" required minLength={8} autoComplete="new-password" value={form.secretId} onChange={(event) => setForm({ ...form, secretId: event.target.value })} /></label>
-                  <div className="note">先开通腾讯云点播 VOD，并申请 Vega 模型权限。SecretId/SecretKey 一起加密保存；SubAppId 固定注入，不接受客户覆盖。默认并发通常为 1，扩容请联系供应商。渠道测试不提交付费生成。</div>
+                  <label>SecretId（视频 / 生图）<input type="password" required={!form.apiToken.trim()} minLength={8} autoComplete="new-password" value={form.secretId} onChange={(event) => setForm({ ...form, secretId: event.target.value })} /></label>
+                  <label>Vega-VL API Token（多模态理解）<input type="password" minLength={8} maxLength={4096} autoComplete="new-password" value={form.apiToken} onChange={(event) => setForm({ ...form, apiToken: event.target.value })} /></label>
+                  <div className="note">一个 Vega 渠道可绑定视频、生图和多模态理解模型。视频/生图填写 SecretId、SecretKey；VL 另填点播控制台创建的 API Token。凭证一起加密保存，SubAppId 固定注入。Token 创建后约 1 分钟生效，国内/国际站 Token 不通用。</div>
                 </>
               )}
               <label>
@@ -615,7 +627,7 @@ export default function ProviderChannelsPanel({
                 <input
                   type="password"
                   autoComplete="new-password"
-                  required
+                  required={form.provider !== "vega" || !form.apiToken.trim()}
                   minLength={8}
                   maxLength={4096}
                   value={form.secret}
@@ -760,7 +772,7 @@ export default function ProviderChannelsPanel({
           >
             <header>
               <h2 id="rotate-channel-title">轮换“{rotateTarget.name}”凭证</h2>
-              <button onClick={() => { setRotateTarget(null); setRotateForm({ secret: "", secretId: "", currentPassword: "", totpCode: "" }); setModalError(null); }} disabled={Boolean(busy)} aria-label="关闭">
+              <button onClick={() => { setRotateTarget(null); setRotateForm({ secret: "", secretId: "", apiToken: "", currentPassword: "", totpCode: "" }); setModalError(null); }} disabled={Boolean(busy)} aria-label="关闭">
                 ×
               </button>
             </header>
@@ -768,13 +780,17 @@ export default function ProviderChannelsPanel({
               <div className="note">
                 新请求立即使用新凭证；已提交的视频任务继续固定使用原凭证版本。
               </div>
-              {rotateTarget.provider === "vega" && <label>新 SecretId<input type="password" required minLength={8} autoComplete="new-password" value={rotateForm.secretId} onChange={(event) => setRotateForm({ ...rotateForm, secretId: event.target.value })} /></label>}
+              {rotateTarget.provider === "vega" && <>
+                <label>新 SecretId（留空保留）<input type="password" minLength={8} autoComplete="new-password" value={rotateForm.secretId} onChange={(event) => setRotateForm({ ...rotateForm, secretId: event.target.value })} /></label>
+                <label>新 Vega-VL API Token（留空保留）<input type="password" minLength={8} maxLength={4096} autoComplete="new-password" value={rotateForm.apiToken} onChange={(event) => setRotateForm({ ...rotateForm, apiToken: event.target.value })} /></label>
+                <div className="note">可单独补充 VL API Token。留空的 Vega 凭证由服务端保留，请至少填写一项新凭证。</div>
+              </>}
               <label>
                 {rotateTarget.provider === "vega" ? "新 SecretKey" : "新 API Key"}
                 <input
                   type="password"
                   autoComplete="new-password"
-                  required
+                  required={rotateTarget.provider !== "vega"}
                   minLength={8}
                   value={rotateForm.secret}
                   onChange={(event) =>

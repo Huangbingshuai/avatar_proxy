@@ -22,6 +22,7 @@ from .errors import ApiError
 from .modeltop import MODELTOP_MODELS
 from .security import ApiPrincipal
 from . import vega
+from . import vega_image, vega_vl
 
 
 PROVIDERS = {
@@ -324,7 +325,8 @@ class ProviderRelay:
         """Single-instance restart recovery: never replay a possibly paid POST."""
         with self.database.connect() as connection:
             tasks = connection.execute(
-                "SELECT * FROM inference_tasks WHERE operation='image' AND status IN ('queued','running')"
+                "SELECT * FROM inference_tasks WHERE operation='image' AND status IN ('queued','running') "
+                "AND NOT (model_alias LIKE 'vega-image-%' AND upstream_task_id IS NOT NULL)"
             ).fetchall()
             for task in tasks:
                 connection.execute(
@@ -476,7 +478,7 @@ class ProviderRelay:
                 connection.execute(
                     "INSERT INTO provider_credentials "
                     "(id,channel_id,secret_ciphertext,secret_hint,created_by) VALUES (?,?,?,?,?)",
-                    (credential_id, channel_id, ciphertext, "SecretId/SecretKey 已加密" if provider == "vega" else _secret_hint(secret), actor_id),
+                    (credential_id, channel_id, ciphertext, "Vega凭证已加密" if provider == "vega" else _secret_hint(secret), actor_id),
                 )
             except Exception as error:
                 if "UNIQUE constraint" in str(error):
@@ -486,7 +488,6 @@ class ProviderRelay:
 
     def rotate_channel_secret(self, channel_id: str, secret: str, actor_id: str) -> dict[str, Any]:
         self.require_enabled()
-        ciphertext = self.vault.encrypt(secret)
         new_id = f"pcr_{uuid.uuid4().hex}"
         with self.database.connect() as connection:
             channel = connection.execute(
@@ -495,7 +496,16 @@ class ProviderRelay:
             if channel is None:
                 raise ApiError("供应商渠道不存在", 404, "provider_channel_not_found")
             if channel["provider"] == "vega":
-                vega.credentials(secret)
+                try:
+                    patch = json.loads(secret)
+                except (ValueError, TypeError):
+                    patch = None
+                if not isinstance(patch, dict) or not patch or set(patch) - {"secretId", "secretKey", "apiToken"}:
+                    raise ApiError("请至少提供一项有效的Vega新凭证", 422, "vega_credentials_invalid")
+                active = connection.execute("SELECT secret_ciphertext FROM provider_credentials WHERE channel_id=? AND status='active'", (channel_id,)).fetchone()
+                previous = vega.credentials(self.vault.decrypt(active[0])) if active else {}
+                secret = _json(vega.credentials(_json({**previous, **patch})))
+            ciphertext = self.vault.encrypt(secret)
             connection.execute(
                 "UPDATE provider_credentials SET status='retired',retired_at=CURRENT_TIMESTAMP "
                 "WHERE channel_id=? AND status='active'",
@@ -504,7 +514,7 @@ class ProviderRelay:
             connection.execute(
                 "INSERT INTO provider_credentials "
                 "(id,channel_id,secret_ciphertext,secret_hint,created_by) VALUES (?,?,?,?,?)",
-                (new_id, channel_id, ciphertext, "SecretId/SecretKey 已加密" if channel["provider"] == "vega" else _secret_hint(secret), actor_id),
+                (new_id, channel_id, ciphertext, "Vega凭证已加密" if channel["provider"] == "vega" else _secret_hint(secret), actor_id),
             )
             connection.execute(
                 "UPDATE provider_channels SET updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -701,6 +711,9 @@ class ProviderRelay:
             ).fetchone()
         if row is None:
             raise ApiError("当前项目未启用该模型或渠道不可用", 403, "model_not_allowed")
+        secret = self.vault.decrypt(row["secret_ciphertext"])
+        if row["provider"] == "vega":
+            (vega.api_token if row["modality"] == "text" else vega.tc3_credentials)(secret)
         return ModelRoute(
             alias=row["alias"],
             display_name=row["display_name"],
@@ -713,7 +726,7 @@ class ProviderRelay:
             channel_name=row["channel_name"],
             channel_config=_loaded(row["config_json"], {}),
             credential_id=row["credential_id"],
-            secret=self.vault.decrypt(row["secret_ciphertext"]),
+            secret=secret,
         )
 
     def available_models(self, principal: ApiPrincipal) -> list[dict[str, Any]]:
@@ -766,6 +779,8 @@ class ProviderRelay:
         return route
 
     def _base_url(self, route: ModelRoute) -> str:
+        if route.provider == "vega" and route.modality == "text":
+            return vega_vl.BASE_URL
         if route.provider == "modeltop":
             return "https://modeltop.ai/api/v3" if route.modality == "video" else "https://modeltop.ai/v1"
         if route.provider == "openai":
@@ -790,6 +805,8 @@ class ProviderRelay:
 
     @staticmethod
     def _headers(route: ModelRoute) -> dict[str, str]:
+        if route.provider == "vega" and route.modality == "text":
+            return {"authorization": f"Bearer {vega.api_token(route.secret)}", "content-type": "application/json"}
         if route.provider == "volcengine_speech":
             return {"x-api-key": route.secret, "content-type": "application/json"}
         headers = {"authorization": f"Bearer {route.secret}", "content-type": "application/json"}
@@ -805,9 +822,10 @@ class ProviderRelay:
         return headers
 
     async def _request(
-        self, route: ModelRoute, method: str, path: str, payload: dict[str, Any] | None = None
+        self, route: ModelRoute, method: str, path: str, payload: dict[str, Any] | None = None,
+        *, extra_headers: dict[str, str] | None = None,
     ) -> tuple[httpx.Response, dict[str, Any]]:
-        if route.provider == "vega":
+        if route.provider == "vega" and route.modality != "text":
             return await self._vega_request(route, path.removeprefix("/"), payload or {})
         try:
             async with httpx.AsyncClient(
@@ -819,7 +837,7 @@ class ProviderRelay:
                 response = await client.request(
                     method,
                     f"{self._base_url(route)}{path}",
-                    headers=self._headers(route),
+                    headers={**self._headers(route), **(extra_headers or {})},
                     json=payload,
                 )
         except httpx.RequestError as error:
@@ -840,6 +858,9 @@ class ProviderRelay:
                     message = data["message"][:500]
                 elif isinstance(data.get("msg"), str) and data["msg"]:
                     message = data["msg"][:500]
+            if route.provider == "vega":
+                for secret in vega.credentials(route.secret).values():
+                    message = message.replace(secret, "[REDACTED]")
             raise ApiError(
                 message,
                 response.status_code if 400 <= response.status_code < 600 else 502,
@@ -955,6 +976,9 @@ class ProviderRelay:
         usage_dimension: str | None = None,
     ) -> None:
         usage = usage or {}
+        if route.provider == "vega" and route.modality == "text":
+            usage = vega_vl.normalized_usage(usage)
+            usage_dimension = route.channel_config["site"]
         input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
         output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
         total_tokens = usage.get("total_tokens")
@@ -1395,16 +1419,22 @@ class ProviderRelay:
         return self._transcription_public(self.get_local_task(principal, task_id))
 
     async def text_json(
-        self, principal: ApiPrincipal, alias: str, operation: str, payload: dict[str, Any]
+        self, principal: ApiPrincipal, alias: str, operation: str, payload: dict[str, Any],
+        *, user_session_id: str | None = None,
     ) -> tuple[dict[str, Any], str | None]:
         route = self.validate_text_operation(principal, alias, operation, stream=False)
+        if route.provider == "vega":
+            payload = vega_vl.validate_payload(payload, pro=not route.capabilities.get("textOnly", True))
+        elif {"thinking_enabled", "reasoning_split"} & set(payload):
+            raise ApiError("该模型不支持Vega-VL推理参数", 422, "text_parameter_unsupported")
         if _contains_image_input(payload) and not route.capabilities.get("imageInput"):
             raise ApiError("该模型不支持图片理解", 422, "model_image_input_unsupported")
         path = "/chat/completions" if operation == "chat" else "/responses"
         upstream_payload = dict(payload)
         upstream_payload["model"] = route.upstream_model
         upstream_payload["stream"] = False
-        response, data = await self._request(route, "POST", path, upstream_payload)
+        response, data = await self._request(route, "POST", path, upstream_payload,
+            extra_headers=vega_vl.session_header(principal, user_session_id) if route.provider == "vega" else None)
         data["model"] = route.alias
         request_id = _provider_request_id(response.headers, data) or f"req_{uuid.uuid4().hex}"
         usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
@@ -1419,9 +1449,14 @@ class ProviderRelay:
         return data, request_id
 
     async def text_stream(
-        self, principal: ApiPrincipal, alias: str, operation: str, payload: dict[str, Any]
+        self, principal: ApiPrincipal, alias: str, operation: str, payload: dict[str, Any],
+        *, user_session_id: str | None = None,
     ) -> AsyncIterator[bytes]:
         route = self.validate_text_operation(principal, alias, operation, stream=True)
+        if route.provider == "vega":
+            payload = vega_vl.validate_payload(payload, pro=not route.capabilities.get("textOnly", True))
+        elif {"thinking_enabled", "reasoning_split"} & set(payload):
+            raise ApiError("该模型不支持Vega-VL推理参数", 422, "text_parameter_unsupported")
         if _contains_image_input(payload) and not route.capabilities.get("imageInput"):
             raise ApiError("该模型不支持图片理解", 422, "model_image_input_unsupported")
         path = "/chat/completions" if operation == "chat" else "/responses"
@@ -1435,11 +1470,13 @@ class ProviderRelay:
         provider_request_id: str | None = None
         usage: dict[str, Any] = {}
         request_id = f"req_{uuid.uuid4().hex}"
+        stream_completed = False
+        stream_error = False
         try:
             async with client.stream(
                 "POST",
                 f"{self._base_url(route)}{path}",
-                headers=self._headers(route),
+                headers={**self._headers(route), **(vega_vl.session_header(principal, user_session_id) if route.provider == "vega" else {})},
                 json=upstream_payload,
             ) as response:
                 provider_request_id = _provider_request_id(response.headers)
@@ -1450,6 +1487,13 @@ class ProviderRelay:
                     except ValueError:
                         data = {}
                     message = data.get("message") if isinstance(data, dict) else None
+                    if route.provider == "vega" and isinstance(data, dict):
+                        upstream_error = data.get("error")
+                        if isinstance(upstream_error, dict):
+                            message = upstream_error.get("message") or message
+                        message = str(message or "模型供应商拒绝了流式请求")
+                        for secret in vega.credentials(route.secret).values():
+                            message = message.replace(secret, "[REDACTED]")
                     raise ApiError(
                         str(message or "模型供应商拒绝了流式请求")[:500],
                         response.status_code,
@@ -1459,21 +1503,37 @@ class ProviderRelay:
                     if not line:
                         yield b"\n"
                         continue
-                    if line.startswith("data: ") and line[6:] != "[DONE]":
+                    if line.startswith("data:") and line[5:].strip() == "[DONE]":
+                        stream_completed = True
+                        yield b"data: [DONE]\n"
+                    elif line.startswith("data:"):
                         try:
-                            event = json.loads(line[6:])
+                            event = json.loads(line[5:].strip())
                         except ValueError:
+                            stream_error = True
+                            if route.provider == "vega":
+                                raise ApiError("Vega-VL返回了无效流式数据", 502, "provider_response_invalid")
                             yield f"{line}\n".encode("utf-8")
                             continue
                         if isinstance(event, dict):
+                            if event.get("error"):
+                                stream_error = True
+                                if route.provider == "vega":
+                                    safe_event = _json(event)
+                                    for secret in vega.credentials(route.secret).values():
+                                        safe_event = safe_event.replace(_json(secret)[1:-1], "[REDACTED]")
+                                    event = json.loads(safe_event)
                             if "model" in event:
                                 event["model"] = route.alias
                             if isinstance(event.get("usage"), dict):
                                 usage = event["usage"]
-                            request_id = str(event.get("id") or event.get("response", {}).get("id") or request_id)
+                            nested = event.get("response")
+                            request_id = str(event.get("id") or (nested.get("id") if isinstance(nested, dict) else None) or request_id)
                         yield f"data: {_json(event)}\n".encode("utf-8")
                     else:
                         yield f"{line}\n".encode("utf-8")
+                if route.provider == "vega" and not stream_completed:
+                    raise ApiError("Vega-VL流式响应未完成，请核对结果，勿盲目重试", 502, "provider_stream_incomplete")
         except httpx.RequestError as error:
             raise self._transport_error(error, submitted=True) from error
         finally:
@@ -1482,7 +1542,7 @@ class ProviderRelay:
                 request_id=request_id,
                 principal=principal,
                 route=route,
-                status="succeeded" if usage else "unknown",
+                status="succeeded" if usage and (route.provider != "vega" or stream_completed and not stream_error) else "unknown",
                 provider_request_id=provider_request_id,
                 usage=usage,
             )
@@ -1542,6 +1602,8 @@ class ProviderRelay:
                 billing_metadata["vegaSite"] = route.channel_config["site"]
                 billing_metadata["resolution"] = str(resolution or route.capabilities["defaultResolution"]).lower()
         elif operation == "image":
+            if route.provider == "vega":
+                billing_metadata["vegaSite"] = route.channel_config["site"]
             image = payload.get("image")
             billing_metadata["inputImageCount"] = len(image) if isinstance(image, list) else int(
                 isinstance(image, str) and bool(image.strip())
@@ -1784,6 +1846,9 @@ class ProviderRelay:
         route = self.resolve(principal, alias)
         if route.modality != "image":
             raise ApiError("该模型不支持图片接口", 422, "model_modality_mismatch")
+        if route.provider == "vega":
+            from .vega_image_relay import VegaImages
+            return await VegaImages(self).generate(principal, alias, payload, idempotency_key)
         upstream = self._image_upstream_payload(route, payload)
         if len(self._image_jobs) >= self.settings.model_image_max_inflight and not (
             idempotency_key and self._find_idempotent_task(

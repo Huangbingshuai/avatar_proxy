@@ -551,6 +551,720 @@ curl "$BASE_URL/v1/pricing?model=vega-1.5-pro" \
 
 价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-1.5-pro` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
 
+### `vega-image-1.0-lite`
+
+异步文生图与参考生图
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /v1/images/tasks`
+
+Vega异步生图。提交后保存本站返回的id，使用相同业务Key轮询；必须发送Idempotency-Key。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `vega-image-1.0-lite`，最长 128 个字符 |
+| `prompt` | 有条件 | 最多2000字符；没有参考图时必填 |
+| `image` | 否 | HTTP(S) URL、图片Data URL或数组；最多3张 |
+| `size` | 否 | 1K、2K、4K或文档像素预设，默认1K |
+| `aspect_ratio` | 否 | 1:1、2:3、3:2、3:4、4:3、9:16、16:9、21:9，默认1:1 |
+| `n` | 否 | Lite仅1；Flash/Pro系统上限15，最终受供应商限制 |
+| `response_format` | 否 | 仅url，结果为临时地址 |
+| `watermark` | 否 | 布尔值，映射供应商的图标水印选项 |
+
+#### 请求示例
+
+```bash
+curl "$BASE_URL/v1/images/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-image-1.0-lite",
+  "prompt": "白色背景上的蓝色陶瓷杯",
+  "size": "2K",
+  "aspect_ratio": "16:9",
+  "n": 1
+}'
+```
+
+#### 查询任务
+
+```bash
+curl "$BASE_URL/v1/images/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+#### 返回结果
+
+```json
+{
+  "id": "img_xxx",
+  "object": "image_task",
+  "model": "vega-image-1.0-lite",
+  "status": "succeeded",
+  "progress": 100,
+  "result": {
+    "model": "vega-image-1.0-lite",
+    "task_id": "img_xxx",
+    "data": [
+      {
+        "url": "https://provider.example.com/result.png",
+        "expires_at": "2026-12-01T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+status为queued/running/succeeded/failed；完成后读取result.data[].url。不能使用其他Key读取任务。凭证轮换和渠道停用后，既有任务仍固定原凭证查询。
+
+#### 同步兼容接口
+
+```bash
+curl "$BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-image-1.0-lite",
+  "prompt": "白色背景上的蓝色陶瓷杯",
+  "size": "1K"
+}'
+```
+
+同步兼容接口会等待同一异步任务完成，并返回OpenAI图片结构。长任务推荐直接使用异步接口；超时保留taskId，查询原任务，勿更换幂等键重复生成。
+
+#### 素材和计费
+
+支持JPEG、PNG、WebP Data URL；服务端去掉前缀后传供应商，所有内联图合计不超过7 MiB。远程参考图按供应商最终格式和大小限制校验。像素预设映射分辨率和比例，实际尺寸以返回结果为准。
+
+Lite、Flash输入免费；Pro前三张输入免费，第四张起计费。输出按实际返回张数，不按请求n估算；国际站生图价格未提供，需管理员配置后计价。临时地址可能过期，请及时下载。
+
+完整流程见[Vega生图与理解](vega-image-vl.md)。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=vega-image-1.0-lite" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-image-1.0-lite` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `vega-image-1.0-flash`
+
+异步文生图与参考生图
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /v1/images/tasks`
+
+Vega异步生图。提交后保存本站返回的id，使用相同业务Key轮询；必须发送Idempotency-Key。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `vega-image-1.0-flash`，最长 128 个字符 |
+| `prompt` | 有条件 | 最多2000字符；没有参考图时必填 |
+| `image` | 否 | HTTP(S) URL、图片Data URL或数组；最多6张 |
+| `size` | 否 | 1K、2K、4K或文档像素预设，默认1K |
+| `aspect_ratio` | 否 | 1:1、2:3、3:2、3:4、4:3、9:16、16:9、21:9，默认1:1 |
+| `n` | 否 | Lite仅1；Flash/Pro系统上限15，最终受供应商限制 |
+| `response_format` | 否 | 仅url，结果为临时地址 |
+| `watermark` | 否 | 布尔值，映射供应商的图标水印选项 |
+
+#### 请求示例
+
+```bash
+curl "$BASE_URL/v1/images/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-image-1.0-flash",
+  "prompt": "白色背景上的蓝色陶瓷杯",
+  "size": "2K",
+  "aspect_ratio": "16:9",
+  "n": 1
+}'
+```
+
+#### 查询任务
+
+```bash
+curl "$BASE_URL/v1/images/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+#### 返回结果
+
+```json
+{
+  "id": "img_xxx",
+  "object": "image_task",
+  "model": "vega-image-1.0-flash",
+  "status": "succeeded",
+  "progress": 100,
+  "result": {
+    "model": "vega-image-1.0-flash",
+    "task_id": "img_xxx",
+    "data": [
+      {
+        "url": "https://provider.example.com/result.png",
+        "expires_at": "2026-12-01T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+status为queued/running/succeeded/failed；完成后读取result.data[].url。不能使用其他Key读取任务。凭证轮换和渠道停用后，既有任务仍固定原凭证查询。
+
+#### 同步兼容接口
+
+```bash
+curl "$BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-image-1.0-flash",
+  "prompt": "白色背景上的蓝色陶瓷杯",
+  "size": "1K"
+}'
+```
+
+同步兼容接口会等待同一异步任务完成，并返回OpenAI图片结构。长任务推荐直接使用异步接口；超时保留taskId，查询原任务，勿更换幂等键重复生成。
+
+#### 素材和计费
+
+支持JPEG、PNG、WebP Data URL；服务端去掉前缀后传供应商，所有内联图合计不超过7 MiB。远程参考图按供应商最终格式和大小限制校验。像素预设映射分辨率和比例，实际尺寸以返回结果为准。
+
+Lite、Flash输入免费；Pro前三张输入免费，第四张起计费。输出按实际返回张数，不按请求n估算；国际站生图价格未提供，需管理员配置后计价。临时地址可能过期，请及时下载。
+
+完整流程见[Vega生图与理解](vega-image-vl.md)。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=vega-image-1.0-flash" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-image-1.0-flash` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `vega-image-1.0-pro`
+
+异步文生图与参考生图
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /v1/images/tasks`
+
+Vega异步生图。提交后保存本站返回的id，使用相同业务Key轮询；必须发送Idempotency-Key。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `vega-image-1.0-pro`，最长 128 个字符 |
+| `prompt` | 有条件 | 最多2000字符；没有参考图时必填 |
+| `image` | 否 | HTTP(S) URL、图片Data URL或数组；最多6张 |
+| `size` | 否 | 1K、2K、4K或文档像素预设，默认1K |
+| `aspect_ratio` | 否 | 1:1、2:3、3:2、3:4、4:3、9:16、16:9、21:9，默认1:1 |
+| `n` | 否 | Lite仅1；Flash/Pro系统上限15，最终受供应商限制 |
+| `response_format` | 否 | 仅url，结果为临时地址 |
+| `watermark` | 否 | 布尔值，映射供应商的图标水印选项 |
+
+#### 请求示例
+
+```bash
+curl "$BASE_URL/v1/images/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-image-1.0-pro",
+  "prompt": "白色背景上的蓝色陶瓷杯",
+  "size": "2K",
+  "aspect_ratio": "16:9",
+  "n": 1
+}'
+```
+
+#### 查询任务
+
+```bash
+curl "$BASE_URL/v1/images/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+#### 返回结果
+
+```json
+{
+  "id": "img_xxx",
+  "object": "image_task",
+  "model": "vega-image-1.0-pro",
+  "status": "succeeded",
+  "progress": 100,
+  "result": {
+    "model": "vega-image-1.0-pro",
+    "task_id": "img_xxx",
+    "data": [
+      {
+        "url": "https://provider.example.com/result.png",
+        "expires_at": "2026-12-01T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+status为queued/running/succeeded/failed；完成后读取result.data[].url。不能使用其他Key读取任务。凭证轮换和渠道停用后，既有任务仍固定原凭证查询。
+
+#### 同步兼容接口
+
+```bash
+curl "$BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: customer-order-unique-id" \
+  -d '{
+  "model": "vega-image-1.0-pro",
+  "prompt": "白色背景上的蓝色陶瓷杯",
+  "size": "1K"
+}'
+```
+
+同步兼容接口会等待同一异步任务完成，并返回OpenAI图片结构。长任务推荐直接使用异步接口；超时保留taskId，查询原任务，勿更换幂等键重复生成。
+
+#### 素材和计费
+
+支持JPEG、PNG、WebP Data URL；服务端去掉前缀后传供应商，所有内联图合计不超过7 MiB。远程参考图按供应商最终格式和大小限制校验。像素预设映射分辨率和比例，实际尺寸以返回结果为准。
+
+Lite、Flash输入免费；Pro前三张输入免费，第四张起计费。输出按实际返回张数，不按请求n估算；国际站生图价格未提供，需管理员配置后计价。临时地址可能过期，请及时下载。
+
+完整流程见[Vega生图与理解](vega-image-vl.md)。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=vega-image-1.0-pro" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `vega-image-1.0-pro` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `wand-vega-vl-1.0-lite`
+
+图片、音频、视频和文件理解
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /v1/chat/completions`
+
+Vega渠道的多模态理解模型，仅支持Chat Completions JSON和SSE；不支持Responses。可输入纯文本或多模态内容。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `wand-vega-vl-1.0-lite`，最长 128 个字符 |
+| `messages` | 是 | 消息数组，role支持system、developer、user、assistant、tool |
+| `stream` | 否 | 布尔值，省略按false；true返回SSE |
+| `thinking_enabled` | 否 | 布尔值，是否开启思考 |
+| `reasoning_effort` | 否 | none/minimal/low/medium/high/xhigh；同时设置时优先于thinking_enabled |
+| `reasoning_split` | 否 | 布尔值，是否分离思考与正文 |
+| `temperature` | 否 | 数字0～2 |
+| `max_tokens` / `max_completion_tokens` | 否 | 正整数，按供应商文档包含输入和输出；同时设置时max_tokens优先 |
+| `tools` / `tool_choice` / `response_format` | 否 | OpenAI工具和结构化输出参数 |
+
+#### 请求示例
+
+```bash
+curl "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "wand-vega-vl-1.0-lite",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "请描述这个视频的内容"
+        },
+        {
+          "type": "video_url",
+          "video_url": {
+            "url": "https://customer.example.com/video.mp4"
+          }
+        }
+      ]
+    }
+  ],
+  "stream": false,
+  "thinking_enabled": true
+}'
+```
+
+#### 多模态输入
+
+Part支持text、image_url、video_url、input_audio、file。音频使用input_audio.url，或data（裸Base64）+format（mp3/wav）；文件使用file.file_url，或file.file_data（Data URL）+file.file_name。不要把file_url放在Part顶层。视频每次最多10个；内联文件上限100 MiB，远程大小由供应商校验。
+
+#### 流式调用
+
+```bash
+curl -N "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "wand-vega-vl-1.0-lite",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "请描述图片"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://customer.example.com/image.jpg"
+          }
+        }
+      ]
+    }
+  ],
+  "stream": true
+}'
+```
+
+逐行读取choices[].delta；reasoning_content/reasoning_details原样保留。可选请求头Tx-User-Session-Id用于同一会话缓存，服务端会先按当前项目及业务Key隔离后再传给供应商。
+
+#### 返回结果
+
+```json
+{
+  "model": "wand-vega-vl-1.0-lite",
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "视频中是一片湖泊。"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 100,
+    "prompt_tokens_details": {
+      "cached_tokens": 30,
+      "video_tokens": 60
+    },
+    "completion_tokens": 20,
+    "total_tokens": 120
+  }
+}
+```
+
+仅使用真实Token计费；缓存Token从普通输入中扣除后按缓存价计算，不重复收费。video_tokens和reasoning_tokens属于输入/输出明细，不额外叠加。用量缺失进入待核对。详见[Vega生图与理解](vega-image-vl.md)。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=wand-vega-vl-1.0-lite" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `wand-vega-vl-1.0-lite` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `wand-vega-vl-1.0-flash`
+
+图片、音频、视频和文件理解
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /v1/chat/completions`
+
+Vega渠道的多模态理解模型，仅支持Chat Completions JSON和SSE；不支持Responses。可输入纯文本或多模态内容。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `wand-vega-vl-1.0-flash`，最长 128 个字符 |
+| `messages` | 是 | 消息数组，role支持system、developer、user、assistant、tool |
+| `stream` | 否 | 布尔值，省略按false；true返回SSE |
+| `thinking_enabled` | 否 | 布尔值，是否开启思考 |
+| `reasoning_effort` | 否 | none/minimal/low/medium/high/xhigh；同时设置时优先于thinking_enabled |
+| `reasoning_split` | 否 | 布尔值，是否分离思考与正文 |
+| `temperature` | 否 | 数字0～2 |
+| `max_tokens` / `max_completion_tokens` | 否 | 正整数，按供应商文档包含输入和输出；同时设置时max_tokens优先 |
+| `tools` / `tool_choice` / `response_format` | 否 | OpenAI工具和结构化输出参数 |
+
+#### 请求示例
+
+```bash
+curl "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "wand-vega-vl-1.0-flash",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "请描述这个视频的内容"
+        },
+        {
+          "type": "video_url",
+          "video_url": {
+            "url": "https://customer.example.com/video.mp4"
+          }
+        }
+      ]
+    }
+  ],
+  "stream": false,
+  "thinking_enabled": true
+}'
+```
+
+#### 多模态输入
+
+Part支持text、image_url、video_url、input_audio、file。音频使用input_audio.url，或data（裸Base64）+format（mp3/wav）；文件使用file.file_url，或file.file_data（Data URL）+file.file_name。不要把file_url放在Part顶层。视频每次最多10个；内联文件上限100 MiB，远程大小由供应商校验。
+
+#### 流式调用
+
+```bash
+curl -N "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "wand-vega-vl-1.0-flash",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "请描述图片"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://customer.example.com/image.jpg"
+          }
+        }
+      ]
+    }
+  ],
+  "stream": true
+}'
+```
+
+逐行读取choices[].delta；reasoning_content/reasoning_details原样保留。可选请求头Tx-User-Session-Id用于同一会话缓存，服务端会先按当前项目及业务Key隔离后再传给供应商。
+
+#### 返回结果
+
+```json
+{
+  "model": "wand-vega-vl-1.0-flash",
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "视频中是一片湖泊。"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 100,
+    "prompt_tokens_details": {
+      "cached_tokens": 30,
+      "video_tokens": 60
+    },
+    "completion_tokens": 20,
+    "total_tokens": 120
+  }
+}
+```
+
+仅使用真实Token计费；缓存Token从普通输入中扣除后按缓存价计算，不重复收费。video_tokens和reasoning_tokens属于输入/输出明细，不额外叠加。用量缺失进入待核对。详见[Vega生图与理解](vega-image-vl.md)。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=wand-vega-vl-1.0-flash" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `wand-vega-vl-1.0-flash` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
+### `wand-vega-vl-1.0-pro`
+
+图片、音频、视频和文件理解
+
+[鉴权](basics.md) · [错误与安全重试](errors.md)
+
+需要该模型请联系管理员为项目开通。以下示例会产生真实用量；当前是否可用及能力以 /v1/models 为准。先按[示例约定](basics.md#地址与示例约定)设置 BASE_URL 和 API_KEY。示例幂等键须替换为本次操作的唯一业务 ID，断线恢复时保持原值；媒体 URL 和任务 ID 须替换为自己的真实值。
+
+#### 接口
+
+`POST /v1/chat/completions`
+
+Vega渠道的多模态理解模型，仅支持Chat Completions JSON和SSE；不支持Responses。Pro必须输入至少一种图片、音频、视频或文件，不能只传纯文本。
+
+
+#### 请求参数
+
+| 参数 | 必填 | 类型与说明 |
+|---|---|---|
+| `model` | 是 | 固定填写 `wand-vega-vl-1.0-pro`，最长 128 个字符 |
+| `messages` | 是 | 消息数组，role支持system、developer、user、assistant、tool |
+| `stream` | 否 | 布尔值，省略按false；true返回SSE |
+| `thinking_enabled` | 否 | 布尔值，是否开启思考 |
+| `reasoning_effort` | 否 | none/minimal/low/medium/high/xhigh；同时设置时优先于thinking_enabled |
+| `reasoning_split` | 否 | 布尔值，是否分离思考与正文 |
+| `temperature` | 否 | 数字0～2 |
+| `max_tokens` / `max_completion_tokens` | 否 | 正整数，按供应商文档包含输入和输出；同时设置时max_tokens优先 |
+| `tools` / `tool_choice` / `response_format` | 否 | OpenAI工具和结构化输出参数 |
+
+#### 请求示例
+
+```bash
+curl "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "wand-vega-vl-1.0-pro",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "请描述这个视频的内容"
+        },
+        {
+          "type": "video_url",
+          "video_url": {
+            "url": "https://customer.example.com/video.mp4"
+          }
+        }
+      ]
+    }
+  ],
+  "stream": false,
+  "thinking_enabled": true
+}'
+```
+
+#### 多模态输入
+
+Part支持text、image_url、video_url、input_audio、file。音频使用input_audio.url，或data（裸Base64）+format（mp3/wav）；文件使用file.file_url，或file.file_data（Data URL）+file.file_name。不要把file_url放在Part顶层。视频每次最多10个；内联文件上限100 MiB，远程大小由供应商校验。
+
+#### 流式调用
+
+```bash
+curl -N "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "wand-vega-vl-1.0-pro",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "请描述图片"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://customer.example.com/image.jpg"
+          }
+        }
+      ]
+    }
+  ],
+  "stream": true
+}'
+```
+
+逐行读取choices[].delta；reasoning_content/reasoning_details原样保留。可选请求头Tx-User-Session-Id用于同一会话缓存，服务端会先按当前项目及业务Key隔离后再传给供应商。
+
+#### 返回结果
+
+```json
+{
+  "model": "wand-vega-vl-1.0-pro",
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "视频中是一片湖泊。"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 100,
+    "prompt_tokens_details": {
+      "cached_tokens": 30,
+      "video_tokens": 60
+    },
+    "completion_tokens": 20,
+    "total_tokens": 120
+  }
+}
+```
+
+仅使用真实Token计费；缓存Token从普通输入中扣除后按缓存价计算，不重复收费。video_tokens和reasoning_tokens属于输入/输出明细，不额外叠加。用量缺失进入待核对。详见[Vega生图与理解](vega-image-vl.md)。
+
+#### 查询模型价格
+
+```bash
+curl "$BASE_URL/v1/pricing?model=wand-vega-vl-1.0-pro" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+价格查询按名称包含匹配，请从 data 中选择 id 完全等于 `wand-vega-vl-1.0-pro` 的项目。金额为人民币十进制字符串，未配置价格和未知用量不代表免费。
+
 ## 火山引擎
 
 ### `deepseek-v4-flash`

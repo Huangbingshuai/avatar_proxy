@@ -1,6 +1,6 @@
 # 星辰平台 API 文档
 
-版本：6.1 · 更新日期：2026-10-22
+版本：6.2 · 更新日期：2026-10-22
 
 统一调用文本、图片、视频、向量和音频模型，并管理项目素材。正式地址：`https://api.richbest.cn`。
 
@@ -8,7 +8,9 @@
 
 [HTML 阅读版](CLIENT_API.html) · [模型与接口对照表](docs/client-api/models.md#模型与接口对照表) · [错误与安全重试](docs/client-api/errors.md)
 
-新增[Vega视频与素材](docs/client-api/vega.md)：5个视频版本统一使用本站视频创建/查询接口，Pro素材与活体流程使用 `POST /v1/vega/{action}`。Vega与火山素材ID不能混用；调用方始终只使用业务Key。
+新增[Vega视频与素材](docs/client-api/vega.md)：5个视频版本统一使用本站视频创建/查询接口；[Vega素材与活体接口](docs/client-api/vega-materials.md)提供10个独立操作的参数和示例，位于“Vega → 素材接口”，使用 `POST /v1/vega/{action}`。Vega与火山素材ID不能混用；调用方始终只使用业务Key。
+
+新增[Vega-Image 与 Vega-VL](docs/client-api/vega-image-vl.md)：各3个型号，共用同一个Vega渠道。图片支持异步任务及同步兼容入口，VL支持多模态Chat JSON/SSE；不支持VL Responses。
 
 ## 快速开始
 
@@ -72,18 +74,23 @@ curl "$BASE_URL/v1/chat/completions" \
 | Wan / MiniMax 视频 | [wan3.0-video](docs/client-api/model-reference.md#wan30-video) · [minimax-h3](docs/client-api/model-reference.md#minimax-h3) |
 | 向量 | [doubao-embedding-vision](docs/client-api/model-reference.md#doubao-embedding-vision) |
 | 语音与音频 | [语音合成](docs/client-api/model-reference.md#doubao-seed-tts-20) · [录音识别](docs/client-api/model-reference.md#doubao-seedasr-20) · [音频生成](docs/client-api/model-reference.md#doubao-seed-audio-10) |
+| Vega 图片 / 多模态理解 | [Vega-Image / Vega-VL 参数和限制](docs/client-api/vega-image-vl.md) · [Vega 视频](docs/client-api/vega.md) |
 
 [查看全部模型的独立接口参考](docs/client-api/model-reference.md) · [查询可用模型与价格](docs/client-api/models.md)
 
 ## 素材接口
 
-素材接口属于火山引擎，位于“火山引擎 → 素材接口”目录，与模型接口共用星辰平台业务 Key。上传与登记分两步，素材状态为 `Active` 后才可用于任务；`asset://` ID 不应默认跨供应商复用。
+素材按供应商分别查阅，均使用星辰平台业务 Key，不能跨供应商混用资源ID：
+
+- [火山素材](docs/client-api/assets.md)：位于“火山引擎 → 素材接口”，原有11项操作不变。上传与登记分两步，素材状态为 `Active` 后才可用于任务。
+- [Vega素材与活体](docs/client-api/vega-materials.md)：位于“Vega → 素材接口”，包含登记、任务查询、素材/组管理及真人活体10项操作；仅支持视频Pro系列，素材任务完成且ErrCode=0后才可引用。
 
 | 操作 | 文档 |
 |---|---|
 | 上传图片、视频、音频 | [上传文件](docs/client-api/assets.md#上传本地素材) |
-| 素材组管理 | [创建](docs/client-api/assets.md#创建素材组) · [列表](docs/client-api/assets.md#查询素材组列表) · [详情](docs/client-api/assets.md#查询单个素材组) · [修改](docs/client-api/assets.md#修改素材组) · [删除](docs/client-api/assets.md#删除素材组) |
-| 素材管理 | [登记](docs/client-api/assets.md#登记素材) · [列表](docs/client-api/assets.md#查询素材列表) · [状态](docs/client-api/assets.md#查询单个素材) · [修改名称](docs/client-api/assets.md#修改素材名称) · [删除](docs/client-api/assets.md#删除素材) |
+| 火山素材组管理 | [创建](docs/client-api/assets.md#创建素材组) · [列表](docs/client-api/assets.md#查询素材组列表) · [详情](docs/client-api/assets.md#查询单个素材组) · [修改](docs/client-api/assets.md#修改素材组) · [删除](docs/client-api/assets.md#删除素材组) |
+| 火山素材管理 | [登记](docs/client-api/assets.md#登记素材) · [列表](docs/client-api/assets.md#查询素材列表) · [状态](docs/client-api/assets.md#查询单个素材) · [修改名称](docs/client-api/assets.md#修改素材名称) · [删除](docs/client-api/assets.md#删除素材) |
+| Vega素材及真人认证 | [逐项参数与示例](docs/client-api/vega-materials.md#素材流程与接口概览) |
 | 流程与媒体限制 | [素材规格及处理流程](docs/client-api/assets.md#素材接口概览) |
 
 ## 接口总览
@@ -110,6 +117,8 @@ curl "$BASE_URL/v1/chat/completions" \
 | `POST` | `/v1/chat/completions` | OpenAI 兼容文本对话，支持 JSON/SSE |
 | `POST` | `/v1/responses` | OpenAI 兼容 Responses，支持 JSON/SSE |
 | `POST` | `/v1/images/generations` | OpenAI 兼容图片生成 |
+| `POST` | `/v1/images/tasks` | Vega异步图片生成，必须提供幂等键 |
+| `GET` | `/v1/images/tasks/{taskId}` | 查询Vega图片任务 |
 | `POST` | `/v1/embeddings` | OpenAI 兼容文本向量化 |
 | `POST` | `/v1/embeddings/multimodal` | 多模态向量化 |
 | `POST` | `/v1/audio/speech` | 文本转语音，直接返回音频二进制 |
@@ -119,12 +128,22 @@ curl "$BASE_URL/v1/chat/completions" \
 | `POST` | `/api/v3/contents/generations/tasks` | 创建统一异步视频任务 |
 | `GET` | `/api/v3/contents/generations/tasks/{taskId}` | 查询异步视频任务 |
 | `DELETE` | `/api/v3/contents/generations/tasks/{taskId}` | 取消支持取消的视频任务 |
+| `POST` | `/v1/vega/CreateAigcMaterial` | Vega登记素材 |
+| `POST` | `/v1/vega/DescribeTaskDetail` | 查询Vega素材登记任务 |
+| `POST` | `/v1/vega/DescribeAigcMaterial` | 查询Vega素材详情 |
+| `POST` | `/v1/vega/DescribeAigcMaterialList` | 查询Vega素材列表 |
+| `POST` | `/v1/vega/ModifyAigcMaterial` | 修改Vega素材名称 |
+| `POST` | `/v1/vega/DeleteAigcMaterial` | 删除Vega素材或素材组 |
+| `POST` | `/v1/vega/DescribeAigcMaterialGroup` | 查询Vega素材组详情 |
+| `POST` | `/v1/vega/ModifyAigcMaterialGroup` | 修改Vega素材组 |
+| `POST` | `/v1/vega/CreateAigcLivenessValidate` | 发起Vega真人活体认证 |
+| `POST` | `/v1/vega/DescribeAigcLivenessValidateResult` | 查询Vega真人活体结果 |
 
 ## 调用前必须知道
 
 - 模型授权按项目管理，但图片幂等、视频和录音识别任务访问按业务 Key 隔离。同项目另一枚 Key 也不能查询原 Key 的任务。
 - 同名模型可绑定不同渠道，实际能力与价目由项目配置决定。请求不能指定供应商、渠道、Base URL、项目或真实上游模型 ID。
-- 文本支持流式；图片目前只支持同步 JSON。视频创建成功只返回任务 ID，必须轮询至 `succeeded`。
+- 文本支持流式；图片支持同步 JSON，Vega另提供异步创建/查询。异步图片及视频创建成功只返回任务 ID，必须轮询至 `succeeded`。
 - 图片、视频创建应提前保存 `Idempotency-Key` 和原始请求。超时或断线不代表没有生成、没有扣费；不要换键或开启 SDK 自动重试。
 - 长耗时生成不能套用 30 秒总超时，见[等待时间与断线恢复](docs/client-api/errors.md#等待时间)。媒体 URL 可能过期，成功后及时保存。
 

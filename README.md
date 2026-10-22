@@ -290,16 +290,16 @@ uv run --extra test pytest --cov=app --cov-branch --cov-report=term-missing --co
 
 ## 文档导航
 
-### Vega 视频渠道（本地接入）
+### Vega 统一渠道（本地接入）
 
-支持 `vega-1.0-lite`、`vega-1.0-pro`、`vega-1.0-pro-fast`、`vega-1.0-pro-mini`、`vega-1.5-pro`，使用腾讯云VOD的TC3-HMAC-SHA256签名，不是普通Bearer上游。
+同一个 `vega` 渠道支持5个Vega视频版本、3个 `vega-image-1.0-{lite,flash,pro}` 图片型号，以及3个 `wand-vega-vl-1.0-{lite,flash,pro}` 多模态理解型号。视频/图片使用腾讯云VOD的TC3签名，VL使用同渠道加密保存的API Token，不创建额外的VL供应商。
 
-- `.env` 无Vega专属新增项；只需现有 `MULTI_PROVIDER_ENABLED=true`。超级管理员在“供应商渠道”选择Vega，填写国内/国际站、SubAppId、SecretId及SecretKey。两项Secret一起加密；不要重新生成已有的 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 或 `provider_credentials.key`。
-- 普通管理员为项目选择Vega渠道并启用模型，客户使用原业务Key即可。视频复用本站 `/api/v3/contents/generations/tasks`；Pro素材/活体接口为 `/v1/vega/{action}`。素材按项目、Key、渠道隔离，不能引用火山素材ID。
-- 全局价目按所提供刊例价初始化：国内站人民币，国际站美元按2026-10-22汇率快照 `6.689327` 折算人民币。已生效价格可由超级管理员统一调整；未启用项目不会自动计费。参考视频与Lite额外输入图片按真实上游用量结算，缺失数据待计价。
+- `.env` 无Vega专属新增项；只需现有 `MULTI_PROVIDER_ENABLED=true`。超级管理员在“供应商渠道”选择Vega，填写国内/国际站、SubAppId、视频/图片的SecretId与SecretKey，以及VL的API Token；按需填写，轮换留空项保留原值。不要重新生成已有的 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 或 `provider_credentials.key`。
+- 普通管理员为项目选择Vega渠道并启用模型，客户使用原业务Key即可。视频复用本站 `/api/v3/contents/generations/tasks`；图片推荐 `/v1/images/tasks` 创建和查询，也支持 `/v1/images/generations` 同步兼容；VL使用 `/v1/chat/completions`。视频Pro素材/活体接口为 `/v1/vega/{action}`，按项目、Key、渠道隔离，不能引用火山素材ID。
+- 全局价目按所提供刊例价初始化：国内站人民币，视频及VL国际站美元按2026-10-22汇率快照 `6.689327` 折算人民币；图片国际站价格未提供，需人工补齐。已生效价格可由超级管理员统一调整；未启用项目不会自动计费。视频按实际秒数、图片按实际输出张数及Pro超额输入、VL按真实输入/输出/缓存Token结算；缓存不重复计算，缺失用量或价格进入待计价。
 - 腾讯云需先开通VOD并申请模型权限，默认通常仅1路并发；渠道“测试”不会自动发起付费生成。真实调用验收需单独授权。素材/活体及供应商存储收费不属于视频自动账单。
 
-客户参数和示例见 [Vega视频与素材](backend/docs/client-api/vega.md)，渠道配置、计量与本地验收见 [Vega视频接入说明](backend/VEGA_RELAY.md)。本批视频接入不包含VL和Image。
+客户参数和示例见 [Vega视频与素材](backend/docs/client-api/vega.md)、[Vega图片与VL](backend/docs/client-api/vega-image-vl.md)，渠道配置、计量与本地验收见 [Vega接入说明](backend/VEGA_RELAY.md)。图片推荐异步任务，VL支持Chat JSON/SSE但不支持Responses；国际站图片价格未提供，需手动配置，未配置不按零元结算。
 
 | 我需要… | 文档 |
 |---|---|

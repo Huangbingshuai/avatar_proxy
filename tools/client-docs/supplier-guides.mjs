@@ -18,7 +18,7 @@ export const supplierOrder = supplierGroups.flatMap(group => group.providers);
 export const supplierGroupLabel = provider => supplierGroups.find(group => group.providers.includes(provider))?.label || supplierLabels[provider];
 export const supplierPageId = model => 'model-' + model.id + (model.primary ? '' : '-' + model.provider);
 export function primarySupplier(model) {
-  if (model.id.startsWith('vega-')) return 'vega';
+  if (model.id.startsWith('vega-') || model.id.startsWith('wand-vega-vl-')) return 'vega';
   if (model.id.startsWith('gpt-image-2.5') || model.id.endsWith('-filter-off')) return 'modeltop';
   if (model.id === 'gpt-image-2') return 'maxmodel';
   if (model.id.startsWith('dreamina-') || model.id.startsWith('dola-')) return 'byteplus_modelark';

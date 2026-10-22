@@ -77,6 +77,10 @@ function metricLabel(rate: ModelRate, rule: PriceRule) {
 }
 
 function dimensionLabel(value: string): string {
+  if (value === "domestic") return "国内站";
+  if (value === "international") return "国际站";
+  if (value === "output") return "输出图";
+  if (value === "input:after_three") return "输入图（超过3张的部分）";
   if (value.startsWith("domestic:")) return `国内站 · ${dimensionLabel(value.slice(9))}`;
   if (value.startsWith("international:")) return `国际站 · ${dimensionLabel(value.slice(14))}`;
   if (value === "input:after_five") return "输入图（超过5张的部分）";

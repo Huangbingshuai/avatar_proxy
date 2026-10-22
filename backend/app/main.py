@@ -18,6 +18,7 @@ from .maintenance import MaintenanceGate
 from .provider_relay import ProviderRelay
 from .quota import QuotaManager
 from .routers import admin, ark_compat, assets, auth, billing, internal, openai_compat, providers, vega
+from .routers import vega_images
 from .storage import TosStorage
 from .system_monitor import DiskMonitor
 from .volcengine import VolcengineClient
@@ -94,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "Authorization",
             "Content-Type",
             "Idempotency-Key",
+            "Tx-User-Session-Id",
             "X-CSRF-Token",
         ],
         expose_headers=["X-Request-Id", "X-Upstream-Service", "Retry-After"],
@@ -135,6 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(billing.router)
     app.include_router(assets.router)
     app.include_router(openai_compat.router)
+    app.include_router(vega_images.router)
     app.include_router(ark_compat.router)
     app.include_router(vega.router)
 

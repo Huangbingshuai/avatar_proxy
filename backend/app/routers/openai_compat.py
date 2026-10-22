@@ -24,7 +24,7 @@ CHAT_FIELDS = {
     "functions", "logit_bias", "logprobs", "top_logprobs", "max_completion_tokens",
     "max_tokens", "n", "parallel_tool_calls", "presence_penalty", "reasoning_effort",
     "response_format", "seed", "service_tier", "stop", "store", "temperature",
-    "tool_choice", "tools", "top_p", "user", "metadata",
+    "tool_choice", "tools", "top_p", "user", "metadata", "thinking_enabled", "reasoning_split",
 }
 RESPONSE_FIELDS = {
     "model", "input", "stream", "background", "conversation", "include", "instructions",
@@ -101,12 +101,18 @@ async def _text(
     alias = str(payload["model"]).strip()
     stream = payload.get("stream") is True
     if stream:
-        request.app.state.provider_relay.validate_text_operation(
+        route = request.app.state.provider_relay.validate_text_operation(
             principal, alias, operation, stream=True
         )
+        # Reject invalid Vega media/headers before sending a successful SSE status.
+        if route.provider == "vega":
+            from .. import vega_vl
+            vega_vl.validate_payload(payload, pro=not route.capabilities.get("textOnly", True))
+            vega_vl.session_header(principal, request.headers.get("Tx-User-Session-Id"))
         async def events():
             try:
-                async for chunk in request.app.state.provider_relay.text_stream(principal, alias, operation, payload):
+                async for chunk in request.app.state.provider_relay.text_stream(principal, alias, operation, payload,
+                    user_session_id=request.headers.get("Tx-User-Session-Id")):
                     yield chunk
             except ApiError as error:
                 # Headers are already sent; return a structured SSE error,
@@ -122,7 +128,7 @@ async def _text(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     data, request_id = await request.app.state.provider_relay.text_json(
-        principal, alias, operation, payload
+        principal, alias, operation, payload, user_session_id=request.headers.get("Tx-User-Session-Id")
     )
     headers = {"X-Request-Id": request_id} if request_id else None
     return JSONResponse(content=data, headers=headers)
@@ -154,7 +160,9 @@ async def images_generations(
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
     payload = _payload(raw)
-    unknown = sorted(set(payload) - IMAGE_FIELDS)
+    from ..vega_image import MODELS as VEGA_IMAGE_MODELS
+    allowed = IMAGE_FIELDS | ({"aspect_ratio"} if payload["model"] in VEGA_IMAGE_MODELS else set())
+    unknown = sorted(set(payload) - allowed)
     if unknown:
         raise ApiError(
             "图片请求包含不支持的字段",
@@ -163,7 +171,8 @@ async def images_generations(
             details={"fields": unknown},
         )
     prompt = payload.get("prompt")
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 32000:
+    reference_only = payload["model"] in VEGA_IMAGE_MODELS and payload.get("image") and prompt in (None, "")
+    if not reference_only and (not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 32000):
         raise ApiError("prompt不能为空或过长", 422, "image_prompt_invalid")
     if "n" in payload and (not isinstance(payload["n"], int) or isinstance(payload["n"], bool) or not 1 <= payload["n"] <= 15):
         raise ApiError("n必须是1到15的整数", 422, "image_count_invalid", details={"param": "n"})

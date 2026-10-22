@@ -18,6 +18,11 @@ describe("model icon library", () => {
     expect(getModelIconPath("dola-seedream-5.0-flash")).toBe("/model-icons/doubao.svg");
     expect(getModelIconPath("wan3.0-video")).toBe("/model-icons/bailian.svg");
     expect(getModelIconPath("veo-4")).toBe("/model-icons/gemini.svg");
+    for (const alias of ["vega-1.0-pro", "vega-1.5-pro", ...["lite", "flash", "pro"].flatMap(tier => [
+      `vega-image-1.0-${tier}`, `wand-vega-vl-1.0-${tier}`,
+    ])]) {
+      expect(getModelIconPath(alias)).toBe("/model-icons/tencent-cloud.svg");
+    }
     expect(getModelIconPath("llama-5")).toBe("/model-icons/meta.svg");
   });
 

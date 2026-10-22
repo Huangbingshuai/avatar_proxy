@@ -14,6 +14,7 @@ from .admin_auth import AdminPrincipal
 from .database import Database
 from .errors import ApiError
 from . import vega
+from . import vega_image, vega_vl
 from .modeltop import (MODELTOP_FX, MODELTOP_FX_SOURCE_URL, MODELTOP_FX_TIMESTAMP,
                       MODELTOP_RATE_VERSION, MODELTOP_RATE_SOURCE_URL, MODELTOP_MODELS, image_token_measurements)
 from .official_rates import (
@@ -280,6 +281,12 @@ class BillingManager:
     @staticmethod
     def _editable_rule_templates(model: dict[str, Any]) -> list[dict[str, Any]]:
         if model.get("provider") == "vega":
+            if model["alias"] in vega_image.MODELS:
+                return [{"metric": "image", "dimension": dimension, "unitSize": 1, "unitPriceYuan": None}
+                        for dimension in vega_image.RATE_DIMENSIONS]
+            if model["alias"] in vega_vl.MODELS:
+                return [{"metric": metric, "dimension": dimension, "unitSize": unit, "unitPriceYuan": None}
+                        for metric, dimension, unit, _ in vega_vl.RATES[model["alias"]]]
             return [{"metric": metric, "dimension": dimension, "unitSize": unit, "unitPriceYuan": None}
                     for metric, dimension, unit, _ in vega.VEGA_RATES[model["alias"]]]
         modality = model["modality"]
@@ -369,6 +376,13 @@ class BillingManager:
                         "fxRateToCny": str(vega.VEGA_FX), "fxSource": vega.VEGA_FX_SOURCE,
                         "fxTimestamp": vega.VEGA_FX_TIMESTAMP,
                         "note": "国内站人民币刊例价；international维度为国际站USD按汇率快照折算"}
+            if alias in vega_image.MODELS:
+                official = {"version": vega_image.VERSION, "currency": "CNY",
+                            "document": "3. Vega-Image - 生图模型.pdf",
+                            "note": "用户提供的Vega-Image刊例价；仅国内站，国际站需人工配置"}
+            elif alias in vega_vl.MODELS:
+                official.pop("url")
+                official["document"] = "Vega-VL 刊例价.pdf"
         elif provider == "modeltop":
             official = {"version": MODELTOP_RATE_VERSION, "url": MODELTOP_RATE_SOURCE_URL,
                         "currency": "USD", "fxRateToCny": str(MODELTOP_FX),
@@ -383,6 +397,10 @@ class BillingManager:
         else:
             official = None
         editable_rules = rules or self._editable_rule_templates(model)
+        if provider == "vega":
+            known = {(rule["metric"], rule["dimension"]) for rule in editable_rules}
+            editable_rules = editable_rules + [rule for rule in self._editable_rule_templates(model)
+                                              if (rule["metric"], rule["dimension"]) not in known]
         if provider_filter is None and alias in MODELTOP_MODELS and model["modality"] == "image":
             editable_rules = list(rules)
             templates = self._editable_rule_templates(model) if provider != "modeltop" else []
@@ -445,7 +463,7 @@ class BillingManager:
             rules = []
             for rule in rate["rules"]:
                 site = available.get("capabilities", {}).get("billingSite")
-                if rate["provider"] == "vega" and site and not rule["dimension"].startswith(site + ":"):
+                if rate["provider"] == "vega" and site and rule["dimension"] != site and not rule["dimension"].startswith(site + ":"):
                     continue
                 list_micros = yuan_to_micros(rule["unitPriceYuan"])
                 effective_micros = int(
@@ -467,7 +485,7 @@ class BillingManager:
                 "modality": rate["modality"],
                 "currency": "CNY",
                 "tax_inclusive": False,
-                "configured": rate["configured"],
+                "configured": bool(rules),
                 "prices": rules,
             })
         return {
@@ -706,6 +724,10 @@ class BillingManager:
     @classmethod
     def _relay_measurements(cls, row: dict[str, Any]) -> tuple[list[tuple[str, str, Decimal]] | None, str | None]:
         if row.get("provider") == "vega":
+            if row.get("model_alias") in vega_image.MODELS:
+                return vega_image.measurements(row)
+            if row.get("model_alias") in vega_vl.MODELS:
+                return vega_vl.measurements(row)
             return vega.measurements(row)
         if row["modality"] == "text":
             if row["input_tokens"] is None or row["output_tokens"] is None:

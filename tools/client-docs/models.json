@@ -1014,5 +1014,137 @@
       "billingUnit": 1
     },
     "summary": "多模态异步视频"
+  },
+  {
+    "id": "vega-image-1.0-lite",
+    "name": "Vega-Image 1.0 Lite",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 3,
+      "maxInputImageBytes": 10485760,
+      "maxInlineImageBytes": 7340032,
+      "maxN": 1,
+      "maxPromptCharacters": 2000,
+      "sizes": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "asyncTasks": true,
+      "billingMetric": "image",
+      "billingUnit": 1,
+      "inputFreeCount": null
+    },
+    "summary": "异步文生图与参考生图"
+  },
+  {
+    "id": "vega-image-1.0-flash",
+    "name": "Vega-Image 1.0 Flash",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 6,
+      "maxInputImageBytes": 10485760,
+      "maxInlineImageBytes": 7340032,
+      "maxN": 15,
+      "maxPromptCharacters": 2000,
+      "sizes": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "asyncTasks": true,
+      "billingMetric": "image",
+      "billingUnit": 1,
+      "inputFreeCount": null
+    },
+    "summary": "异步文生图与参考生图"
+  },
+  {
+    "id": "vega-image-1.0-pro",
+    "name": "Vega-Image 1.0 Pro",
+    "modality": "image",
+    "capabilities": {
+      "generations": true,
+      "imageInput": true,
+      "maxInputImages": 6,
+      "maxInputImageBytes": 10485760,
+      "maxInlineImageBytes": 7340032,
+      "maxN": 15,
+      "maxPromptCharacters": 2000,
+      "sizes": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "asyncTasks": true,
+      "billingMetric": "image",
+      "billingUnit": 1,
+      "inputFreeCount": 3
+    },
+    "summary": "异步文生图与参考生图"
+  },
+  {
+    "id": "wand-vega-vl-1.0-lite",
+    "name": "Vega-VL 1.0 Lite",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": false,
+      "stream": true,
+      "imageInput": true,
+      "videoInput": true,
+      "audioInput": true,
+      "fileInput": true,
+      "textOnly": true,
+      "maxVideos": 10,
+      "thinking": true,
+      "billingMetric": "input_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "图片、音频、视频和文件理解"
+  },
+  {
+    "id": "wand-vega-vl-1.0-flash",
+    "name": "Vega-VL 1.0 Flash",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": false,
+      "stream": true,
+      "imageInput": true,
+      "videoInput": true,
+      "audioInput": true,
+      "fileInput": true,
+      "textOnly": true,
+      "maxVideos": 10,
+      "thinking": true,
+      "billingMetric": "input_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "图片、音频、视频和文件理解"
+  },
+  {
+    "id": "wand-vega-vl-1.0-pro",
+    "name": "Vega-VL 1.0 Pro",
+    "modality": "text",
+    "capabilities": {
+      "chat": true,
+      "responses": false,
+      "stream": true,
+      "imageInput": true,
+      "videoInput": true,
+      "audioInput": true,
+      "fileInput": true,
+      "textOnly": false,
+      "maxVideos": 10,
+      "thinking": true,
+      "billingMetric": "input_tokens",
+      "billingUnit": 1000000
+    },
+    "summary": "图片、音频、视频和文件理解"
   }
 ]

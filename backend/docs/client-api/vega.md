@@ -50,6 +50,8 @@
 
 ## 素材与真人活体流程
 
+完整的逐接口参数、请求及响应示例见 [Vega素材与活体接口](vega-materials.md)，HTML左侧目录为“Vega（腾讯云点播）→ 素材接口”。
+
 仅Pro系列提供以下接口；统一为 `POST /v1/vega/{action}`，JSON中必填 `model`，其余字段沿用下表大小写。未知字段、SubAppId、凭证、回调URL、ExtInfo均拒绝。每个操作都使用业务Bearer Key，并记录调用日志。创建操作必须提供 `Idempotency-Key`，相同业务Key、相同操作、相同请求只提交一次；结果未确认时禁止换键重试。
 
 | action | 请求字段（除model） | 说明 |

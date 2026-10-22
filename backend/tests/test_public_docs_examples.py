@@ -47,9 +47,15 @@ def mock_provider(provider, calls):
         calls.append(request)
         path = request.url.path
         body = json.loads(request.content) if request.content else {}
-        if provider == "vega":
+        if provider == "vega" and request.headers.get("X-TC-Action"):
+            if request.headers["X-TC-Action"] == "CreateAigcImageTask":
+                return httpx.Response(200, json={"Response": {"TaskId": "mock-image", "RequestId": "mock-request"}})
             if request.headers["X-TC-Action"] == "CreateAigcVideoTask":
                 return httpx.Response(200, json={"Response": {"TaskId": "mock-video", "RequestId": "mock-request"}})
+            if body.get("TaskId") == "mock-image":
+                return httpx.Response(200, json={"Response": {"AigcImageTask": {
+                    "Status": "FINISH", "ErrCode": 0, "ErrCodeExt": "", "Input": {"FileInfos": []},
+                    "Output": {"FileInfos": [{"FileUrl": "https://example.com/image.png"}]}}}})
             return httpx.Response(200, json={"Response": {"Status": "FINISH", "AigcVideoTask": {
                 "Status": "FINISH", "ErrCode": 0, "Output": {"Usage": {"OutputSeconds": 4, "InputSeconds": 0, "InputImageCount": 0},
                 "FileInfos": [{"FileUrl": "https://example.com/video.mp4", "UsageType": ""}]}}}})
@@ -111,7 +117,7 @@ def test_every_model_html_example_reaches_correct_adapter(tmp_path, alias, provi
             if method == "DELETE":
                 assert provider not in {"modeltop", "minimax", "aliyun_bailian"}, "Unsupported cancellation must not be presented as a working example"
             assert response.status_code in {200, 202, 204}, (method, path, payload, response.text)
-            if payload and path in {TASKS, "/v1/audio/transcriptions"}:
+            if payload and path in {TASKS, "/v1/audio/transcriptions", "/v1/images/tasks"}:
                 task_id = response.json()["id"]
             if method == "GET" and path.startswith(TASKS + "/"):
                 assert response.json()["status"] == "succeeded"
@@ -217,7 +223,7 @@ def test_generated_python_examples_execute_offline(monkeypatch):
 def test_supplier_documentation_capabilities_match_effective_backend_catalogue():
     source = "import {supplierCatalog} from './tools/client-docs/build.mjs'; console.log(JSON.stringify(supplierCatalog));"
     variants = json.loads(subprocess.check_output(["node", "--input-type=module", "-e", source], cwd=DOCUMENT.parents[1]))
-    assert len(variants) == 53
+    assert len(variants) == 59
     catalog = {row[0]: row for row in BUILTIN_MODEL_CATALOG}
     for variant in variants:
         assert variant["provider"] == (catalog[variant["id"]][2] if variant["primary"] else "modeltop")

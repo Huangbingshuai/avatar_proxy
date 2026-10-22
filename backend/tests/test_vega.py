@@ -179,7 +179,7 @@ def test_migration_preserves_history_and_does_not_enable_projects(tmp_path):
     database.initialize()
     database.initialize()
     with database.connect() as c:
-        assert c.execute("SELECT COUNT(*) FROM model_catalog WHERE provider='vega'").fetchone()[0] == 5
+        assert c.execute("SELECT COUNT(*) FROM model_catalog WHERE provider='vega'").fetchone()[0] == 11
         assert c.execute("SELECT COUNT(*) FROM provider_channels").fetchone()[0] == 1
         assert c.execute("SELECT COUNT(*) FROM project_billing_terms").fetchone()[0] == 0
         assert c.execute("PRAGMA foreign_key_check").fetchall() == []

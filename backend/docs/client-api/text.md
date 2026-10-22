@@ -13,6 +13,8 @@ POST /v1/responses
 
 ## Chat Completions
 
+Vega-VL仅支持Chat Completions，`thinking_enabled / reasoning_split` 仅适用于Vega-VL。其Pro型号必须输入媒体，字段白名单和媒体格式以 [Vega图片与多模态理解](vega-image-vl.md) 为准，不支持下述通用字段的全部选项。
+
 `POST /v1/chat/completions`
 
 请求格式兼容对应的 OpenAI JSON/SSE 习惯，`model` 必须使用 `/v1/models` 返回的别名。示例：
@@ -53,7 +55,7 @@ model, messages, stream, stream_options, frequency_penalty, function_call,
 functions, logit_bias, logprobs, top_logprobs, max_completion_tokens,
 max_tokens, n, parallel_tool_calls, presence_penalty, reasoning_effort,
 response_format, seed, service_tier, stop, store, temperature, tool_choice,
-tools, top_p, user, metadata
+tools, top_p, user, metadata, thinking_enabled, reasoning_split
 ```
 
 Responses 当前接受的顶层字段为：

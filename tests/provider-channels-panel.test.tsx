@@ -31,7 +31,7 @@ describe("渠道弹窗提交反馈", () => {
     await user.selectOptions(within(dialog).getByLabelText("供应商"), "vega");
     await user.selectOptions(within(dialog).getByLabelText("腾讯云站点"), "international");
     await user.type(within(dialog).getByLabelText("SubAppId"), "123456");
-    await user.type(within(dialog).getByLabelText("SecretId"), "example-id-12345678");
+    await user.type(within(dialog).getByLabelText(/^SecretId/), "example-id-12345678");
     await user.click(within(dialog).getByRole("button", { name: "加密保存渠道" }));
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
     const body = JSON.parse(create.mock.calls[0][0].body);
@@ -39,6 +39,20 @@ describe("渠道弹窗提交反馈", () => {
     expect(body.config).toEqual({ site: "international", subAppId: "123456" });
     expect(JSON.parse(body.secret)).toEqual({ secretId: "example-id-12345678", secretKey: "test-provider-secret" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  it("同一个Vega渠道允许只填写VL Token，不虚构视频凭证", async () => {
+    const create = vi.fn().mockResolvedValue({ channel: {} });
+    const { user, dialog } = await setup(create);
+    await user.selectOptions(within(dialog).getByLabelText("供应商"), "vega");
+    await user.type(within(dialog).getByLabelText("SubAppId"), "123456");
+    await user.clear(within(dialog).getByLabelText(/^SecretKey/));
+    await user.type(within(dialog).getByLabelText(/^Vega-VL API Token/), "test-vl-token-only");
+    await user.click(within(dialog).getByRole("button", { name: "加密保存渠道" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(create.mock.calls[0][0].body);
+    expect(body.provider).toBe("vega");
+    expect(JSON.parse(body.secret)).toEqual({ apiToken: "test-vl-token-only" });
+    expect(body.config).toEqual({ site: "domestic", subAppId: "123456" });
   });
   it.each([
     ["invalid_csrf_token", 403, "安全校验已失效"],

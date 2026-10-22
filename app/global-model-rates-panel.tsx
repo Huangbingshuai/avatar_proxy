@@ -33,7 +33,7 @@ type GlobalRate = {
   configured: boolean;
   rules: RateRule[];
   editableRules: RateRule[];
-  officialSource?: { version: string; url: string; currency?: string; fxRateToCny?: string } | null;
+  officialSource?: { version: string; url?: string; document?: string; note?: string; currency?: string; fxRateToCny?: string } | null;
   additionalSources?: Array<{ version: string; url: string; fxRateToCny: string }>;
 };
 
@@ -91,6 +91,10 @@ function unitLabel(rule: RateRule) {
 }
 
 function dimensionLabel(value: string): string {
+  if (value === "domestic") return "国内站";
+  if (value === "international") return "国际站";
+  if (value === "output") return "输出图";
+  if (value === "input:after_three") return "输入图（超过3张的部分）";
   if (value.startsWith("domestic:")) return `国内站 · ${dimensionLabel(value.slice(9))}`;
   if (value.startsWith("international:")) return `国际站 · ${dimensionLabel(value.slice(14))}`;
   if (value === "input:after_five") return "输入图（超过5张的部分）";
@@ -263,7 +267,7 @@ export default function GlobalModelRatesPanel({ adminApi }: { adminApi: AdminApi
               {(drafts[rate.model] ?? []).length === 0 && <div className="globalRateEmpty">尚未配置计价规则</div>}
             </div>
             <div className="globalRateAction">
-              {rate.officialSource ? <a href={rate.officialSource.url} target="_blank" rel="noreferrer">{rate.provider === "vega" ? `Vega 刊例价（国际站 USD 按 ${rate.officialSource.fxRateToCny} 折算）` : rate.officialSource.currency === "USD" ? `${rate.provider === "modeltop" ? "ModelTop 公示价" : "BytePlus 官方价"}（USD 按 ${rate.officialSource.fxRateToCny} 折算）` : "火山官方价"} · {rate.officialSource.version}</a> : <span>人工定价</span>}
+              {rate.officialSource?.url ? <a href={rate.officialSource.url} target="_blank" rel="noreferrer">{rate.provider === "vega" ? `Vega 刊例价（国际站 USD 按 ${rate.officialSource.fxRateToCny} 折算）` : rate.officialSource.currency === "USD" ? `${rate.provider === "modeltop" ? "ModelTop 公示价" : "BytePlus 官方价"}（USD 按 ${rate.officialSource.fxRateToCny} 折算）` : "火山官方价"} · {rate.officialSource.version}</a> : <span title={rate.officialSource?.note}>{rate.officialSource ? `${rate.officialSource.document} · ${rate.officialSource.version}` : "人工定价"}</span>}
               {rate.additionalSources?.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">ModelTop 公示价（USD 按 {source.fxRateToCny} 折算） · {source.version}</a>)}
               <button className="primary" type="button" onClick={() => void save(rate)} disabled={busy === rate.model || (drafts[rate.model] ?? []).length === 0}>{busy === rate.model ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}保存</button>
             </div>

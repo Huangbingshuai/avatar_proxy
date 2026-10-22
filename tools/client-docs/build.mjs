@@ -6,6 +6,8 @@ import { Marked } from 'marked';
 import { modelGuide, section } from './model-guides.mjs';
 import { curlSamples } from './code-samples.mjs';
 import { supplierModels, supplierPageId, supplierGroups } from './supplier-guides.mjs';
+import { vegaMaterialOperations, vegaMaterialReference, vegaMaterialIntro, vegaMaterialSection } from './vega-material-guides.mjs';
+export { vegaMaterialOperations } from './vega-material-guides.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const root = path.resolve(here, '../..');
@@ -21,6 +23,8 @@ export const pages = [
   ['embeddings', '模型接口', '向量', 'backend/docs/client-api/embeddings.md'],
   ['audio', '模型接口', '语音与音频', 'backend/docs/client-api/audio.md'],
   ['vega', '模型接口', 'Vega 视频与素材', 'backend/docs/client-api/vega.md'],
+  ['vega-materials', '素材与帮助', 'Vega 素材流程与规格', 'backend/docs/client-api/vega-materials.md'],
+  ['vega-image-vl', '模型接口', 'Vega 生图与理解', 'backend/docs/client-api/vega-image-vl.md'],
   ['assets', '素材与帮助', '素材上传与素材库', 'backend/docs/client-api/assets.md'],
   ['errors', '素材与帮助', '错误与安全重试', 'backend/docs/client-api/errors.md'],
 ];
@@ -40,8 +44,8 @@ export const assetOperations = [
 
 export async function loadSources() {
   const sources = await Promise.all(pages.map(async ([id, group, label, file]) => ({
-    id, group, label, file, provider: id === 'assets' ? 'volcengine_ark' : undefined,
-    source: (await readFile(path.join(root, file), 'utf8')).replace(/\r\n/g, '\n'), kind: 'reference',
+    id, group, label, file, provider: id === 'assets' ? 'volcengine_ark' : id === 'vega-materials' ? 'vega' : undefined,
+    source: (id === 'vega-materials' ? vegaMaterialReference : await readFile(path.join(root, file), 'utf8')).replace(/\r\n/g, '\n'), kind: 'reference',
   })));
   const refs = Object.fromEntries(sources.map(page => [page.id, page.source]));
   for (const model of supplierCatalog) {
@@ -57,6 +61,14 @@ export async function loadSources() {
         '供应商：火山引擎。使用星辰平台业务 Key，素材范围由当前项目确定。\n\n' +
         '[素材流程与规格](assets.md#素材接口概览) · [鉴权](basics.md) · [错误与重试](errors.md)\n\n' +
         section(refs.assets, '## ' + heading).replace(/^### /gm, '## '),
+    });
+  }
+  for (const operation of vegaMaterialOperations) {
+    sources.push({ id: operation.id, group: 'Vega', provider: 'vega', label: operation.label,
+      navLabel: operation.label, method: 'POST', endpoint: '/v1/vega/' + operation.action, kind: 'asset',
+      file: 'backend/docs/client-api/vega-materials.md', source: '# ' + operation.label + '\n\n' +
+        vegaMaterialIntro + '\n\n[Vega素材流程](vega-materials.md#素材流程与接口概览) · [鉴权](basics.md) · [错误与重试](errors.md)\n\n' +
+        vegaMaterialSection(operation).replace(/^### /gm, '## '),
     });
   }
   return sources;
@@ -139,12 +151,17 @@ export async function build() {
   }).join('\n');
   const navLink = page => `<a class="page-link" href="#${page.id}" data-page="${page.id}" title="${escapeHtml(page.label)}"><span>${escapeHtml(page.navLabel || page.label)}</span>${['asset', 'model'].includes(page.kind) ? `<small class="method method-${(page.method || 'POST').toLowerCase()}">${page.method || 'POST'}</small>` : ''}</a>`;
   const intro = sources.filter(p => ['start', 'basics', 'models', 'errors'].includes(p.id)).map(navLink).join('\n');
-  const assetNav = `<details class="nav-folder asset-folder"><summary>素材接口<span>${assetOperations.length}</span></summary><div>${navLink(sources.find(p => p.id === 'assets'))}${sources.filter(p => p.kind === 'asset').map(navLink).join('\n')}</div></details>`;
+  const assetNav = (provider, referenceId) => {
+    const operations = sources.filter(p => p.kind === 'asset' && p.provider === provider);
+    return `<details class="nav-folder asset-folder"><summary>素材接口<span>${operations.length}</span></summary><div>${navLink(sources.find(p => p.id === referenceId))}${operations.map(navLink).join('\n')}</div></details>`;
+  };
   const modelNav = supplierGroups.map(group => {
     const models = group.providers.flatMap(provider => sources.filter(p => p.kind === 'model' && p.provider === provider));
-    const count = models.length + ' 模型' + (group.id === 'volcengine' ? ' / ' + assetOperations.length + ' 素材' : '');
+    const materialCount = sources.filter(p => p.kind === 'asset' && group.providers.includes(p.provider)).length;
+    const count = models.length + ' 模型' + (materialCount ? ' / ' + materialCount + ' 素材' : '');
     const entries = models.map(navLink).join('\n');
-    const channels = group.id === 'volcengine' ? `<p class="nav-label">模型接口</p>${entries}${assetNav}` : entries;
+    const materialNav = group.id === 'volcengine' ? assetNav('volcengine_ark', 'assets') : group.id === 'vega' ? assetNav('vega', 'vega-materials') : '';
+    const channels = materialNav ? `<p class="nav-label">模型接口</p>${entries}${materialNav}` : entries;
     return `<details class="nav-folder supplier-folder" data-supplier="${group.id}"><summary>${escapeHtml(group.label)}<span>${count}</span></summary><div>${channels}</div></details>`;
   }).join('\n');
   const referenceNav = `<details class="nav-folder"><summary>通用协议参考</summary><div>${sources.filter(p => ['text', 'images', 'videos', 'audio', 'embeddings'].includes(p.id)).map(navLink).join('\n')}</div></details>`;
@@ -170,6 +187,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const sources = await loadSources();
   const modelMarkdown = '# 按供应商和模型接入\n\n[文档首页](../../CLIENT_API.md) · [模型目录与价格](models.md) · [素材接口](assets.md)\n\n' + supplierGroups.map(group => '## ' + group.label + '\n\n' + sources.filter(p => p.kind === 'model' && group.providers.includes(p.provider)).map(p => p.source.replace(/^## /gm, '#### ').replace(/^# /gm, '### ')).join('\n')).join('\n');
   const modelTarget = path.join(root, 'backend/docs/client-api/model-reference.md');
+  const materialTarget = path.join(root, 'backend/docs/client-api/vega-materials.md');
+  if (process.argv.includes('--check')) {
+    if (await readFile(materialTarget, 'utf8') !== vegaMaterialReference) throw new Error('Vega material reference is stale; run npm run docs:build');
+  } else await writeFile(materialTarget, vegaMaterialReference, 'utf8');
   if (process.argv.includes('--check')) {
     if (await readFile(modelTarget, 'utf8') !== modelMarkdown) throw new Error('Model reference is stale; run npm run docs:build');
   } else await writeFile(modelTarget, modelMarkdown, 'utf8');

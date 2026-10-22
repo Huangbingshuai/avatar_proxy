@@ -94,6 +94,7 @@ const PROVIDER_ICON_KEYS: Record<string, ModelIconKey> = {
 };
 
 const MODEL_PREFIX_ICONS: Array<[string, ModelIconKey]> = [
+  ["vega-", "tencentCloud"], ["wand-vega-vl-", "tencentCloud"],
   ["dreamina-seedance", "doubao"],
   ["dola-seedream", "doubao"],
   ["seedream", "doubao"], ["seededit", "doubao"], ["seedance", "doubao"], ["doubao", "doubao"],
