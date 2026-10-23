@@ -113,6 +113,39 @@ def test_signature_matches_independent_tc3_calculation():
     assert headers["Authorization"].endswith("Signature=" + hmac.new(key, string.encode(), hashlib.sha256).hexdigest())
 
 
+@pytest.mark.parametrize("version,formats", [
+    ("1.0-lite", []), ("1.0-pro", ["mp4"]), ("1.0-pro-fast", ["mp4"]),
+    ("1.0-pro-mini", ["mp4"]), ("1.5-pro", ["mp4"]),
+])
+def test_output_formats_are_advertised_and_rejected_before_paid_create(tmp_path, version, formats):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        body = json.loads(request.content)
+        extra = json.loads(json.loads(body["ExtInfo"])["AdditionalParameters"])
+        assert extra["output_format"] == formats[-1]
+        return httpx.Response(200, json={"Response": {"TaskId": "supported-format-task"}})
+
+    with relay_client(tmp_path) as client:
+        _, key, _ = setup(client, version)
+        relay = client.app.state.provider_relay
+        relay.transport = httpx.MockTransport(handler)
+        headers = {"Authorization": "Bearer " + key, "Idempotency-Key": "format-check"}
+        model = next(row for row in client.get("/v1/models", headers=headers).json()["data"] if row["id"] == "vega-" + version)
+        assert model["capabilities"].get("outputFormats", []) == formats
+        rejected = client.post(TASKS, headers=headers, json=request_body(version, output_format="mov" if "mov" not in formats else "avi"))
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["code"] == "video_output_format_invalid"
+        assert not calls
+        with relay.database.connect() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM inference_tasks").fetchone()[0] == 0
+        if formats:
+            accepted = client.post(TASKS, headers=headers, json=request_body(version, output_format=formats[-1]))
+            assert accepted.status_code == 200, accepted.text
+            assert len(calls) == 1
+
+
 @pytest.mark.parametrize("secret", ["api-key-not-a-pair", "{}", '{"secretId":"abcdefgh","secretKey":"x"}', '[]'])
 def test_credentials_reject_incomplete_pairs(secret):
     with pytest.raises(ApiError):
@@ -247,7 +280,12 @@ def test_material_flow_owned_assets_liveness_and_no_route_overrides(tmp_path):
         assert client.post(TASKS, json=media, headers=headers).status_code == 200
         _, other = create_key(client, "vega_project", "second")
         assert client.post(TASKS, json=media, headers={"Authorization": "Bearer " + other}).status_code == 404
-        assert client.post("/v1/vega/DescribeTaskDetail", json=query, headers={"Authorization": "Bearer " + other}).status_code == 404
+        hidden = client.post("/v1/vega/DescribeTaskDetail", json=query, headers={"Authorization": "Bearer " + other})
+        assert hidden.status_code == 404
+        assert hidden.json()["error"]["code"] == "vega_resource_not_found"
+        missing = client.post("/v1/vega/DescribeTaskDetail", json={**query, "TaskId": "tsk_missing"}, headers=headers)
+        assert missing.status_code == 404
+        assert missing.json()["error"]["message"] == "Vega素材或活体任务不存在"
         assert client.post("/v1/vega/DeleteAigcMaterial", json={"model": body["model"]}, headers=headers).status_code == 422
         live = client.post("/v1/vega/CreateAigcLivenessValidate", json={"model": body["model"]}, headers=headers)
         assert live.status_code == 200

@@ -56,13 +56,21 @@ class VegaResources:
         if row is None:
             raise ApiError("Vega素材不属于当前项目、Key及渠道，或已删除", 404, "vega_resource_not_found")
 
+    def local_task(self, principal, task_id):
+        try:
+            return self.relay.get_local_task(principal, task_id)
+        except ApiError as error:
+            if error.code != "video_task_not_found":
+                raise
+            raise ApiError("Vega素材或活体任务不存在", 404, "vega_resource_not_found") from error
+
     async def call(self, principal, alias: str, action: str, payload: dict[str, Any], idempotency_key: str | None):
         if action not in ACTIONS:
             raise ApiError("不支持该Vega素材操作", 404, "vega_action_not_supported")
         if set(payload) - ACTIONS[action]:
             raise ApiError("Vega素材请求包含不支持的字段", 422, "vega_parameter_invalid")
         if action == "DescribeTaskDetail":
-            local = self.relay.get_local_task(principal, str(payload.get("TaskId", "")))
+            local = self.local_task(principal, str(payload.get("TaskId", "")))
             if local["operation"] != "vega_CreateAigcMaterial" or local["model_alias"] != alias:
                 raise ApiError("Vega素材任务不存在", 404, "vega_resource_not_found")
             route = self.relay._task_route(local)
@@ -104,7 +112,7 @@ class VegaResources:
             if resource is None or not resource["source_task_id"]:
                 raise ApiError("活体认证记录不存在", 404, "vega_resource_not_found")
             source_task = resource["source_task_id"]
-            task = self.relay.get_local_task(principal, source_task)
+            task = self.local_task(principal, source_task)
             if task["model_alias"] != alias:
                 raise ApiError("活体认证记录不存在", 404, "vega_resource_not_found")
             route = self.relay._task_route(task)

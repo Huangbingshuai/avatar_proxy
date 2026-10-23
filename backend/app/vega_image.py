@@ -18,7 +18,7 @@ MODEL_CATALOG = tuple(
     (f"vega-image-1.0-{tier}", f"Vega-Image 1.0 {tier.title()}", "vega", "image", "async_image", f"1.0-{tier}",
      {"generations": True, "imageInput": True, "maxInputImages": 3 if tier == "lite" else 6,
       "maxInputImageBytes": 10 * 1024 * 1024, "maxInlineImageBytes": 7 * 1024 * 1024,
-      "maxN": 1 if tier == "lite" else 15, "maxPromptCharacters": 2000,
+      "maxN": 1 if tier == "lite" else 4, "maxPromptCharacters": 2000,
       "sizes": ["1K", "2K", "4K"], "asyncTasks": True, "billingMetric": "image", "billingUnit": 1,
       "inputFreeCount": 3 if tier == "pro" else None})
     for tier in ("lite", "flash", "pro")

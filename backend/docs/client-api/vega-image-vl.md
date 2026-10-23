@@ -20,8 +20,8 @@ export API_KEY="请填写本站业务APIKey"
 | 本站 model | 参考图上限 | 输出张数 n | 提示词 |
 |---|---|---|---|
 | `vega-image-1.0-lite` | 3 | 1 | 最多2000字符 |
-| `vega-image-1.0-flash` | 6 | 1～15，供应商可能进一步限制 | 同上 |
-| `vega-image-1.0-pro` | 6 | 1～15，供应商可能进一步限制 | 同上 |
+| `vega-image-1.0-flash` | 6 | 1～4 | 同上 |
+| `vega-image-1.0-pro` | 6 | 1～4 | 同上 |
 
 支持文生图与参考图生图。没有参考图时必须填写非空 `prompt`；有参考图时可省略提示词。参考图字段为 `image`，可传一个字符串或字符串数组，每项为公网 HTTP(S) URL 或 JPEG、PNG、WebP 的 Base64 Data URL。不接受 `asset://`、腾讯云 FileId 或火山 assetId。
 

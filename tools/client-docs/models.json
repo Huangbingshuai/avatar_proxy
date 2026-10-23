@@ -909,7 +909,8 @@
       "seed": true,
       "returnLastFrame": true,
       "billingMetric": "video_second",
-      "billingUnit": 1
+      "billingUnit": 1,
+      "outputFormats": ["mp4"]
     },
     "summary": "多模态异步视频"
   },
@@ -943,7 +944,8 @@
       "seed": true,
       "returnLastFrame": true,
       "billingMetric": "video_second",
-      "billingUnit": 1
+      "billingUnit": 1,
+      "outputFormats": ["mp4"]
     },
     "summary": "多模态异步视频"
   },
@@ -977,7 +979,8 @@
       "seed": true,
       "returnLastFrame": true,
       "billingMetric": "video_second",
-      "billingUnit": 1
+      "billingUnit": 1,
+      "outputFormats": ["mp4"]
     },
     "summary": "多模态异步视频"
   },
@@ -1011,7 +1014,8 @@
       "seed": true,
       "returnLastFrame": true,
       "billingMetric": "video_second",
-      "billingUnit": 1
+      "billingUnit": 1,
+      "outputFormats": ["mp4"]
     },
     "summary": "多模态异步视频"
   },
@@ -1049,7 +1053,7 @@
       "maxInputImages": 6,
       "maxInputImageBytes": 10485760,
       "maxInlineImageBytes": 7340032,
-      "maxN": 15,
+      "maxN": 4,
       "maxPromptCharacters": 2000,
       "sizes": [
         "1K",
@@ -1073,7 +1077,7 @@
       "maxInputImages": 6,
       "maxInputImageBytes": 10485760,
       "maxInlineImageBytes": 7340032,
-      "maxN": 15,
+      "maxN": 4,
       "maxPromptCharacters": 2000,
       "sizes": [
         "1K",

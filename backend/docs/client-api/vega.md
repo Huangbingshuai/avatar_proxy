@@ -16,6 +16,8 @@
 
 使用 `POST /api/v3/contents/generations/tasks` 创建，`GET /api/v3/contents/generations/tasks/{taskId}` 查询。请求结构与本站其他视频一致，但能力与附加字段不同。每个模型的完整示例见[独立模型参考](model-reference.md)。Vega不支持取消任务、回调、任意上游Action透传或永久存储；任务固定使用提交时的渠道与密钥版本。
 
+创建成功只表示供应商已受理。4K、长时长及多素材参考可能需要数十分钟；每10～30秒查询原任务即可，不能因为等待较久就换幂等键重新提交。`queued / running` 时返回的零值不是最终成功用量，以终态 `succeeded` 中的供应商计量为准。
+
 ## Vega专用参数
 
 以下选项放在顶层 `vega` 对象中，服务端负责生成供应商要求的双层JSON字符串，调用方不要手写ExtInfo。
@@ -26,9 +28,9 @@
 | `moderation_mode` | 全部 | Moderation_L1、Moderation_L2；默认L1 |
 | `generate_mode` | Lite | Standard、Fast、StandardMovie |
 | `video_quality_mode` | Lite | Standard、Fast、SuperFast |
-| `task_type` | 1.5 Pro | auto、reference、edit、extend；edit需要参考视频、ratio=adaptive和duration=-1；extend需要参考视频和ratio=adaptive |
+| `task_type` | 1.5 Pro | auto、reference、edit、extend；edit需要4～30秒参考视频、ratio=adaptive和duration=-1；extend需要参考视频和ratio=adaptive |
 
-服务端始终请求ReturnVegaUsage=true，不接受客户端关闭真实用量采集。Pro支持顶层 `return_last_frame`、`output_format`（mp4/mov）与 `seed`（整数-1～2147483647）；Lite不支持这三个字段。首尾帧模式遵循输入图片比例；Lite参考模式允许adaptive。
+服务端始终请求ReturnVegaUsage=true，不接受客户端关闭真实用量采集。Pro支持顶层 `return_last_frame`、`output_format` 与 `seed`（整数-1～2147483647）；本站当前仅开放已验证的 `mp4` 输出，可通过 `/v1/models` 的 `capabilities.outputFormats` 查询。Lite不支持这三个字段。首尾帧模式遵循输入图片比例；Lite参考模式允许adaptive。参考视频可使用MOV容器，不表示模型输出也支持MOV。
 
 ## 参考媒体规格
 

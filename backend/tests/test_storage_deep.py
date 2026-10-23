@@ -2,6 +2,7 @@ import asyncio
 import json
 import shutil
 import subprocess
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -516,7 +517,7 @@ def test_failed_rollback_delete_still_releases_reserved_quota(tmp_path: Path, mo
     assert usage["totalStorageBytes"] == 0
 
 
-def test_cleanup_boundary_includes_exactly_48_hours_but_not_newer(tmp_path: Path) -> None:
+def test_cleanup_boundary_includes_exactly_48_hours_but_not_newer(tmp_path: Path, monkeypatch) -> None:
     from app.database import Database
 
     database = Database(tmp_path / "cleanup-boundary.db")
@@ -530,10 +531,18 @@ def test_cleanup_boundary_includes_exactly_48_hours_but_not_newer(tmp_path: Path
         bucket="test-bucket", object_key="newer.png", size_bytes=1,
     )
     with database.connect() as connection:
-        connection.execute("UPDATE asset_records SET created_at=datetime('now','-48 hours') WHERE record_id='exact'")
-        connection.execute("UPDATE asset_records SET created_at=datetime('now','-48 hours','+1 second') WHERE record_id='newer'")
-
-    candidates = database.cleanup_candidates(hours=48)
+        connection.execute("UPDATE asset_records SET created_at='2026-10-21 12:00:00' WHERE record_id='exact'")
+        connection.execute("UPDATE asset_records SET created_at='2026-10-21 12:00:01' WHERE record_id='newer'")
+        # Freeze SQLite's clock: a slow fsync between setup and the query must
+        # not make the newer record cross the one-second boundary being tested.
+        import sqlite3
+        with sqlite3.connect(":memory:") as clock:
+            connection.create_function("datetime", -1, lambda value, *modifiers: clock.execute(
+                "SELECT datetime(" + ",".join("?" for _ in (value, *modifiers)) + ")",
+                ("2026-10-23 12:00:00" if value == "now" else value, *modifiers),
+            ).fetchone()[0])
+            monkeypatch.setattr(database, "connect", lambda: nullcontext(connection))
+            candidates = database.cleanup_candidates(hours=48)
     assert [record["record_id"] for record in candidates] == ["exact"]
 
 

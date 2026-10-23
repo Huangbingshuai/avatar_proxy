@@ -37,7 +37,9 @@ VEGA_MODEL_CATALOG = tuple(
       "maxAudios": 10 if version == "1.5-pro" else 3,
       "maxFiles": 50 if version == "1.5-pro" else 12,
       "audioOnly": False, "cancelSupported": False, "seed": version != "1.0-lite",
-      "returnLastFrame": version != "1.0-lite", "billingMetric": "video_second", "billingUnit": 1})
+      "returnLastFrame": version != "1.0-lite", "billingMetric": "video_second", "billingUnit": 1,
+      **({"outputFormats": ["mp4"]}
+         if version != "1.0-lite" else {})})
     for version in VERSIONS
 )
 
@@ -249,7 +251,9 @@ def submit_payload(route: Any, payload: dict[str, Any]) -> dict[str, Any]:
             wand[upstream] = options[key]
     for key, value in (("return_last_frame", meta.get("return_last_frame")), ("output_format", meta.get("output_format"))):
         if value is not None:
-            if version == "1.0-lite" or (key == "return_last_frame" and not isinstance(value, bool)) or (key == "output_format" and value not in ("mp4", "mov")):
+            if key == "output_format" and value not in caps.get("outputFormats", []):
+                _invalid("当前Vega版本不支持该输出格式，请查询模型outputFormats能力", "video_output_format_invalid")
+            if version == "1.0-lite" or (key == "return_last_frame" and not isinstance(value, bool)):
                 _invalid("当前Vega版本不支持该输出选项")
             additional[key] = value
     if "task_type" in options:

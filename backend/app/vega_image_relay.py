@@ -26,7 +26,12 @@ class VegaImages:
         return result
 
     def local(self, principal, task_id):
-        task = self.relay.get_local_task(principal, task_id)
+        try:
+            task = self.relay.get_local_task(principal, task_id)
+        except ApiError as error:
+            if error.code != "video_task_not_found":
+                raise
+            raise ApiError("生图任务不存在", 404, "image_task_not_found") from error
         if task["operation"] != "image" or task["model_alias"] not in vega_image.MODELS:
             raise ApiError("生图任务不存在", 404, "image_task_not_found")
         return task

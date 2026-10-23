@@ -67,7 +67,12 @@ def test_async_images_pin_credentials_isolate_keys_and_settle_once(tmp_path, ali
         assert client.post(TASKS, headers=headers, json=body).json() == first.json()
         assert client.post(TASKS, headers=headers, json={**body, "prompt": "changed"}).status_code == 409
         _, other = create_key(client, "vega_shared", "other")
-        assert client.get(TASKS + "/" + task_id, headers={"Authorization": "Bearer " + other}).status_code == 404
+        hidden = client.get(TASKS + "/" + task_id, headers={"Authorization": "Bearer " + other})
+        assert hidden.status_code == 404
+        assert hidden.json()["error"]["code"] == "image_task_not_found"
+        missing = client.get(TASKS + "/img_missing", headers=headers)
+        assert missing.status_code == 404
+        assert missing.json()["error"]["message"] == "生图任务不存在"
         relay.rotate_channel_secret(channel["id"], json.dumps({"secretId": "new-secret-id", "secretKey": "new-secret-key"}), "super")
         relay.set_channel_status(channel["id"], False)
         relay.recover_interrupted_images()
@@ -102,6 +107,48 @@ def test_sync_generation_and_api_token_rotation_keep_same_channel(tmp_path):
         assert result.status_code == 200, result.text
         assert len(result.json()["data"]) == 1
         assert client.post(TASKS, headers={"Authorization": headers["Authorization"]}, json={"model": "vega-image-1.0-lite", "prompt": "lake"}).status_code == 422
+
+
+@pytest.mark.parametrize("tier,maximum", [("lite", 1), ("flash", 4), ("pro", 4)])
+@pytest.mark.parametrize("path", [TASKS, "/v1/images/generations"])
+def test_image_count_matches_supplier_limit_before_submission(tmp_path, tier, maximum, path):
+    calls = []
+    alias = "vega-image-1.0-" + tier
+
+    def handler(request):
+        calls.append(request)
+        if request.headers["x-tc-action"] == "CreateAigcImageTask":
+            output = json.loads(request.content)["OutputConfig"]
+            assert output.get("OutputImageCount", 1) == maximum
+            return httpx.Response(200, json={"Response": {"TaskId": "image-at-limit"}})
+        result = image_result()
+        result["Response"]["AigcImageTask"]["Output"]["FileInfos"] *= maximum
+        return httpx.Response(200, json=result)
+
+    with relay_client(tmp_path) as client:
+        _, headers, _ = setup(client)
+        relay = client.app.state.provider_relay
+        relay.transport = httpx.MockTransport(handler)
+        catalog = next(item for item in client.get("/v1/models", headers=headers).json()["data"] if item["id"] == alias)
+        assert catalog["capabilities"]["maxN"] == maximum
+        body = {"model": alias, "prompt": "product photography", "n": maximum + 1}
+        rejected = client.post(path, headers=headers, json=body)
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["code"] == "image_count_unsupported"
+        assert not calls
+        with relay.database.connect() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM inference_tasks").fetchone()[0] == 0
+            assert connection.execute("SELECT COUNT(*) FROM inference_usage").fetchone()[0] == 0
+        accepted = client.post(path, headers=headers, json={**body, "n": maximum})
+        assert accepted.status_code == 200, accepted.text
+        if path == TASKS:
+            accepted = client.get(TASKS + "/" + accepted.json()["id"], headers=headers)
+            images = accepted.json()["result"]["data"]
+        else:
+            images = accepted.json()["data"]
+        assert len(images) == maximum
+        with relay.database.connect() as connection:
+            assert connection.execute("SELECT generated_images FROM inference_usage WHERE status='succeeded'").fetchone()[0] == maximum
 
 
 @pytest.mark.parametrize("tier", ["lite", "flash", "pro"])

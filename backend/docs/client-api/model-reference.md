@@ -141,7 +141,7 @@ curl "$BASE_URL/v1/pricing?model=vega-1.0-lite" \
 | `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
 | `seed` | 否 | 整数-1～2147483647 |
 | `return_last_frame` | 否 | 布尔值；通过content.last_frame_url读取 |
-| `output_format` | 否 | mp4或mov |
+| `output_format` | 否 | mp4 |
 
 #### 创建示例
 
@@ -251,7 +251,7 @@ curl "$BASE_URL/v1/pricing?model=vega-1.0-pro" \
 | `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
 | `seed` | 否 | 整数-1～2147483647 |
 | `return_last_frame` | 否 | 布尔值；通过content.last_frame_url读取 |
-| `output_format` | 否 | mp4或mov |
+| `output_format` | 否 | mp4 |
 
 #### 创建示例
 
@@ -361,7 +361,7 @@ curl "$BASE_URL/v1/pricing?model=vega-1.0-pro-fast" \
 | `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
 | `seed` | 否 | 整数-1～2147483647 |
 | `return_last_frame` | 否 | 布尔值；通过content.last_frame_url读取 |
-| `output_format` | 否 | mp4或mov |
+| `output_format` | 否 | mp4 |
 
 #### 创建示例
 
@@ -471,7 +471,7 @@ curl "$BASE_URL/v1/pricing?model=vega-1.0-pro-mini" \
 | `vega` | 否 | 模型专用选项对象，见[Vega参数与素材流程](vega.md) |
 | `seed` | 否 | 整数-1～2147483647 |
 | `return_last_frame` | 否 | 布尔值；通过content.last_frame_url读取 |
-| `output_format` | 否 | mp4或mov |
+| `output_format` | 否 | mp4 |
 
 #### 创建示例
 
@@ -575,7 +575,7 @@ Vega异步生图。提交后保存本站返回的id，使用相同业务Key轮�
 | `image` | 否 | HTTP(S) URL、图片Data URL或数组；最多3张 |
 | `size` | 否 | 1K、2K、4K或文档像素预设，默认1K |
 | `aspect_ratio` | 否 | 1:1、2:3、3:2、3:4、4:3、9:16、16:9、21:9，默认1:1 |
-| `n` | 否 | Lite仅1；Flash/Pro系统上限15，最终受供应商限制 |
+| `n` | 否 | 整数，默认1；该模型最多1张 |
 | `response_format` | 否 | 仅url，结果为临时地址 |
 | `watermark` | 否 | 布尔值，映射供应商的图标水印选项 |
 
@@ -683,7 +683,7 @@ Vega异步生图。提交后保存本站返回的id，使用相同业务Key轮�
 | `image` | 否 | HTTP(S) URL、图片Data URL或数组；最多6张 |
 | `size` | 否 | 1K、2K、4K或文档像素预设，默认1K |
 | `aspect_ratio` | 否 | 1:1、2:3、3:2、3:4、4:3、9:16、16:9、21:9，默认1:1 |
-| `n` | 否 | Lite仅1；Flash/Pro系统上限15，最终受供应商限制 |
+| `n` | 否 | 整数，默认1；该模型最多4张 |
 | `response_format` | 否 | 仅url，结果为临时地址 |
 | `watermark` | 否 | 布尔值，映射供应商的图标水印选项 |
 
@@ -791,7 +791,7 @@ Vega异步生图。提交后保存本站返回的id，使用相同业务Key轮�
 | `image` | 否 | HTTP(S) URL、图片Data URL或数组；最多6张 |
 | `size` | 否 | 1K、2K、4K或文档像素预设，默认1K |
 | `aspect_ratio` | 否 | 1:1、2:3、3:2、3:4、4:3、9:16、16:9、21:9，默认1:1 |
-| `n` | 否 | Lite仅1；Flash/Pro系统上限15，最终受供应商限制 |
+| `n` | 否 | 整数，默认1；该模型最多4张 |
 | `response_format` | 否 | 仅url，结果为临时地址 |
 | `watermark` | 否 | 布尔值，映射供应商的图标水印选项 |
 
