@@ -3342,6 +3342,8 @@ curl "$BASE_URL/v1/pricing?model=doubao-seed-translation" \
 | `ratio` | 否 | 画幅比例，例如 16:9；不使用 aspect_ratio |
 | `generate_audio` | 否 | 按模型能力决定是否接受，示例中省略 |
 | `watermark` | 否 | 布尔值，按模型能力决定是否支持 |
+| `draft` | 否 | 布尔值；true 开启样片，必须明确指定 resolution=480p；成片须省略或为 false |
+| `output_format` | 否 | mp4、mov |
 
 #### 创建示例
 
@@ -3369,6 +3371,60 @@ curl "$BASE_URL/api/v3/contents/generations/tasks" \
 ratio 仅允许 16:9、4:3、1:1、3:4、9:16、21:9、adaptive；duration 必须为整数，不能与 frames 同时设置。execution_expires_after 为 3600～259200 的整数秒。其他可选参数见[视频参数](videos.md#参数与轮询注意事项)。
 
 参考图片、视频、音频及特殊参数须符合该模型 /v1/models 的能力。图片角色为 first_frame、last_frame 或 reference_image，视频使用 reference_video，音频使用 reference_audio。
+
+#### Draft 样片与高清成片
+
+仅当前国内火山渠道的本型号支持。普通480p生成不等于样片：必须设置draft=true。先创建样片，使用同一枚业务Key查询至succeeded，再引用本站vid_任务ID生成1080p成片。
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: seedance-draft-001" \
+  -d '{
+  "model": "doubao-seedance-2.5",
+  "content": [
+    {
+      "type": "text",
+      "text": "一只纸船缓缓漂过池塘，镜头平稳推进"
+    }
+  ],
+  "draft": true,
+  "resolution": "480p",
+  "duration": 4
+}'
+```
+
+保存上述返回的id作为样片ID；查询接口与普通视频相同。成功样片查询返回draft=true、draft_expires_at（Unix秒）。7天有效期从created_at开始，包含排队和生成耗时；供应商未确认样片模式时不能升格。
+
+把第一步返回的本站样片ID保存为DRAFT_TASK_ID环境变量（Shell中执行export DRAFT_TASK_ID="vid_实际样片ID"），再创建成片：
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: seedance-final-001" \
+  -d "{
+  \"model\": \"doubao-seedance-2.5\",
+  \"content\": [
+    {
+      \"type\": \"draft_task\",
+      \"draft_task\": {
+        \"id\": \"$DRAFT_TASK_ID\"
+      }
+    }
+  ],
+  \"resolution\": \"1080p\"
+}"
+```
+
+两步必须使用不同Idempotency-Key；同一步请求重放保持相同键和完全相同的请求体。成片返回新的任务ID，查询返回draft=false及draft_task_id，后者仍是本站样片ID，不是上游ID。
+
+成片content只能包含一个draft_task；禁止重复提供文本、图片/视频/音频、duration、ratio、seed、generate_audio、frames、camera_fixed或task_type；draft须省略或为false。可重新指定watermark、return_last_frame、output_format（mp4/mov）、service_tier和execution_expires_after，不能假定它们继承样片。本站不开放callback_url、priority或safety_identifier。
+
+仅能引用当前项目和业务Key下成功且未过期的样片。更换渠道或真实模型后须恢复原绑定或重做样片，渠道禁用时不能新建成片；沿用样片原凭证版本，原凭证已失效时需核对供应商，不自动换渠道重提。
+
+样片与成片分别按供应商实际completion_tokens结算，分别匹配480p和1080p价目；成片是否含输入视频沿用样片最初的参考素材，Draft本身不算额外参考视频。没有固定的五分之一折扣，也不估算Token。完整可复制的分步curl见[样片流程](videos.md#seedance-25-draft样片转成片)。
 
 #### 创建响应
 

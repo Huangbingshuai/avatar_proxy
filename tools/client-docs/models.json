@@ -237,7 +237,13 @@
         "1080p"
       ],
       "maxContent": 50,
-      "maxN": 1
+      "maxN": 1,
+      "draft": true,
+      "draftToFinal": true,
+      "draftResolution": "480p",
+      "draftFinalResolution": "1080p",
+      "draftTaskTtlSeconds": 604800,
+      "outputFormats": ["mp4", "mov"]
     },
     "summary": "异步视频"
   },

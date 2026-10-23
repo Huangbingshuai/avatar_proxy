@@ -559,6 +559,8 @@ describe("内部控制台", () => {
     await user.click(screen.getByRole("button", { name: "移除收件邮箱 owner@example.test" }));
     await user.click(screen.getByLabelText("添加收件邮箱"));
     await user.paste("new@example.test;owner@example.test");
+    expect(screen.getByLabelText("启用磁盘邮件通知")).not.toBeChecked();
+    await user.click(screen.getByLabelText("启用磁盘邮件通知"));
     await user.type(screen.getByLabelText("邮件配置验证密码"), "correct-password");
     expect(screen.getByRole("button", { name: "发送测试邮件" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "保存邮件设置" }));

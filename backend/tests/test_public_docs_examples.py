@@ -43,6 +43,7 @@ CASES = [(row[0], provider) for row in BUILTIN_MODEL_CATALOG if row[0] not in BU
 
 
 def mock_provider(provider, calls):
+    video_tasks = {}
     def handle(request):
         calls.append(request)
         path = request.url.path
@@ -83,10 +84,15 @@ def mock_provider(provider, calls):
         if request.method == "POST":
             if provider == "aliyun_bailian":
                 return httpx.Response(200, json={"output": {"task_id": "mock-video"}})
-            return httpx.Response(200, json={"id": "mock-video", "task_id": "mock-video"})
+            task_id = "mock-video-" + str(len(video_tasks) + 1)
+            video_tasks[task_id] = body
+            return httpx.Response(200, json={"id": task_id, "task_id": task_id})
         if provider == "aliyun_bailian":
             return httpx.Response(200, json={"output": {"task_status": "SUCCEEDED", "video_url": "https://example.com/video.mp4", "video_duration": 8}})
         data = {"status": "succeeded", "duration": 4, "resolution": "480p", "content": {"video_url": "https://example.com/video.mp4"}}
+        if provider == "volcengine_ark":
+            submitted = video_tasks.get(path.rsplit("/", 1)[-1], {})
+            data.update(draft=submitted.get("draft", False), resolution=submitted.get("resolution", "480p"))
         return httpx.Response(200, json={"task": data} if provider == "minimax" else data)
     return handle
 
@@ -105,6 +111,7 @@ def test_every_model_html_example_reaches_correct_adapter(tmp_path, alias, provi
         calls = []
         relay.transport = httpx.MockTransport(mock_provider(provider, calls))
         task_id = None
+        draft_id = None
         for index, (method, path, payload, _) in enumerate(examples):
             if path == "/v1/audio/transcriptions/asr_xxx":
                 assert task_id
@@ -112,6 +119,11 @@ def test_every_model_html_example_reaches_correct_adapter(tmp_path, alias, provi
             if "$TASK_ID" in path:
                 assert task_id
                 path = path.replace("$TASK_ID", task_id)
+            if payload and payload.get("content", [{}])[0].get("type") == "draft_task":
+                assert draft_id, "Final example must follow a Draft creation example"
+                confirmed = client.get(TASKS + "/" + draft_id, headers={"Authorization":"Bearer " + key})
+                assert confirmed.json()["status"] == "succeeded" and confirmed.json()["draft"] is True
+                payload["content"][0]["draft_task"]["id"] = draft_id
             headers = {"Authorization": "Bearer " + key, "Idempotency-Key": "doc-example-" + str(index)}
             response = client.request(method, path, json=payload, headers=headers)
             if method == "DELETE":
@@ -119,6 +131,8 @@ def test_every_model_html_example_reaches_correct_adapter(tmp_path, alias, provi
             assert response.status_code in {200, 202, 204}, (method, path, payload, response.text)
             if payload and path in {TASKS, "/v1/audio/transcriptions", "/v1/images/tasks"}:
                 task_id = response.json()["id"]
+                if payload.get("draft") is True:
+                    draft_id = task_id
             if method == "GET" and path.startswith(TASKS + "/"):
                 assert response.json()["status"] == "succeeded"
                 assert response.json()["content"]["video_url"]
@@ -142,6 +156,16 @@ def test_general_model_examples_use_real_routes(tmp_path):
                                        config={"workspaceId": "test-workspace", "region": "cn-beijing"} if provider == "aliyun_bailian" else {})
                 calls = []
                 client.app.state.provider_relay.transport = httpx.MockTransport(mock_provider(provider, calls))
+                if payload.get("content", [{}])[0].get("type") == "draft_task":
+                    # Execute the documented prerequisite, not a fake local DB row.
+                    draft = client.post(TASKS, json={"model":alias, "draft":True, "resolution":"480p",
+                                                    "content":[{"type":"text","text":"A paper boat"}]},
+                                        headers={"Authorization":"Bearer " + key})
+                    assert draft.status_code == 200
+                    parent = draft.json()["id"]
+                    confirmed = client.get(TASKS + "/" + parent, headers={"Authorization":"Bearer " + key})
+                    assert confirmed.json()["draft"] is True
+                    payload["content"][0]["draft_task"]["id"] = parent
                 response = client.request(method, path, json=payload, headers={"Authorization": "Bearer " + key})
                 assert response.status_code in {200, 202}, (page, index, response.text)
                 assert calls
@@ -193,6 +217,7 @@ def test_generated_python_examples_execute_offline(monkeypatch):
 
     monkeypatch.setenv("API_KEY", "mock-business-key")
     monkeypatch.setenv("TASK_ID", "mock-task-id")
+    monkeypatch.setenv("DRAFT_TASK_ID", "vid_mock_draft")
     output_files = []
     def fake_open(filename, mode):
         assert mode == "wb"
@@ -207,7 +232,10 @@ def test_generated_python_examples_execute_offline(monkeypatch):
             assert timeout >= 1800
             assert request.get_header("Authorization") == "Bearer mock-business-key"
             assert "$TASK_ID" not in request.full_url
+            assert "$DRAFT_TASK_ID" not in request.full_url
             body = json.loads(request.data) if request.data else {}
+            if body.get("content", [{}])[0].get("type") == "draft_task":
+                assert body["content"][0]["draft_task"]["id"] == "vid_mock_draft"
             if body.get("stream"):
                 return io.BytesIO(b'data: {"choices":[]}\n\ndata: [DONE]\n\n')
             response = io.BytesIO(b'{"ok":true}')

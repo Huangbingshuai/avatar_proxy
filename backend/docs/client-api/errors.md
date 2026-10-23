@@ -40,6 +40,15 @@
 | `422` | `video_cancel_unsupported` | 当前视频供应商未开放经过验证的任务取消适配 |
 | `422` | `route_override_forbidden` | 请求试图覆盖内部路由字段 |
 | `404` | `video_task_not_found` | 任务不存在，或任务不属于当前业务 Key |
+| `404` | `video_draft_not_found` | 样片不存在，或不属于当前项目和业务 Key |
+| `409` | `video_draft_not_ready` / `video_draft_unverified` | 样片未成功，或供应商未确认其为480p样片 |
+| `409` | `video_draft_source_invalid` | 样片创建时间缺失、无效或异常晚于当前时间，不能安全升格 |
+| `409` | `video_draft_route_changed` | 当前渠道或真实模型与样片不一致，不能跨渠道升格 |
+| `409` | `video_draft_usage_unknown` | 样片缺少原始输入计费信息，不能安全升格 |
+| `410` | `video_draft_expired` | 样片创建已满7天，不再能生成成片；已创建成片的同键重放不会重复提交 |
+| `422` | `video_draft_unsupported` / `video_draft_invalid` / `video_draft_source_invalid` | 当前渠道不支持Draft、开关类型错误或引用的不是合格样片 |
+| `422` | `video_draft_resolution_invalid` / `video_draft_final_invalid` | 样片必须480p，成片必须1080p且不能再次开启draft |
+| `422` | `video_draft_reference_invalid` / `video_draft_parameter_conflict` | 引用格式错误或重复提交应继承的参数 |
 | `502` | `provider_unreachable` / `provider_request_failed` | 供应商不可达或拒绝请求 |
 | `503` | `multi_provider_disabled` | 多供应商功能尚未启用 |
 

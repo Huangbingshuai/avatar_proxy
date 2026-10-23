@@ -54,6 +54,68 @@ curl -X POST "$BASE_URL/api/v3/contents/generations/tasks" \
 
 相同业务 Key 使用相同 `Idempotency-Key` 和相同请求体会复用同一任务；同一个键对应不同请求体时返回 `409 idempotency_key_conflict`。
 
+## Seedance 2.5 Draft样片转成片
+
+仅适用于国内火山渠道的 `doubao-seedance-2.5`；以 `/v1/models` 返回 `draft=true`、`draftToFinal=true` 为准。不新增渠道或模型别名，继续使用本页的创建和查询接口。海外 BytePlus、ModelTop、Vega 不支持此流程。
+
+### 第一步：创建480p样片
+
+普通 `resolution=480p` 并不是样片，必须显式传 `draft=true`，且明确指定 `resolution=480p`。
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: seedance-draft-001" \
+  -d '{
+    "model": "doubao-seedance-2.5",
+    "content": [{"type":"text","text":"一只纸船缓缓漂过池塘，镜头平稳推进"}],
+    "duration": 4,
+    "resolution": "480p",
+    "draft": true
+  }'
+```
+
+创建响应仅包含 `{"id":"vid_…"}`。保存这个本站 ID，使用创建时的同一枚业务 Key 查询至 `succeeded`，不另建任务来轮询：
+
+```bash
+export DRAFT_TASK_ID="替换为创建样片返回的vid_任务ID"
+curl "$BASE_URL/api/v3/contents/generations/tasks/$DRAFT_TASK_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+样片查询包含 `draft=true`、`draft_expires_at`（Unix 秒）及成功后的 `content.video_url`。有效期从本站 `created_at` 起算 7 天，排队和生成时间也计入；本站保守使用提交时间校验，不延长上游有效期。仅接受已成功且供应商确认的 480p 样片，未知状态、失败或取消任务不能升格。
+
+### 第二步：引用样片生成1080p成片
+
+确认效果后，仍使用相同模型和 Key，传本站样片 ID。不要传上游任务 ID，也不要把样片当作 `video_url` 参考视频。
+
+```bash
+curl "$BASE_URL/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: seedance-final-001" \
+  -d "{
+    \"model\": \"doubao-seedance-2.5\",
+    \"content\": [{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"$DRAFT_TASK_ID\"}}],
+    \"resolution\": \"1080p\"
+  }"
+```
+
+成片返回新的本站任务 ID，使用相同查询接口查询这个新 ID。成片结果包含 `draft=false` 和 `draft_task_id`；后者是原本站样片 ID。结果链接与普通视频一样是供应商临时链接，请及时保存。
+
+参数规则：
+
+- `content` 只能包含一个 `draft_task`，`resolution` 必须明确为 `1080p`，`draft` 须省略或为 `false`。
+- 文本提示词和图片/视频/音频参考、时长、比例、种子、音频开关由上游复用，不得再次传入 `duration`、`ratio`、`seed`、`generate_audio`、`frames`、`camera_fixed`、`task_type`，即使值相同也不允许。
+- 可以重新指定 `watermark`、`return_last_frame`、`output_format`（`mp4`/`mov`）、`service_tier` 和 `execution_expires_after`，未指定时使用本次调用的上游默认值，不承诺继承样片。本站仍不开放 `callback_url`、`priority`、`safety_identifier`。
+- 样片和成片使用不同的 `Idempotency-Key`；同一步不确定是否成功时，保持同一幂等键和原请求体重放，不能更换键反复付费提交。已创建成片的同键重放不会因其父样片随后过期而重复创建。
+- 样片必须属于同一项目和业务 Key，使用同一渠道和真实模型。切换渠道后须恢复原绑定或重新做样片，禁用渠道后不能新建成片。沿用样片原凭证版本；原凭证失效时需人工核对，不自动切换供应商账号。
+
+计费规则：两次任务独立结算，按实际返回的 `usage.completion_tokens` 匹配 480p/1080p 全局价目。成片“有/无输入视频”条件继承样片最初的参考素材，不把 Draft 自身额外算成参考视频；缺失真实 Token 标记待计价，不按零处理。普通 480p 与 Draft 480p 的计价方式相同，不设置固定的“省73%”或“五分之一”折扣。
+
+常见错误：`404 video_draft_not_found`（不存在或非本 Key）、`409 video_draft_not_ready` / `video_draft_unverified`、`409 video_draft_route_changed`、`410 video_draft_expired`、`422 video_draft_resolution_invalid` / `video_draft_reference_invalid` / `video_draft_parameter_conflict`。这些本地校验不会创建供应商任务。
+
 ## 渠道与模型参数
 
 对外路径保持一致，但不同供应商实际支持的素材和参数不同。客户端应先调用 `/v1/models`，只使用当前项目实际返回的模型。

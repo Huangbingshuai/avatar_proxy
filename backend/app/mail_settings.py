@@ -286,9 +286,11 @@ class MailSettingsStore:
             accounts.append(MailAccount(id=item.id, provider=item.provider, **server))
         if payload.active_account_id is not None and payload.active_account_id not in ids:
             raise ApiError("请选择已保存的发件邮箱", 422, "mail_active_account_invalid")
-        updated = MailSettingsDocument(enabled=payload.enabled, recipients=recipients,
+        # Unbinding the last sender/recipient is valid. Turn mail delivery off,
+        # without changing disk monitoring or retaining an unusable active sender.
+        updated = MailSettingsDocument(enabled=payload.enabled and bool(accounts) and bool(recipients), recipients=recipients,
             active_account_id=payload.active_account_id, accounts=accounts)
-        if payload.enabled:
+        if updated.enabled:
             self._validate(updated.active())
             if not updated.active().configured:
                 raise ApiError("请添加发件邮箱、选择当前发件账号并设置收件人", 422, "mail_settings_incomplete")

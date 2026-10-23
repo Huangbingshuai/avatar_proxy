@@ -24,6 +24,7 @@ from .security import ApiPrincipal
 from .token_usage import token_count, token_summary
 from . import vega
 from . import vega_image, vega_vl
+from . import seedance_draft
 
 
 PROVIDERS = {
@@ -1571,6 +1572,8 @@ class ProviderRelay:
         operation: str,
         payload: dict[str, Any],
         idempotency_key: str | None,
+        *,
+        billing_context: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         request_hash = _request_hash(operation, payload)
         if idempotency_key:
@@ -1608,6 +1611,8 @@ class ProviderRelay:
             )
             if payload.get("size") is not None:
                 billing_metadata["requestedSize"] = str(payload["size"])
+        if billing_context:
+            billing_metadata.update(billing_context)
         with self.database.connect() as connection:
             try:
                 connection.execute(
@@ -1957,7 +1962,8 @@ class ProviderRelay:
                 "message": task.get("error_message") or "视频生成失败",
             }
         metadata = _loaded(task.get("metadata_json"), {})
-        if isinstance(metadata, dict) and metadata:
+        metadata = seedance_draft.public_metadata(task, metadata if isinstance(metadata, dict) else {})
+        if metadata:
             result["metadata"] = {key: value for key, value in metadata.items() if key != "response"}
         return result
 
@@ -1976,6 +1982,7 @@ class ProviderRelay:
         self, route: ModelRoute, payload: dict[str, Any]
     ) -> tuple[str, dict[str, Any]]:
         metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        seedance_draft.validate(route, payload)
         allowed_metadata = {
             "resolution", "ratio", "generate_audio", "watermark", "camera_fixed",
             "return_last_frame", "service_tier", "content", "draft", "frames",
@@ -2261,6 +2268,10 @@ class ProviderRelay:
                     raise ApiError("火山文本条目格式无效", 422, "video_content_invalid")
                 safe_content.append({"type": "text", "text": item["text"][:40000]})
                 continue
+            if content_type == "draft_task":
+                parent = seedance_draft.reference_id(route, content)
+                safe_content.append({"type": "draft_task", "draft_task": {"id": parent}})
+                continue
             spec = media_fields.get(str(content_type))
             if spec is None:
                 raise ApiError("火山content包含不支持的条目", 422, "video_content_invalid")
@@ -2315,14 +2326,37 @@ class ProviderRelay:
         route = self.resolve(principal, alias)
         if route.modality != "video":
             raise ApiError("该模型不支持视频接口", 422, "model_modality_mismatch")
+        parent_id = seedance_draft.validate(route, payload)
+        billing_context = None
+        parent = None
+        if parent_id:
+            if idempotency_key:
+                existing = self._find_idempotent_task(principal, "video", idempotency_key, _request_hash("video", payload))
+                if existing:
+                    return self._video_public(existing)
+            try:
+                parent = self.get_local_task(principal, parent_id)
+            except ApiError as error:
+                if error.code != "video_task_not_found":
+                    raise
+                raise ApiError("样片任务不存在或不属于当前业务Key", 404, "video_draft_not_found") from error
+            billing_context = seedance_draft.source_context(parent, route, _now_epoch())
+            # Keep the accepted Draft's account/credential version. Current
+            # resolve() above still enforces active channel and Key permission.
+            route = self._task_route(parent)
+        elif seedance_draft.supported(route):
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            billing_context = {"draft": metadata.get("draft", False)}
         path, upstream_payload = self._video_submit_payload(route, payload)
+        if parent is not None:
+            upstream_payload["content"][0]["draft_task"]["id"] = parent["upstream_task_id"]
         if route.provider == "vega":
             from .vega_resources import VegaResources
             resources = VegaResources(self)
             for item in upstream_payload.get("FileInfos", []):
                 if item["Url"].startswith("asset://"):
                     resources.owns(principal, route, "AssetId", item["Url"][8:].rstrip("/"))
-        task, created = self._create_task(principal, route, "video", payload, idempotency_key)
+        task, created = self._create_task(principal, route, "video", payload, idempotency_key, billing_context=billing_context)
         if not created:
             return self._video_public(task)
         try:
@@ -2389,7 +2423,7 @@ class ProviderRelay:
             "created_at": task.get("created_at"),
         }
         metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
-        for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio", "output_format"):
+        for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio", "output_format", "draft", "draft_task_id", "draft_expires_at"):
             if metadata.get(key) is not None:
                 result[key] = metadata[key]
         content: dict[str, Any] = {}
@@ -2534,7 +2568,7 @@ class ProviderRelay:
                 error = "火山视频任务已过期"
             metadata = {
                 key: data[key]
-                for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio", "output_format")
+                for key in ("resolution", "ratio", "duration", "frames", "framespersecond", "generate_audio", "output_format", "draft")
                 if data.get(key) is not None
             }
             if content.get("last_frame_url"):

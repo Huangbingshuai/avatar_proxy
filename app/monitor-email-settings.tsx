@@ -37,8 +37,11 @@ export default function MonitorEmailSettingsForm({ email, adminApi, onSaved, loa
   const [message, setMessage] = useState("");
   const [dirty, setDirty] = useState(false);
   const active = form.accounts.find((item) => item.id === form.activeAccountId);
+  const canNotify = form.accounts.length > 0 && form.recipients.length > 0;
   function change(value: Partial<SettingsDraft>) {
-    setDraft({ ...form, ...value }); setDirty(true); setMessage(""); setError("");
+    const next = { ...form, ...value };
+    if (!next.accounts.length || !next.recipients.length) next.enabled = false;
+    setDraft(next); setDirty(true); setMessage(""); setError("");
   }
   function addRecipients(value: string) {
     const values = value.split(/[\s,;，；]+/).filter(Boolean);
@@ -88,7 +91,9 @@ export default function MonitorEmailSettingsForm({ email, adminApi, onSaved, loa
           clearPassword: item.clearPassword, password: item.password || undefined,
         })) }) });
       onSaved(data.email as MonitorEmailSettings); setDraft(null); setDirty(false);
-      setMessage("邮件设置已保存，后台告警立即使用新配置。");
+      setMessage((data.email as MonitorEmailSettings).enabled
+        ? "邮件设置已保存，后台告警立即使用新配置。"
+        : "邮件设置已保存，邮件通知已停用，不影响磁盘监控。");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "邮件设置保存失败");
       setDraft({ ...form, accounts: form.accounts.map((item) => ({ ...item, password: "" })) });
@@ -104,7 +109,7 @@ export default function MonitorEmailSettingsForm({ email, adminApi, onSaved, loa
     finally { setCurrentPassword(""); setBusy(""); }
   }
   return <form className="monitorMailWorkspace" onSubmit={save} aria-label="磁盘告警邮件设置">
-    <div className="monitorMailHeading"><div><span className="monitorSectionNumber">02</span><div><h4>邮件通知</h4><p>选邮箱、填授权码，其他参数自动配置。</p></div></div><label className="monitorSwitch"><input aria-label="启用磁盘邮件通知" type="checkbox" disabled={Boolean(busy) || !email} checked={form.enabled} onChange={(event) => change({ enabled: event.target.checked })} /><span>邮件通知</span></label></div>
+    <div className="monitorMailHeading"><div><span className="monitorSectionNumber">02</span><div><h4>邮件通知</h4><p>邮箱可不绑定；未绑定时仅监控磁盘，不发送邮件。</p></div></div><label className="monitorSwitch"><input aria-label="启用磁盘邮件通知" type="checkbox" disabled={Boolean(busy) || !email || !canNotify} checked={form.enabled} onChange={(event) => change({ enabled: event.target.checked })} /><span>邮件通知</span></label></div>
     {!email ? <div className="monitorMailEmpty" role={loading ? "status" : "alert"}>{loading ? "正在加载邮件配置…" : "暂时无法读取邮件配置，请刷新或检查后端服务。"}</div> : <>
       {email.source === "legacy_env" && <div className="monitorMigration"><ShieldCheck size={15} />原有邮箱已保留，授权码无需重新填写。</div>}
       <fieldset disabled={Boolean(busy)} className="monitorMailContent">
@@ -112,7 +117,7 @@ export default function MonitorEmailSettingsForm({ email, adminApi, onSaved, loa
         <div className="mailAccounts">{form.accounts.map((item) => <article className={`mailAccount ${item.id === form.activeAccountId ? "selected" : ""}`} key={item.id}>
           <label><input type="radio" name="mail-sender" aria-label={`使用 ${item.fromEmail} 发件`} checked={item.id === form.activeAccountId} onChange={() => change({ activeAccountId: item.id })} /><span className={`mailProviderIcon provider-${item.provider}`}><Mail size={17} /></span><span className="mailAccountIdentity"><b>{item.fromEmail}</b><small>{labels[item.provider]}{item.id === form.activeAccountId ? " · 当前发件" : " · 备用账号"}</small></span></label>
           <div><button className="mailIconAction" type="button" disabled={editor !== null} aria-label={`编辑 ${item.fromEmail}`} onClick={() => { setEditor({ ...item }); setError(""); }}><Pencil size={14} /></button><button className="mailIconAction danger" type="button" disabled={editor !== null} aria-label={`移除发件邮箱 ${item.fromEmail}`} onClick={() => { const accounts = form.accounts.filter((value) => value.id !== item.id); change({ accounts, activeAccountId: item.id === form.activeAccountId ? accounts[0]?.id ?? null : form.activeAccountId }); }}><Trash2 size={14} /></button></div>
-        </article>)}{!form.accounts.length && !editor && <div className="monitorMailEmpty"><Mail size={25} /><b>添加第一个发件邮箱</b><p>支持QQ、网易，也可连接其他SMTP邮箱。</p></div>}</div>
+        </article>)}{!form.accounts.length && !editor && <div className="monitorMailEmpty"><Mail size={25} /><b>未绑定发件邮箱（可选）</b><p>可直接保存，不影响磁盘监控；需要邮件通知时再添加邮箱。</p></div>}</div>
         {editor && <section className="mailAccountEditor" aria-label="编辑发件邮箱">
           <div className="mailEditorHead"><b>{form.accounts.some((item) => item.id === editor.id) ? "编辑邮箱" : "添加邮箱"}</b><button className="mailIconAction" type="button" aria-label="取消编辑邮箱" onClick={() => { setEditor(null); setError(""); }}><X size={16} /></button></div>
           <div className="mailProviderPicker" role="group" aria-label="邮箱服务">{[...email.providers.map((item) => ({ id: item.id as Provider, label: item.label })), { id: "custom" as Provider, label: "其他邮箱" }].map((item) => <button type="button" aria-pressed={editor.provider === item.id} className={editor.provider === item.id ? "active" : ""} key={item.id} onClick={() => setEditor({ ...editor, provider: item.id, password: "", clearPassword: false })}>{item.label}{editor.provider === item.id && <Check size={13} />}</button>)}</div>

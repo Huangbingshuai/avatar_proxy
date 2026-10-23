@@ -150,7 +150,7 @@ def test_specialized_docs_defer_to_client_contract() -> None:
     billing = _text(ADMIN_BILLING_DOC)
     relay = _text(MODEL_RELAY_DOC)
     richidrama = _text(RICHIDRAMA_DOC)
-    assert "版本：6.3" in client
+    assert "版本：6.4.0" in client
     assert "版本：1.2" in billing
     assert "独立的“模型价格”页面" in billing
     assert "`/v1/pricing`" in billing

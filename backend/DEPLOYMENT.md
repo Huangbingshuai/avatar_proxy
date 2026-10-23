@@ -91,6 +91,8 @@ curl https://api.example.com/health
 
 内部接口仍为 `PUT /api/internal/admin/system-monitor/email/settings`，新请求包含 `enabled`、`accounts[]`（`id/provider/fromEmail/password`，自定义账号另含SMTP参数）、`activeAccountId`、`recipients[]` 和 `currentPassword`。编辑账号按其原ID保留授权码，新增或更换身份不能复用其他账号的密钥。所有写入、账号切换和测试均保留超级管理员、CSRF及当前密码校验；客户素材、模型API与用户门户不使用这些内部接口，不需要修改客户API文档。
 
+邮箱绑定可选。多账号接口允许 `accounts: []`、`activeAccountId: null` 或 `recipients: []` 保存未绑定状态，缺少发件账号或收件人时自动保存为 `enabled: false`，不修改磁盘监控开关。删除全部发件账号后密文配置仍保留为空的面板文档，重启不会重新导入旧SMTP环境变量。重新绑定后需主动启用通知；未绑定时测试邮件返回 `409 alert_email_not_configured`。如仍有账号却选择无效的活动账号，或提供无效邮箱/授权码，继续拒绝写入。此变更不需要迁移或修改服务器环境文件。
+
 旧SMTP环境变量会在首次启动时幂等导入，但不会覆盖已保存的面板配置。升级时先备份数据库、密钥和旧环境文件，再通过 `python -m scripts.migrate_monitor_email --env-file <服务端环境文件> --remove-legacy` 验证导入并移除旧邮件变量，随后重新创建API容器以清除进程内旧变量。该命令不发送邮件、不输出配置值；面板的测试邮件按钮才会发送真实邮件。
 
 内部控制台与用户门户分别构建和发布。控制台构建变量仍可设置为客户业务 API 的公开地址：

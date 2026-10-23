@@ -7,6 +7,27 @@ import { createHash } from 'node:crypto';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { build, pages, root, escapeHtml, modelCatalog, assetOperations, vegaMaterialOperations, supplierCatalog } from './build.mjs';
 import { supplierPageId, supplierGroups } from './supplier-guides.mjs';
+import { modelGuide } from './model-guides.mjs';
+
+test('domestic Seedance Draft has distinct idempotency keys and no repeated inherited fields', () => {
+  const model = modelCatalog.find(item => item.id === 'doubao-seedance-2.5');
+  assert.equal(model.capabilities.draft, true);
+  const guide = modelGuide(model, {});
+  assert.match(guide, /Idempotency-Key: seedance-draft-001/);
+  assert.match(guide, /Idempotency-Key: seedance-final-001/);
+  const requests = [...guide.matchAll(/```bash\n([\s\S]*?)```/g)].flatMap(match => {
+    const raw = match[1].match(/-d '([\s\S]+)'/)?.[1] ?? match[1].match(/-d "([\s\S]+)"/)?.[1]?.replaceAll('\\"', '"');
+    return raw ? [JSON.parse(raw)] : [];
+  });
+  const draft = requests.find(body => body.draft === true);
+  const final = requests.find(body => body.content?.[0]?.type === 'draft_task');
+  assert.equal(draft.resolution, '480p');
+  assert.equal(final.resolution, '1080p');
+  assert.deepEqual(Object.keys(final).sort(), ['content', 'model', 'resolution']);
+  for (const item of modelCatalog.filter(item => item.id.startsWith('dreamina-seedance'))) {
+    assert.notEqual(item.capabilities.draft, true);
+  }
+});
 
 const html = await build();
 function reader(t, options = {}) {
@@ -160,16 +181,16 @@ test('JavaScript examples execute offline with matching URLs, headers, bodies an
     for (const block of blocks) {
       const shell = block.querySelector('pre[data-language="shell"] code').textContent;
       const script = block.querySelector('pre[data-language="javascript"] code').textContent;
-      const body = shell.match(/-d '([\s\S]+)'/)?.[1];
-      const endpoint = shell.match(/"\$BASE_URL([^"]+)"/)[1].replace('$TASK_ID', 'mock-task');
+      const body = shell.match(/-d '([\s\S]+)'/)?.[1] ?? shell.match(/-d "([\s\S]+)"/)?.[1]?.replaceAll('\\"', '"');
+      const endpoint = shell.match(/"\$BASE_URL([^"]+)"/)[1].replace('$TASK_ID', 'mock-task').replace('$DRAFT_TASK_ID', 'vid_mock_draft');
       const method = shell.match(/-X (\w+)/)?.[1] || (body ? 'POST' : 'GET');
       const output = shell.match(/--output ([\w.-]+)/)?.[1];
-      const expected = body ? JSON.parse(body) : undefined;
+      const expected = body ? JSON.parse(body.replaceAll('$DRAFT_TASK_ID', 'vid_mock_draft')) : undefined;
       const calls = [];
       const writes = [];
       const source = script.replace('const { writeFile } = await import("node:fs/promises");', 'const writeFile = mockWriteFile;');
       const context = vm.createContext({
-        Buffer, process: { env: { API_KEY: 'mock-key', TASK_ID: 'mock-task' }, stdout: { write() {} } }, console: { log() {} },
+        Buffer, process: { env: { API_KEY: 'mock-key', TASK_ID: 'mock-task', DRAFT_TASK_ID:'vid_mock_draft' }, stdout: { write() {} } }, console: { log() {} },
         mockWriteFile: async (file, bytes) => { writes.push([file, bytes.toString()]); },
         fetch: async (url, options) => {
           calls.push({ url, options });

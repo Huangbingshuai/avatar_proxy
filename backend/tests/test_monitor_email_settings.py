@@ -278,7 +278,6 @@ def test_accounts_migrate_preserve_independent_secrets_and_only_selected_sends(t
     ([account(password=None)], {}, "mail_settings_incomplete"),
     ([account()], {"activeAccountId": "missing"}, "mail_active_account_invalid"),
     ([account()], {"activeAccountId": None}, "mail_settings_incomplete"),
-    ([account()], {"recipients": []}, "mail_settings_incomplete"),
     ([account()], {"recipients": ["invalid\r\nBcc: evil@example.test"]}, "mail_recipients_invalid"),
     ([account(password="new", clearPassword=True)], {}, "mail_password_conflict"),
 ])
@@ -311,6 +310,70 @@ def test_account_identity_change_never_reuses_secret_and_removed_secret_is_gone(
     assert not store.load().configured
     database.initialize()
     assert not store.public()["enabled"]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("remove_sender", [False, True])
+def test_unbinding_mail_is_persisted_and_never_reimports_legacy(tmp_path, enabled, remove_sender):
+    database, store = make_store(tmp_path)
+    multi_update(store, [account()])
+    key = store.key_path.read_bytes()
+    accounts = [] if remove_sender else [account(password=None)]
+    recipients = ["ops@qq.com"] if remove_sender else []
+    result = multi_update(store, accounts, enabled=enabled, recipients=recipients,
+                          activeAccountId=None if remove_sender else "qq_1")
+    assert result["enabled"] is False
+    assert result["configured"] is False
+    assert result["recipients"] == recipients
+    assert len(result["accounts"]) == len(accounts)
+    with database.connect() as connection:
+        audit = json.loads(connection.execute("SELECT after_json FROM admin_audit_logs "
+            "WHERE action='admin.system_monitor.email.settings.update' ORDER BY rowid DESC LIMIT 1").fetchone()[0])
+        assert audit["enabled"] is False
+        monitor_enabled = connection.execute("SELECT enabled FROM system_monitor_settings").fetchone()[0]
+        assert monitor_enabled == 1
+    database.initialize()
+    restarted = MailSettingsStore(database, build_settings(database.path, smtp_host="smtp.qq.com",
+        smtp_username="legacy@qq.com", smtp_password="never-reimport", smtp_from_email="legacy@qq.com",
+        alert_email_recipients="ops@qq.com"))
+    assert restarted.public() == result
+    assert restarted.key_path.read_bytes() == key
+    assert not DiskMonitor(database, build_settings(database.path)).email_configured
+    with pytest.raises(ApiError) as error:
+        DiskMonitor(database, build_settings(database.path))._send_email_sync("test", "test")
+    assert error.value.code == "alert_email_not_configured"
+    # Rebinding alone does not turn notifications back on.
+    multi_update(restarted, [account(password="rebound-secret" if remove_sender else None)], enabled=False)
+    assert not restarted.public()["enabled"]
+    multi_update(restarted, [account(password=None)], enabled=True)
+    assert restarted.load().configured
+
+
+def test_unbind_mail_api_requires_authentication_and_preserves_disk_monitor(tmp_path):
+    app = create_app(build_settings(tmp_path / "unbind.db"))
+    url = "/api/internal/admin/system-monitor/email/settings"
+    with TestClient(app) as client:
+        session, _, _ = enroll_super(client, app)
+        headers = {"X-CSRF-Token": session["csrfToken"]}
+        payload = {"enabled": True, "accounts": [account()], "activeAccountId": "qq_1",
+            "recipients": ["ops@qq.com"], "currentPassword": CHANGED_PASSWORD}
+        assert client.put(url, headers=headers, json=payload).status_code == 200
+        unbind = payload | {"accounts": [], "activeAccountId": None, "recipients": []}
+        assert client.put(url, json=unbind).status_code == 403
+        assert client.put(url, headers=headers, json=unbind | {"currentPassword": "wrong"}).status_code == 401
+        assert app.state.system_monitor.email_configured
+        result = client.put(url, headers=headers, json=unbind)
+        assert result.status_code == 200
+        assert result.json()["email"]["accounts"] == []
+        assert result.json()["email"]["activeAccountId"] is None
+        assert result.json()["email"]["enabled"] is False
+        assert "secret-qq_1" not in result.text and CHANGED_PASSWORD not in result.text
+        status = client.get("/api/internal/admin/system-monitor/status").json()
+        assert status["settings"]["configuredEnabled"] is True
+        response = client.post("/api/internal/admin/system-monitor/email/test", headers=headers,
+                               json={"currentPassword": CHANGED_PASSWORD})
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "alert_email_not_configured"
 
 
 def test_custom_servers_and_disabled_saved_accounts_remain_available(tmp_path):

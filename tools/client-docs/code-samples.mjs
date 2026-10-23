@@ -4,7 +4,8 @@ export function curlSamples(text) {
   if (!text.trimStart().startsWith('curl') || text.includes('-F ') || text.match(/\bcurl\b/g)?.length !== 1) return [shell];
   const endpoint = text.match(/["']\$BASE_URL([^"']+)["']/)?.[1];
   if (!endpoint) return [shell];
-  const raw = text.match(/-d '([\s\S]+)'/)?.[1];
+  const raw = text.match(/-d '([\s\S]+)'/)?.[1]
+    ?? text.match(/-d "([\s\S]+)"/)?.[1]?.replaceAll('\\"', '"');
   let payload;
   if (raw) { try { payload = JSON.parse(raw); } catch { return [shell]; } }
   const method = text.match(/-X (\w+)/)?.[1] || (payload ? 'POST' : 'GET');
@@ -12,12 +13,14 @@ export function curlSamples(text) {
   const output = text.match(/--output ([\w.-]+)/)?.[1];
   const stream = text.includes('stream": true');
   const jsHeaders = { ...headers, Authorization: 'Bearer REPLACE_API_KEY' };
+  const draftReference = payload?.content?.[0]?.draft_task?.id === '$DRAFT_TASK_ID';
   const js = [
     'const apiKey = process.env.API_KEY; // 仅在服务器保存',
-    'const endpoint = ' + JSON.stringify(endpoint) + '.replace("$TASK_ID", process.env.TASK_ID ?? "task_id");',
+    'const endpoint = ' + JSON.stringify(endpoint) + '.replace("$TASK_ID", process.env.TASK_ID ?? "task_id")' + (endpoint.includes('$DRAFT_TASK_ID') ? '.replace("$DRAFT_TASK_ID", process.env.DRAFT_TASK_ID ?? "vid_设置样片ID")' : '') + ';',
     'const headers = ' + JSON.stringify(jsHeaders, null, 2) + ';',
     'headers.Authorization = "Bearer " + apiKey;',
     ...(payload ? ['const body = ' + JSON.stringify(payload, null, 2) + ';'] : []),
+    ...(draftReference ? ['if (!process.env.DRAFT_TASK_ID) throw new Error("请先设置DRAFT_TASK_ID为成功样片的本站ID");', 'body.content[0].draft_task.id = process.env.DRAFT_TASK_ID;'] : []),
     'const response = await fetch("https://api.richbest.cn" + endpoint, {',
     '  method: ' + JSON.stringify(method) + ', headers,',
     ...(payload ? ['  body: JSON.stringify(body),'] : []),
@@ -30,10 +33,10 @@ export function curlSamples(text) {
   const pythonHeaders = { ...headers, Authorization: 'Bearer REPLACE_API_KEY' };
   const python = [
     'import json', 'import os', 'import urllib.request',
-    'endpoint = ' + JSON.stringify(endpoint) + '.replace("$TASK_ID", os.environ.get("TASK_ID", "task_id"))',
+    'endpoint = ' + JSON.stringify(endpoint) + '.replace("$TASK_ID", os.environ.get("TASK_ID", "task_id"))' + (endpoint.includes('$DRAFT_TASK_ID') ? '.replace("$DRAFT_TASK_ID", os.environ["DRAFT_TASK_ID"])' : ''),
     'headers = json.loads(' + JSON.stringify(JSON.stringify(pythonHeaders)) + ')',
     'headers["Authorization"] = "Bearer " + os.environ["API_KEY"]',
-    ...(payload ? ['payload = json.loads(' + JSON.stringify(JSON.stringify(payload)) + ')', 'data = json.dumps(payload, ensure_ascii=False).encode("utf-8")'] : ['data = None']),
+    ...(payload ? ['payload = json.loads(' + JSON.stringify(JSON.stringify(payload)) + ')', ...(draftReference ? ['payload["content"][0]["draft_task"]["id"] = os.environ["DRAFT_TASK_ID"]'] : []), 'data = json.dumps(payload, ensure_ascii=False).encode("utf-8")'] : ['data = None']),
     'request = urllib.request.Request(',
     '    "https://api.richbest.cn" + endpoint, data=data, headers=headers, method=' + JSON.stringify(method),
     ')',

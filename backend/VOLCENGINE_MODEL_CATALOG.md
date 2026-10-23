@@ -1,8 +1,16 @@
 # 火山方舟模型目录维护与验收记录
 
-更新日期：2026-10-15
+更新日期：2026-10-23
 
 本文档供项目维护人员使用，记录方舟模型进入 Star Proxy 内置目录的判定标准、固定映射和验收方法。客户可见的实时模型清单始终以业务 Key 请求 `GET /v1/models` 的结果为准，完整调用契约以 [CLIENT_API.md](CLIENT_API.md) 为准。
+
+## 国内 Seedance 2.5 Draft本地适配
+
+2026-10-23 为现有 `doubao-seedance-2.5`（固定 `doubao-seedance-2-5-260628`）增加 `draft` / `draftToFinal` 能力，不新增模型或渠道。`draft=true` 必须明确480p，成片引用本站 `content.draft_task.id`、明确1080p，不能再次传提示词、参考素材、duration、ratio、seed等继承字段。源任务必须由同一Key在相同项目、渠道、真实模型下创建，成功且供应商确认样片，并在本站创建时间起7天内；凭证固定源版本，当前禁用/切换渠道不能绕过。
+
+任务关联、模式和输入视频计费条件保存在现有任务JSON字段，无需新增表或环境变量；查询只返回本站父任务ID，不暴露上游ID。两次任务各按真实输出Token及480p/1080p价格结算，成片继承原输入视频条件，不把Draft本身当参考视频。价目金额保持管理员已有配置，不新增营销折扣。
+
+此适配仅本地开发并使用MockTransport验证参数、权限、幂等、升级、用量与日志，不代表真实付费验收或生产上线；BytePlus、ModelTop与Vega仍不开放该Draft流程。官方依据：[Seedance 2.5](https://docs.volcengine.com/docs/ark/seedance-2-5?lang=zh)、[创建视频任务](https://docs.volcengine.com/docs/ark/create-video-generation-task-api?lang=zh)。
 
 ## 海外 BytePlus 接入范围
 

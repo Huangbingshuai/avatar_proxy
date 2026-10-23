@@ -41,6 +41,43 @@ async function addNetease(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("简化的多邮箱通知设置", () => {
+  it("删除最后一个发件邮箱后可验证密码保存，自动停用邮件通知", async () => {
+    const { user, api } = setup();
+    await user.click(screen.getByRole("button", { name: "移除发件邮箱 alerts@qq.com" }));
+    expect(screen.getByText("未绑定发件邮箱（可选）")).toBeVisible();
+    expect(screen.getByLabelText("启用磁盘邮件通知")).not.toBeChecked();
+    expect(screen.getByLabelText("启用磁盘邮件通知")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存邮件设置" })).toBeDisabled();
+    await user.type(screen.getByLabelText("邮件配置验证密码"), "test-password");
+    await user.click(screen.getByRole("button", { name: "保存邮件设置" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("邮件通知已停用，不影响磁盘监控");
+    const saved = JSON.parse(String(api.mock.calls[0][1]?.body));
+    expect(saved).toMatchObject({ enabled: false, accounts: [], activeAccountId: null });
+    expect(saved.recipients).toEqual(email.recipients);
+    expect(screen.getByRole("button", { name: "发送测试邮件" })).toBeDisabled();
+  });
+
+  it("删除最后一个收件人可保存，发件授权码仍保留，重新添加需主动启用", async () => {
+    const { user, api } = setup();
+    for (const recipient of email.recipients) {
+      await user.click(screen.getByRole("button", { name: `移除收件邮箱 ${recipient}` }));
+    }
+    expect(screen.getByLabelText("启用磁盘邮件通知")).not.toBeChecked();
+    await user.type(screen.getByLabelText("邮件配置验证密码"), "test-password");
+    await user.click(screen.getByRole("button", { name: "保存邮件设置" }));
+    await screen.findByRole("status");
+    const saved = JSON.parse(String(api.mock.calls[0][1]?.body));
+    expect(saved).toMatchObject({ enabled: false, recipients: [], activeAccountId: "old" });
+    expect(saved.accounts).toHaveLength(1);
+    expect(saved.accounts[0]).not.toHaveProperty("password");
+    await user.type(screen.getByLabelText("添加收件邮箱"), "new@qq.com");
+    await user.click(screen.getByRole("button", { name: /^添加$/ }));
+    expect(screen.getByLabelText("启用磁盘邮件通知")).not.toBeChecked();
+    expect(screen.getByLabelText("启用磁盘邮件通知")).toBeEnabled();
+    await user.click(screen.getByLabelText("启用磁盘邮件通知"));
+    expect(screen.getByLabelText("启用磁盘邮件通知")).toBeChecked();
+  });
+
   it("保留旧邮箱，不展示SMTP字段或授权码，收件人可跨服务", () => {
     setup();
     expect(screen.getByText("alerts@qq.com")).toBeInTheDocument();
