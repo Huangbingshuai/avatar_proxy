@@ -81,6 +81,8 @@ export const slug = (text) => text.replace(/<[^>]*>/g, '').replace(/`/g, '').toL
 
 export async function build() {
   const sources = await loadSources();
+  const documentVersion = sources.find(page => page.id === 'start').source.match(/^版本：([^\s·]+)/m)?.[1];
+  if (!documentVersion) throw new Error('Client API document version is missing');
   const css = await readFile(path.join(here, 'style.css'), 'utf8');
   const js = await readFile(path.join(here, 'reader.js'), 'utf8');
   const logo = await readFile(path.join(here, 'ruichi-logo.png'));
@@ -174,7 +176,7 @@ export async function build() {
 <meta name="source-hash" content="${sourceHash}"><title>星辰平台 · API 接口文档</title><style>${css}</style></head>
 <body><a class="skip-link" href="#main">跳到文档正文</a>
 <header class="topbar"><a class="brand" href="#start"><span class="brand-mark"><img src="${logoUrl}" alt="瑞池传媒" width="32" height="48"></span><span>星辰平台 <small>开发者文档</small></span></a>
-<div class="top-actions"><span class="version">文档 6.0</span><button id="print" type="button">打印 / PDF</button><button id="menu" type="button" aria-controls="sidebar" aria-expanded="false">目录</button></div></header>
+<div class="top-actions"><span class="version">文档 ${escapeHtml(documentVersion)}</span><button id="print" type="button">打印 / PDF</button><button id="menu" type="button" aria-controls="sidebar" aria-expanded="false">目录</button></div></header>
 <div class="layout"><aside id="sidebar" aria-label="文档目录"><label class="search-label" for="search">搜索文档</label><div class="search-box"><input id="search" type="search" placeholder="模型、接口、参数或错误码" autocomplete="off"><kbd>/</kbd></div>
 <div id="search-status" role="status" aria-live="polite"></div><nav id="search-results" aria-label="搜索结果" hidden></nav><nav id="navigation" aria-label="模型与素材接口">${nav}</nav>
 <div class="sidebar-foot"><span class="dot"></span>HTTP API · Bearer Key<br><code>api.richbest.cn</code></div></aside>

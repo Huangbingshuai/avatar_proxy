@@ -22,6 +22,8 @@ type MockData = {
   modeltop?: boolean;
   channelCreateCsrfOnce?: boolean;
   channelCreateIdentityChange?: boolean;
+  overviewTokenUsage?: number;
+  overviewTokenIncomplete?: number;
 };
 
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -174,7 +176,7 @@ function installFetch(data: MockData = {}) {
     if (/\/api\/internal\/auth\/sessions\/[^/]+$/.test(url.pathname) && init?.method === "DELETE") return jsonResponse({ revoked: true, sessionId: "session-old" });
     if (url.pathname === "/api/internal/project/list") return jsonResponse({ projects });
     if (url.pathname === "/api/internal/apikey/list") return jsonResponse({ apiKeys });
-    if (url.pathname === "/api/internal/overview") return jsonResponse({ stats: { projects: projects.length, activeKeys: apiKeys.length, requestsTotal: 5891, errorsTotal: 8, assetsTotal: 573, uploadsTotal: 32, uploadBytesTotal: 137153741, modelCalls: 126, tokenUsage: 982144 }, recent: [] });
+    if (url.pathname === "/api/internal/overview") return jsonResponse({ stats: { projects: projects.length, activeKeys: apiKeys.length, requestsTotal: 5891, errorsTotal: 8, assetsTotal: 573, uploadsTotal: 32, uploadBytesTotal: 137153741, modelCalls: 126, tokenUsage: data.overviewTokenUsage ?? 982144, tokenUsageIncompleteCalls: data.overviewTokenIncomplete ?? 0 }, recent: [] });
     if (url.pathname === "/api/internal/call-logs") return jsonResponse({ items: [{ id: 1, requestId: "request-log-1", apiKeyId: "key-a", apiKeyName: "生产 Key", apiKeyPrefix: "vap_live_a…", projectName: "customer_a", method: "POST", path: "/v1/chat/completions", routeTemplate: "/v1/chat/completions", action: "chat_completions", modelAlias: "glm-5.2", requestParams: { body: { model: "glm-5.2", messages: [{ role: "user", content: "测试" }] } }, statusCode: 200, success: true, responseSummary: { contentType: "application/json", bodyBytes: 256 }, durationMs: 831, responseBytes: 256, sourceIp: "10.0.0.8", userAgent: "OpenAI/Python", isModelCall: true, createdAt: "2026-09-11 08:00:00" }], total: 1, limit: 50, offset: 0 });
     if (url.pathname === "/api/internal/quota/events") return jsonResponse({ events });
     if (url.pathname === "/api/internal/quota/audits") return jsonResponse({ audits });
@@ -269,6 +271,32 @@ describe("内部控制台", () => {
     resume();
     await waitFor(() => expect(screen.queryByText("5,891")).not.toBeInTheDocument());
     expect(screen.queryByText("客户 A")).not.toBeInTheDocument();
+  });
+
+  it("概览展示真实已知Token并明确提示不完整用量", async () => {
+    installFetch({ overviewTokenUsage: 912000, overviewTokenIncomplete: 5 });
+    await login();
+    const card = screen.getByText("Token 消耗").closest("article")!;
+    expect(within(card).getByText("912,000")).toBeInTheDocument();
+    expect(within(card).getByText("已知用量 · 5 次调用未返回完整 Token")).toBeInTheDocument();
+    expect(card).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("供应商未返回完整Token时不显示假0，也不伪装成仍在加载", async () => {
+    installFetch({ overviewTokenUsage: 0, overviewTokenIncomplete: 3 });
+    await login();
+    const card = screen.getByText("Token 消耗").closest("article")!;
+    expect(within(card).getByLabelText("Token 消耗未返回完整用量")).toHaveTextContent("—");
+    expect(card).toHaveAttribute("aria-busy", "false");
+    expect(within(card).queryByLabelText("Token 消耗等待加载")).not.toBeInTheDocument();
+  });
+
+  it("显式零Token与未知用量严格区分", async () => {
+    installFetch({ overviewTokenUsage: 0, overviewTokenIncomplete: 0 });
+    await login();
+    const card = screen.getByText("Token 消耗").closest("article")!;
+    expect(within(card).getByText("0")).toBeInTheDocument();
+    expect(within(card).queryByLabelText("Token 消耗未返回完整用量")).not.toBeInTheDocument();
   });
 
   it("概览展示全量累计指标，并可查看逐 Key 脱敏调用日志", async () => {

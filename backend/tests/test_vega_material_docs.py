@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from app.vega_resources import ACTIONS
+from app.vega_resources import ACTIONS, TEXT_LIMITS
 from test_provider_relay import relay_client
 from test_public_docs_examples import articles, requests
 from test_vega import setup
@@ -82,3 +82,13 @@ def test_markdown_and_client_index_list_all_vega_resource_routes():
     assert "不是Response.TaskId" in material
     assert "不是JSON布尔值" in material
     assert "同一个幂等键" in material
+
+
+def test_group_name_documentation_matches_the_local_supplier_limit():
+    backend = Path(__file__).resolve().parents[1]
+    material = (backend / "docs/client-api/vega-materials.md").read_text(encoding="utf-8")
+    assert TEXT_LIMITS["GroupName"] == 64
+    rows = [line for line in material.splitlines() if line.startswith("| GroupName |")]
+    assert len(rows) == 2
+    assert all("64字符" in row and "1024" not in row for row in rows)
+    assert "后续登记不覆盖已有组名" in material

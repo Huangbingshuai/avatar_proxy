@@ -32,6 +32,8 @@ test('HTML is deterministic, self-contained, and both delivery copies are curren
   const version = createHash('sha256').update(html).digest('hex').slice(0, 16);
   assert.match(await readFile(path.join(root, 'app/client-docs-manifest.ts'), 'utf8'), new RegExp('client-api\\.html\\?v=' + version));
   const dom = new JSDOM(html);
+  const documentVersion = (await readFile(path.join(root, 'backend/CLIENT_API.md'), 'utf8')).match(/^版本：([^\s·]+)/m)[1];
+  assert.equal(dom.window.document.querySelector('.version').textContent, '文档 ' + documentVersion);
   assert.equal(dom.window.document.querySelectorAll('.docs-page').length, pages.length + supplierCatalog.length + assetOperations.length + vegaMaterialOperations.length);
   assert.equal(dom.window.document.querySelectorAll('script[src], link[rel="stylesheet"], iframe, form').length, 0);
   assert.match(dom.window.document.querySelector('meta[http-equiv]').content, /connect-src 'none'/);

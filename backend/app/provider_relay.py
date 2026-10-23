@@ -21,6 +21,7 @@ from .database import Database
 from .errors import ApiError
 from .modeltop import MODELTOP_MODELS
 from .security import ApiPrincipal
+from .token_usage import token_count, token_summary
 from . import vega
 from . import vega_image, vega_vl
 
@@ -979,16 +980,16 @@ class ProviderRelay:
         if route.provider == "vega" and route.modality == "text":
             usage = vega_vl.normalized_usage(usage)
             usage_dimension = route.channel_config["site"]
-        input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
-        output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
-        total_tokens = usage.get("total_tokens")
+        input_tokens = token_count(usage.get("prompt_tokens", usage.get("input_tokens")))
+        output_tokens = token_count(usage.get("completion_tokens", usage.get("output_tokens")))
+        total_tokens = token_count(usage.get("total_tokens"))
         token_details = usage.get("prompt_tokens_details")
         if not isinstance(token_details, dict):
             token_details = usage.get("input_tokens_details")
         token_details = token_details if isinstance(token_details, dict) else {}
-        cached_input_tokens = token_details.get(
+        cached_input_tokens = token_count(token_details.get(
             "cached_tokens", usage.get("cached_input_tokens")
-        )
+        ))
         with self.database.connect() as connection:
             connection.execute(
                 """
@@ -1003,10 +1004,7 @@ class ProviderRelay:
                     f"ius_{uuid.uuid4().hex}", request_id, task_id, principal.id,
                     principal.project_name, route.alias, route.channel_id,
                     provider_request_id, status,
-                    int(input_tokens) if isinstance(input_tokens, (int, float)) else None,
-                    int(cached_input_tokens) if isinstance(cached_input_tokens, (int, float)) else None,
-                    int(output_tokens) if isinstance(output_tokens, (int, float)) else None,
-                    int(total_tokens) if isinstance(total_tokens, (int, float)) else None,
+                    input_tokens, cached_input_tokens, output_tokens, total_tokens,
                     usage_dimension, generated_images, video_seconds, width, height,
                     input_characters, audio_seconds,
                 ),
@@ -2653,6 +2651,8 @@ class ProviderRelay:
                 "channelName": row["channel_name"], "status": row["status"],
                 "inputTokens": row["input_tokens"], "outputTokens": row["output_tokens"],
                 "totalTokens": row["total_tokens"], "generatedImages": row["generated_images"],
+                "knownTokens": token_summary(row["input_tokens"], row["output_tokens"], row["total_tokens"])[0],
+                "tokenUsageComplete": token_summary(row["input_tokens"], row["output_tokens"], row["total_tokens"])[1],
                 "videoSeconds": row["video_seconds"], "inputCharacters": row["input_characters"],
                 "audioSeconds": row["audio_seconds"], "createdAt": row["created_at"],
             }

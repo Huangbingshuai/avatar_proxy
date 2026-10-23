@@ -6,6 +6,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator
 
+from .token_usage import COMPLETE_TOKENS_SQL, KNOWN_TOKENS_SQL
+
 from .modeltop import MODELTOP_MODEL_CATALOG, MODELTOP_RATES, MODELTOP_RATE_VERSION, MODELTOP_RATE_EFFECTIVE_MONTH
 from .vega import VEGA_MODEL_CATALOG, VEGA_RATES, VEGA_VERSION
 from .vega_image import MODEL_CATALOG as VEGA_IMAGE_CATALOG, RATES as VEGA_IMAGE_RATES
@@ -1811,7 +1813,16 @@ class Database:
 
     def overview(self) -> dict[str, Any]:
         with self.connect() as connection:
-            stats = connection.execute("""
+            stats = connection.execute(f"""
+                WITH inference_totals AS (
+                    SELECT COUNT(*) AS calls,
+                        COALESCE(SUM({KNOWN_TOKENS_SQL}),0) AS tokens,
+                        COALESCE(SUM(CASE WHEN {COMPLETE_TOKENS_SQL} THEN 0 ELSE 1 END),0) AS incomplete
+                    FROM inference_usage WHERE status='succeeded'
+                ), legacy_totals AS (
+                    SELECT COUNT(*) AS calls,COALESCE(SUM(total_tokens),0) AS tokens
+                    FROM video_usage
+                )
                 SELECT
                     (SELECT COUNT(*) FROM projects) AS projects,
                     (SELECT COUNT(*) FROM api_keys WHERE status = 'active') AS activeKeys,
@@ -1820,10 +1831,10 @@ class Database:
                     (SELECT COUNT(*) FROM asset_records WHERE status IN ('registering','active')) AS assetsTotal,
                     (SELECT COUNT(*) FROM asset_records WHERE source_type='tos') AS uploadsTotal,
                     (SELECT COALESCE(SUM(size_bytes),0) FROM asset_records WHERE source_type='tos') AS uploadBytesTotal,
-                    ((SELECT COUNT(*) FROM inference_usage WHERE status='succeeded') +
-                     (SELECT COUNT(*) FROM video_usage)) AS modelCalls,
-                    ((SELECT COALESCE(SUM(total_tokens),0) FROM inference_usage WHERE status='succeeded') +
-                     (SELECT COALESCE(SUM(total_tokens),0) FROM video_usage)) AS tokenUsage
+                    (inference_totals.calls + legacy_totals.calls) AS modelCalls,
+                    (inference_totals.tokens + legacy_totals.tokens) AS tokenUsage,
+                    inference_totals.incomplete AS tokenUsageIncompleteCalls
+                FROM inference_totals CROSS JOIN legacy_totals
             """).fetchone()
             # Read the newest rowids directly. The log_type-leading filter index
             # sorts every matching row (including large payload pages) before

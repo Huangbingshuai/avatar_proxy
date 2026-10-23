@@ -52,6 +52,8 @@
 
 完整的逐接口参数、请求及响应示例见 [Vega素材与活体接口](vega-materials.md)，HTML左侧目录为“Vega（腾讯云点播）→ 素材接口”。
 
+`GroupName` 最多64字符；超长请求在本站返回422，不提交供应商。首次自动建立隔离组时，未提供组名则使用本站生成的短名称；后续登记不会覆盖已有组名。上游历史自动组名可能超过该修改上限，不能原样回填，应选择64字符以内的新名称。
+
 仅Pro系列提供以下接口；统一为 `POST /v1/vega/{action}`，JSON中必填 `model`，其余字段沿用下表大小写。未知字段、SubAppId、凭证、回调URL、ExtInfo均拒绝。每个操作都使用业务Bearer Key，并记录调用日志。创建操作必须提供 `Idempotency-Key`，相同业务Key、相同操作、相同请求只提交一次；结果未确认时禁止换键重试。
 
 | action | 请求字段（除model） | 说明 |
@@ -92,9 +94,13 @@ curl "$BASE_URL/v1/vega/DescribeTaskDetail" \
 
 `Response.CreateAigcMaterialTask.Status=FINISH` 且 `ErrCode=0` 时，从 `Output.AssetId` 取素材ID。以 `asset://` 加该ID作为视频content中相应媒体URL，例如 `asset://asset-xxx`；不是火山的素材ID。创建/活体返回值包含敏感令牌和认证链接，不要公开分享；日志会脱敏这两项。
 
+素材或活体创建被明确拒绝时，错误中保留供应商错误码和请求ID，`error.details.taskId`为本站记录。超时、响应不完整或服务重启造成结果无法确认时，`outcomeUnknown=true`，不表示供应商一定未创建；请联系管理员核对，勿换幂等键重复提交。同键重放不会再次调用创建接口。素材任务未取得上游ID时，查询可返回顶层`id/status/error/outcomeUnknown/automaticRetry`，不再一直显示排队中；活体创建不通过素材任务接口查询。
+
 ## 计费用量与价格
 
 `GET /v1/pricing?model=vega-1.0-pro` 查询当前项目所绑定站点的人民币价格。全局价目包含domestic（国内人民币）与international（国际美元按固定汇率折算）两类维度。2026-10-22国际站折算汇率为1 USD=6.689327 CNY，后续可由超级管理员统一更新价格；不会在每次请求时联网换价。
+
+Token字段仅在上游真实返回时提供，可能只返回输入或输出分项而没有`total_tokens`。字段缺失不表示消耗为零，不按视频秒数推算Token；视频收费仍使用下述真实秒数规则。
 
 - Lite：真实输出秒数＋真实输入视频秒数，按输出分辨率对应单价；真实输入图片超过5张的部分另收费。
 - Pro系列无参考视频：真实输出秒数×无视频输入单价。

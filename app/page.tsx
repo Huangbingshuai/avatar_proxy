@@ -58,7 +58,7 @@ type ApiKey = {
 };
 
 type Overview = {
-  stats: { projects: number; activeKeys: number; requestsTotal: number; errorsTotal: number; assetsTotal: number; uploadsTotal: number; uploadBytesTotal: number; modelCalls: number; tokenUsage: number };
+  stats: { projects: number; activeKeys: number; requestsTotal: number; errorsTotal: number; assetsTotal: number; uploadsTotal: number; uploadBytesTotal: number; modelCalls: number; tokenUsage: number; tokenUsageIncompleteCalls?: number };
   recent: Array<{ action: string; method?: string; path?: string; routeTemplate?: string; projectName: string; apiKeyId?: string; apiKeyName?: string; apiKeyPrefix?: string; statusCode: number; durationMs: number; createdAt: string }>;
 };
 
@@ -641,7 +641,7 @@ function OverviewPanel({ overview, onOpenIntegration }: { overview: Overview | n
       <Stat label="累计素材" value={overview?.stats.assetsTotal} note="全部项目素材" />
       <Stat label="累计上传" value={overview?.stats.uploadsTotal} note={overview ? bytesLabel(overview.stats.uploadBytesTotal) : "等待统计数据"} />
       <Stat label="模型调用次数" value={overview?.stats.modelCalls} note="成功结算的模型用量" />
-      <Stat label="Token 消耗" value={overview?.stats.tokenUsage} note="供应商实际返回值" />
+      <Stat label="Token 消耗" value={overview && overview.stats.tokenUsage === 0 && overview.stats.tokenUsageIncompleteCalls ? null : overview?.stats.tokenUsage} note={overview?.stats.tokenUsageIncompleteCalls ? `已知用量 · ${overview.stats.tokenUsageIncompleteCalls} 次调用未返回完整 Token` : "供应商真实用量（总量或返回分项合计）"} />
     </div>
     <section className="panel"><div className="panelHead"><div><h3>最近请求</h3><p>展示最近业务请求；完整脱敏参数和返回摘要请前往“调用日志”。</p></div></div>
       <div className="dataTable recentTable"><div className="tableRow tableHead"><span>接口</span><span>API Key</span><span>项目</span><span>状态</span><span>耗时</span><span>时间</span></div>{overview?.recent.length ? overview.recent.map((row, index) => <div className="tableRow" key={`${row.createdAt}-${index}`}><span className="mono">{row.method ? `${row.method} ` : ""}{row.routeTemplate || row.path || row.action}</span><span>{row.apiKeyName || row.apiKeyPrefix || "-"}</span><span>{row.projectName}</span><span><i className={`httpStatus ${row.statusCode < 400 ? "ok" : "bad"}`}>{row.statusCode}</i></span><span>{row.durationMs} ms</span><span>{formatTime(row.createdAt)}</span></div>) : <div className="emptyRow">{overview ? "暂无调用记录" : "正在加载最近请求…"}</div>}</div>
@@ -819,8 +819,8 @@ function IntegrationPanel() {
   </section>;
 }
 
-function Stat({ label, value, note, warn }: { label: string; value?: number; note: string; warn?: boolean }) {
-  return <article className="stat" aria-busy={value === undefined}><div><span>{label}</span><Activity size={17} className={warn ? "warn" : ""} /></div><strong aria-label={value === undefined ? `${label}等待加载` : undefined}>{value === undefined ? "—" : value.toLocaleString()}</strong><small>{note}</small></article>;
+function Stat({ label, value, note, warn }: { label: string; value?: number | null; note: string; warn?: boolean }) {
+  return <article className="stat" aria-busy={value === undefined}><div><span>{label}</span><Activity size={17} className={warn ? "warn" : ""} /></div><strong aria-label={value === undefined ? `${label}等待加载` : value === null ? `${label}未返回完整用量` : undefined}>{value == null ? "—" : value.toLocaleString()}</strong><small>{note}</small></article>;
 }
 
 function Empty({ text }: { text: string }) {

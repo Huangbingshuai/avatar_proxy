@@ -1,4 +1,5 @@
 """Allowlisted Vega material/liveness API; never an arbitrary VOD proxy."""
+import asyncio
 import hashlib
 import json
 from typing import Any
@@ -18,12 +19,26 @@ ACTIONS = {
     "DescribeAigcMaterialGroup": {"GroupId"},
     "DescribeAigcMaterialList": {"GroupId", "AssetType", "Limit", "Offset"},
 }
+TEXT_LIMITS = {"AssetName": 1024, "GroupName": 64, "GroupDescription": 1024}
 
 
 class VegaResources:
     def __init__(self, relay):
         self.relay = relay
         self.database = relay.database
+
+    def recover_interrupted_creates(self):
+        # Single-instance startup only: never resend an ambiguous material or
+        # liveness POST. Accepted material tasks retain their upstream IDs.
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE inference_tasks SET status='failed',error_code='provider_outcome_unknown',"
+                "error_message='服务重启前的素材或活体创建结果未确认，请联系管理员核对，勿重复提交',"
+                "metadata_json=?,completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP "
+                "WHERE operation IN ('vega_CreateAigcMaterial','vega_CreateAigcLivenessValidate') "
+                "AND status IN ('queued','running') AND upstream_task_id IS NULL",
+                (json.dumps({"outcomeUnknown": True}),),
+            )
 
     def register(self, principal, route, kind, value, group=None, source_task=None):
         if isinstance(value, str) and value:
@@ -52,7 +67,12 @@ class VegaResources:
                 raise ApiError("Vega素材任务不存在", 404, "vega_resource_not_found")
             route = self.relay._task_route(local)
             if not local.get("upstream_task_id"):
-                return {"id": local["id"], "status": local["status"]}
+                meta = json.loads(local.get("metadata_json") or "{}")
+                result = {"id": local["id"], "status": local["status"]}
+                if local.get("error_code"):
+                    result.update({"error": {"code": local["error_code"], "message": local.get("error_message")},
+                                   "outcomeUnknown": bool(meta.get("outcomeUnknown")), "automaticRetry": False})
+                return result
             _, data = await self.relay._vega_request(route, action, {"TaskId": local["upstream_task_id"]})
             task = data.get("CreateAigcMaterialTask")
             if not isinstance(task, dict):
@@ -96,9 +116,9 @@ class VegaResources:
         body = dict(payload)
         if "Liveness" in action and route.channel_config["site"] != "domestic":
             raise ApiError("国际站不需要此活体认证接口", 422, "vega_liveness_unsupported")
-        for field in ("AssetName", "GroupName", "GroupDescription"):
-            if field in body and (not isinstance(body[field], str) or len(body[field]) > 1024):
-                raise ApiError("素材名称或描述格式无效", 422, "vega_parameter_invalid")
+        for field, limit in TEXT_LIMITS.items():
+            if field in body and (not isinstance(body[field], str) or len(body[field]) > limit):
+                raise ApiError(f"{field}须为字符串且不超过{limit}字符", 422, "vega_parameter_invalid")
         if action == "CreateAigcMaterial":
             file_info = body.get("FileInfo")
             if not isinstance(file_info, dict) or set(file_info) != {"Type", "Url"} or file_info["Type"] != "Url":
@@ -111,6 +131,19 @@ class VegaResources:
                 if body["IsRealPerson"] == "True":
                     raise ApiError("真人素材须提供活体认证返回的GroupId", 422, "vega_parameter_invalid")
                 body["GroupId"] = "vg_" + hashlib.sha256(f"{principal.id}:{route.channel_id}".encode()).hexdigest()[:40]
+                # VOD's default name combines account and group IDs and can
+                # exceed its own 64-character modification limit. Supply a
+                # bounded name for a NEW isolated group, but never overwrite
+                # the name of an already-registered customer group.
+                with self.database.connect() as connection:
+                    known_group = connection.execute(
+                        "SELECT 1 FROM vega_resources WHERE api_key_id=? AND project_name=? "
+                        "AND channel_id=? AND kind='GroupId' AND resource_hash=?",
+                        (principal.id, principal.project_name, route.channel_id,
+                         hashlib.sha256(body["GroupId"].encode()).hexdigest()),
+                    ).fetchone()
+                if known_group is None:
+                    body.setdefault("GroupName", "vega_" + body["GroupId"][3:35])
             else:
                 self.owns(principal, route, "GroupId", body["GroupId"])
         else:
@@ -140,18 +173,41 @@ class VegaResources:
                 meta = json.loads(local.get("metadata_json") or "{}")
                 if meta.get("encryptedResponse"):
                     return json.loads(self.relay.vault.decrypt(meta["encryptedResponse"]))
-                raise ApiError("该创建请求已受理或结果待核对，请勿更换幂等键重试", 409, "idempotency_request_in_progress")
+                if local.get("error_code") and not meta.get("outcomeUnknown"):
+                    raise ApiError(local.get("error_message") or "供应商拒绝了创建请求", meta.get("errorStatus", 502),
+                                   local["error_code"], details={**meta.get("errorDetails", {}),
+                                   "taskId": local["id"], "outcomeUnknown": False, "automaticRetry": False})
+                raise ApiError("该创建请求已受理或结果待核对，请勿更换幂等键重试", 409, "idempotency_request_in_progress",
+                               details={"taskId": local["id"], "outcomeUnknown": True, "automaticRetry": False})
             body["SessionId"] = local["id"] if action == "CreateAigcMaterial" else None
             if body["SessionId"] is None:
                 body.pop("SessionId")
-        _, data = await self.relay._vega_request(route, action, body)
-        if action == "CreateAigcLivenessValidate" and (
-                not isinstance(data.get("LivenessToken"), str) or not data["LivenessToken"]
-                or not isinstance(data.get("H5Link"), str) or not data["H5Link"]):
-            raise ApiError("Vega未返回完整活体认证入口", 502, "provider_response_invalid")
-        if action == "CreateAigcMaterial":
-            if not isinstance(data.get("TaskId"), str) or not data["TaskId"]:
+        try:
+            _, data = await self.relay._vega_request(route, action, body)
+            if action == "CreateAigcLivenessValidate" and (
+                    not isinstance(data.get("LivenessToken"), str) or not data["LivenessToken"]
+                    or not isinstance(data.get("H5Link"), str) or not data["H5Link"]):
+                raise ApiError("Vega未返回完整活体认证入口", 502, "provider_response_invalid")
+            if action == "CreateAigcMaterial" and (
+                    not isinstance(data.get("TaskId"), str) or not data["TaskId"]):
                 raise ApiError("Vega未返回素材任务ID", 502, "provider_task_id_missing")
+        except (ApiError, asyncio.CancelledError) as error:
+            if local:
+                unknown = not isinstance(error, ApiError) or error.code != "vega_request_failed"
+                code = error.code if isinstance(error, ApiError) else "provider_outcome_unknown"
+                message = error.message if isinstance(error, ApiError) else "创建提交中断，请核对供应商结果，勿重复提交"
+                meta = {"outcomeUnknown": unknown}
+                if isinstance(error, ApiError):
+                    meta.update({"errorStatus": error.status_code, "errorDetails": error.details})
+                    error.details = {**error.details, "taskId": local["id"], "outcomeUnknown": unknown, "automaticRetry": False}
+                with self.database.connect() as connection:
+                    connection.execute(
+                        "UPDATE inference_tasks SET status='failed',error_code=?,error_message=?,metadata_json=?,"
+                        "completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (code, message, json.dumps(meta), local["id"]),
+                    )
+            raise
+        if action == "CreateAigcMaterial":
             self.register(principal, route, "GroupId", body["GroupId"])
         if action in {"CreateAigcLivenessValidate", "DescribeAigcLivenessValidateResult"}:
             source_task = local["id"] if local else source_task

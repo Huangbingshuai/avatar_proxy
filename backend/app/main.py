@@ -22,6 +22,7 @@ from .routers import vega_images
 from .storage import TosStorage
 from .system_monitor import DiskMonitor
 from .volcengine import VolcengineClient
+from .vega_resources import VegaResources
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.billing = BillingManager(database)
         app.state.provider_relay = ProviderRelay(resolved, database)
         app.state.provider_relay.recover_interrupted_images()
+        VegaResources(app.state.provider_relay).recover_interrupted_creates()
         app.state.volcengine = volcengine
         app.state.storage = TosStorage(
             resolved, database, app.state.quota, app.state.maintenance_gate

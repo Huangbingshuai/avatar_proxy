@@ -297,6 +297,8 @@ uv run --extra test pytest --cov=app --cov-branch --cov-report=term-missing --co
 - `.env` 无Vega专属新增项；只需现有 `MULTI_PROVIDER_ENABLED=true`。超级管理员在“供应商渠道”选择Vega，填写国内/国际站、SubAppId、视频/图片的SecretId与SecretKey，以及VL的API Token；按需填写，轮换留空项保留原值。不要重新生成已有的 `PROVIDER_CREDENTIAL_ENCRYPTION_KEY` 或 `provider_credentials.key`。
 - 普通管理员为项目选择Vega渠道并启用模型，客户使用原业务Key即可。视频复用本站 `/api/v3/contents/generations/tasks`；图片推荐 `/v1/images/tasks` 创建和查询，也支持 `/v1/images/generations` 同步兼容；VL使用 `/v1/chat/completions`。视频Pro素材/活体接口为 `/v1/vega/{action}`，按项目、Key、渠道隔离，不能引用火山素材ID。
 - 全局价目按所提供刊例价初始化：国内站人民币，视频及VL国际站美元按2026-10-22汇率快照 `6.689327` 折算人民币；图片国际站价格未提供，需人工补齐。已生效价格可由超级管理员统一调整；未启用项目不会自动计费。视频按实际秒数、图片按实际输出张数及Pro超额输入、VL按真实输入/输出/缓存Token结算；缓存不重复计算，缺失用量或价格进入待计价。
+- 概览Token优先采用供应商总量；未返回总量时汇总已有的真实输入/输出分项，并提示未返回完整Token的调用。完全未知时显示“—”，不将未知值当零、不按秒数估算；历史用量无需回填。素材组名最多64字符，首次自动建组使用短名称，不覆盖已有组名。
+- 素材/活体创建失败会保存错误和结果是否未知，同一幂等键不重复调用供应商；重启时，无上游ID的残留创建转为待核对，不继续假排队，也不推断供应商一定未创建。
 - 腾讯云需先开通VOD并申请模型权限，默认通常仅1路并发；渠道“测试”不会自动发起付费生成。真实调用验收需单独授权。素材/活体及供应商存储收费不属于视频自动账单。
 
 客户参数和示例见 [Vega视频与素材](backend/docs/client-api/vega.md)、[Vega图片与VL](backend/docs/client-api/vega-image-vl.md)，渠道配置、计量与本地验收见 [Vega接入说明](backend/VEGA_RELAY.md)。图片推荐异步任务，VL支持Chat JSON/SSE但不支持Responses；国际站图片价格未提供，需手动配置，未配置不按零元结算。

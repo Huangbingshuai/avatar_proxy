@@ -6,10 +6,11 @@ export const vegaMaterialOperations = [
     fields: [
       ['FileInfo', '是', 'object', '必须为Type=Url和Url两个字段；Url为供应商可访问的HTTP(S)地址'],
       ['AssetType', '是', 'string', 'Image、Video或Audio'],
-      ['AssetName', '否', 'string', '素材名称，最多1024字符'],
+      ['AssetName', '否', 'string', '素材名称，本站上限1024字符，供应商仍可能进一步校验'],
       ['IsRealPerson', '否', 'string', '字符串True或False，默认False；不是JSON布尔值'],
       ['GroupId', '条件必填', 'string', '真人素材必须使用本Key活体认证所得组ID；非真人省略时自动创建隔离组；显式传入须为本Key同渠道登记的组'],
-      ['GroupName / GroupDescription', '否', 'string', '组名称、组描述，各最多1024字符'],
+      ['GroupName', '否', 'string', '素材组名称，最多64字符；首次自动建组且未填写时使用本站生成的短名称，后续登记不覆盖已有组名'],
+      ['GroupDescription', '否', 'string', '素材组描述，本站上限1024字符，供应商仍可能进一步校验'],
     ],
     example: { FileInfo: { Type: 'Url', Url: 'https://example.com/reference.png' }, AssetType: 'Image', AssetName: '参考角色', IsRealPerson: 'False' },
     result: { id: 'tsk_material_example', Response: { TaskId: 'supplier-task-id', RequestId: 'supplier-request-id' } },
@@ -22,7 +23,7 @@ export const vegaMaterialOperations = [
     result: { id: 'tsk_material_example', Response: { RequestId: 'supplier-request-id', CreateAigcMaterialTask: {
       Status: 'FINISH', ErrCode: 0, Output: { AssetId: 'asset-example', GroupId: 'group-example' },
     } } },
-    note: 'Response.CreateAigcMaterialTask.Status=FINISH且ErrCode=0，并返回Output.AssetId才表示成功；未完成时继续查询原任务，失败时读取错误信息。提交结果尚待确认时也可能只返回顶层id/status，不要换幂等键重提。成功后使用asset://加AssetId引用素材。此接口不查询视频任务或活体任务。',
+    note: 'Response.CreateAigcMaterialTask.Status=FINISH且ErrCode=0，并返回Output.AssetId才表示成功；未完成时继续查询原任务，失败时读取错误信息。提交失败且没有上游任务ID时，返回顶层id/status/error/outcomeUnknown；outcomeUnknown=true表示供应商结果尚待核对，不是确认未创建。创建错误的details.taskId可用于此处查询。重复同一幂等键不会再次创建，勿换键重提。成功后使用asset://加AssetId引用素材。此接口不查询视频任务或活体任务。',
   },
   {
     id: 'vega-material-get', action: 'DescribeAigcMaterial', label: '查询素材详情',
@@ -43,7 +44,7 @@ export const vegaMaterialOperations = [
   },
   {
     id: 'vega-material-update', action: 'ModifyAigcMaterial', label: '修改素材名称',
-    fields: [['AssetId', '是', 'string', '本Key同渠道登记的素材ID'], ['AssetName', '是', 'string', '非空素材名称，最多1024字符']],
+    fields: [['AssetId', '是', 'string', '本Key同渠道登记的素材ID'], ['AssetName', '是', 'string', '非空素材名称，本站上限1024字符，供应商仍可能进一步校验']],
     example: { AssetId: 'asset-example', AssetName: '新的角色名称' },
     note: 'Response保留供应商操作结果及RequestId；修改后可查询素材详情核对。不能修改素材媒体内容或转移所有权。',
   },
@@ -61,7 +62,7 @@ export const vegaMaterialOperations = [
   },
   {
     id: 'vega-material-group-update', action: 'ModifyAigcMaterialGroup', label: '修改素材组',
-    fields: [['GroupId', '是', 'string', '本Key同渠道素材组ID'], ['GroupName', '否', 'string', '新的组名称，最多1024字符'], ['GroupDescription', '否', 'string', '新的组描述，最多1024字符']],
+    fields: [['GroupId', '是', 'string', '本Key同渠道素材组ID'], ['GroupName', '否', 'string', '新的组名称，最多64字符；不能将上游历史超长默认组名原样用于修改'], ['GroupDescription', '否', 'string', '新的组描述，本站上限1024字符，供应商仍可能进一步校验']],
     example: { GroupId: 'group-example', GroupName: '角色素材', GroupDescription: '项目角色参考素材' },
     note: '按需传入待修改的GroupName或GroupDescription；Response保留供应商操作结果及RequestId。不能通过此接口创建新组或转移组归属。',
   },
